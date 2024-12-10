@@ -61,6 +61,12 @@ type IBMOffering struct {
 	Offering     cloudprovider.Offering           `json:"offering"`
 }
 
+// globalCatalogService defines the interface for catalog operations
+type globalCatalogService interface {
+	ListCatalogEntries(options *globalcatalogv1.ListCatalogEntriesOptions) (*globalcatalogv1.EntrySearchResult, *core.DetailedResponse, error)
+	GetPricing(options *globalcatalogv1.GetPricingOptions) (*globalcatalogv1.PricingGet, *core.DetailedResponse, error)
+}
+
 // initializeVPCClient initializes the VPC client using external configuration
 func initializeVPCClient() (*vpcv1.VpcV1, error) {
 	serviceClientOptions := &vpcv1.VpcV1Options{}
@@ -92,13 +98,13 @@ func initializeGlobalCatalogClient() (*globalcatalogv1.GlobalCatalogV1, error) {
 }
 
 // fetchPricing fetches instance profile pricing from IBM Cloud's Global Catalog API
-func fetchPricing(globalCatalog *globalcatalogv1.GlobalCatalogV1, profileName string) (float64, error) {
+func fetchPricing(catalog globalCatalogService, profileName string) (float64, error) {
 	// List catalog entries matching the profile name
 	listOptions := &globalcatalogv1.ListCatalogEntriesOptions{
 		Q: core.StringPtr(fmt.Sprintf("name:%s", profileName)),
 	}
 
-	catalogEntries, _, err := globalCatalog.ListCatalogEntries(listOptions)
+	catalogEntries, _, err := catalog.ListCatalogEntries(listOptions)
 	if err != nil {
 		return 0, fmt.Errorf("error listing catalog entries: %v", err)
 	}
@@ -134,7 +140,7 @@ func fetchPricing(globalCatalog *globalcatalogv1.GlobalCatalogV1, profileName st
 	pricingOptions := &globalcatalogv1.GetPricingOptions{
 		ID: &catalogEntryID,
 	}
-	pricingData, _, err := globalCatalog.GetPricing(pricingOptions)
+	pricingData, _, err := catalog.GetPricing(pricingOptions)
 	if err != nil {
 		return 0, fmt.Errorf("error fetching pricing data: %v", err)
 	}
@@ -161,7 +167,7 @@ func fetchPricing(globalCatalog *globalcatalogv1.GlobalCatalogV1, profileName st
 	return 0, fmt.Errorf("pricing data not found for profile: %s", profileName)
 }
 
-func constructIBMInstanceTypes(vpcClient *vpcv1.VpcV1, globalCatalog *globalcatalogv1.GlobalCatalogV1) []IBMInstanceType {
+func constructIBMInstanceTypes(vpcClient *vpcv1.VpcV1, globalCatalog globalCatalogService) []IBMInstanceType {
 	instanceProfiles, err := fetchInstanceProfiles(vpcClient)
 	if err != nil {
 		log.Fatalf("failed to fetch instance profiles: %v", err)

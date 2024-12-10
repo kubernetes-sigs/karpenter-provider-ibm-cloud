@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	//go:embed crds/apis/crds/karpenter.ibm_cloud.sh_ibm_cloudnodeclasses.yaml
+	//go:embed crds/karpenter.ibm.sh_ibmnodeclasses.yaml
 	IBMNodeClassCRD []byte
 	CRDs             = []*v1.CustomResourceDefinition{
 		object.Unmarshal[v1.CustomResourceDefinition](IBMNodeClassCRD),

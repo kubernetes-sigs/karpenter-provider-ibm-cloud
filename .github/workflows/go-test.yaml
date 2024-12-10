@@ -28,11 +28,11 @@ jobs:
 
     - name: Run tests
       run: |
-        go test -v -race ./pkg/cloudprovider/ibm/...
+        go test -v -race ./pkg/cloudprovider/ibm/... ./cmd/... ./pkg/apis/... ./pkg/providers/...
 
     - name: Run tests with coverage
       run: |
-        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./pkg/cloudprovider/ibm/...
+        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./pkg/cloudprovider/ibm/... ./cmd/... ./pkg/apis/... ./pkg/providers/...
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v5
