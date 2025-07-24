@@ -2,8 +2,8 @@ apiVersion: v2
 name: karpenter-ibm
 description: A Helm chart for Karpenter's IBM Cloud Provider with configurable Custom Resources, IKS/VPC mode support, and multiple NodePool management.
 type: application
-version: 0.3.47
-appVersion: 0.3.47
+version: 0.3.48
+appVersion: 0.3.48
 keywords:
   - cluster
   - node
