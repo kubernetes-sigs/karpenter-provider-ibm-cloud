@@ -30,6 +30,7 @@ import (
 	v1alpha1 "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 // SubnetInfo contains information about a VPC subnet
@@ -61,17 +62,19 @@ type Provider interface {
 }
 
 type provider struct {
-	client      *ibm.Client
-	kubeClient  kubernetes.Interface
-	subnetCache *cache.Cache
+	client           *ibm.Client
+	kubeClient       kubernetes.Interface
+	subnetCache      *cache.Cache
+	vpcClientManager *vpcclient.Manager
 }
 
 // NewProvider creates a new subnet provider
 func NewProvider(client *ibm.Client) Provider {
 	return &provider{
-		client:      client,
-		kubeClient:  nil, // Will be set when needed via SetKubernetesClient
-		subnetCache: cache.New(5 * time.Minute), // Cache subnets for 5 minutes
+		client:           client,
+		kubeClient:       nil, // Will be set when needed via SetKubernetesClient
+		subnetCache:      cache.New(5 * time.Minute), // Cache subnets for 5 minutes
+		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
 	}
 }
 
@@ -275,13 +278,14 @@ func (p *provider) getSubnetForInstance(instanceID string) string {
 	}
 
 	// Get VPC client
-	vpcClient, err := p.client.GetVPCClient()
+	ctx := context.Background()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return ""
 	}
 
 	// Use context with timeout for API call
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	instance, err := vpcClient.GetInstance(ctx, instanceID)
@@ -344,9 +348,9 @@ func (p *provider) ListSubnets(ctx context.Context, vpcID string) ([]SubnetInfo,
 		return cached.([]SubnetInfo), nil
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
+		return nil, err
 	}
 
 	// List all subnets in the VPC
@@ -382,9 +386,9 @@ func (p *provider) GetSubnet(ctx context.Context, subnetID string) (*SubnetInfo,
 		return &result, nil
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
+		return nil, err
 	}
 
 	// Get subnet details

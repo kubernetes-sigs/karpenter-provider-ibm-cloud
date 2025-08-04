@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/go-logr/logr"
@@ -38,6 +39,7 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/image"
 	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/bootstrap"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 // VPCInstanceProvider implements VPC-specific instance provisioning
@@ -46,6 +48,7 @@ type VPCInstanceProvider struct {
 	kubeClient        client.Client
 	k8sClient         kubernetes.Interface
 	bootstrapProvider *bootstrap.VPCBootstrapProvider
+	vpcClientManager  *vpcclient.Manager
 }
 
 // NewVPCInstanceProvider creates a new VPC instance provider
@@ -59,6 +62,7 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client) (commo
 		kubeClient:        kubeClient,
 		k8sClient:         nil, // Will be set via dependency injection
 		bootstrapProvider: nil, // Will be lazily initialized when needed
+		vpcClientManager:  vpcclient.NewManager(client, 30*time.Minute),
 	}, nil
 }
 
@@ -76,6 +80,7 @@ func NewVPCInstanceProviderWithKubernetesClient(client *ibm.Client, kubeClient c
 		kubeClient:        kubeClient,
 		k8sClient:         kubernetesClient,
 		bootstrapProvider: bootstrapProvider,
+		vpcClientManager:  vpcclient.NewManager(client, 30*time.Minute),
 	}, nil
 }
 
@@ -93,9 +98,9 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		return nil, fmt.Errorf("getting NodeClass %s: %w", nodeClaim.Spec.NodeClassRef.Name, getErr)
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
+		return nil, err
 	}
 
 	// Extract instance profile - prefer NodeClass, fallback to labels
@@ -268,14 +273,13 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 	// Create the instance
 	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
 	if err != nil {
-		// Parse the error for better error information
+		// Check if this is a partial failure that might have created resources
 		ibmErr := ibm.ParseError(err)
 		logger.Error(err, "Error creating VPC instance",
 			"status_code", ibmErr.StatusCode,
 			"error_code", ibmErr.Code,
 			"retryable", ibmErr.Retryable)
 		
-		// Check if this is a partial failure that might have created resources
 		if p.isPartialFailure(ibmErr) {
 			logger.Info("Instance creation failed after partial resource creation, attempting cleanup",
 				"instance_name", nodeClaim.Name,
@@ -289,7 +293,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 			}
 		}
 		
-		return nil, fmt.Errorf("creating VPC instance: %w", err)
+		return nil, vpcclient.HandleVPCError(err, logger, "creating VPC instance")
 	}
 
 	logger.Info("VPC instance created successfully", "instance_id", *instance.ID, "name", *instance.Name)
@@ -352,9 +356,9 @@ func (p *VPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) err
 		return fmt.Errorf("could not extract instance ID from provider ID: %s", node.Spec.ProviderID)
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return fmt.Errorf("getting VPC client: %w", err)
+		return err
 	}
 
 	logger.Info("Deleting VPC instance", "instance_id", instanceID, "node", node.Name)
@@ -366,14 +370,7 @@ func (p *VPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) err
 			logger.Info("VPC instance already deleted", "instance_id", instanceID)
 			return nil
 		}
-		// Parse the error for better error information
-		ibmErr := ibm.ParseError(err)
-		logger.Error(err, "Error deleting VPC instance",
-			"instance_id", instanceID,
-			"status_code", ibmErr.StatusCode,
-			"error_code", ibmErr.Code,
-			"retryable", ibmErr.Retryable)
-		return fmt.Errorf("deleting VPC instance %s: %w", instanceID, err)
+		return vpcclient.HandleVPCError(err, logger, "deleting VPC instance", "instance_id", instanceID)
 	}
 
 	logger.Info("VPC instance deleted successfully", "instance_id", instanceID)
@@ -387,9 +384,9 @@ func (p *VPCInstanceProvider) Get(ctx context.Context, providerID string) (*core
 		return nil, fmt.Errorf("could not extract instance ID from provider ID: %s", providerID)
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
+		return nil, err
 	}
 
 	instance, err := vpcClient.GetInstance(ctx, instanceID)
@@ -415,9 +412,9 @@ func (p *VPCInstanceProvider) Get(ctx context.Context, providerID string) (*core
 
 // List returns all VPC instances
 func (p *VPCInstanceProvider) List(ctx context.Context) ([]*corev1.Node, error) {
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
+		return nil, err
 	}
 
 	instances, err := vpcClient.ListInstances(ctx)
@@ -450,9 +447,9 @@ func (p *VPCInstanceProvider) UpdateTags(ctx context.Context, providerID string,
 		return fmt.Errorf("could not extract instance ID from provider ID: %s", providerID)
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return fmt.Errorf("getting VPC client: %w", err)
+		return err
 	}
 
 	return vpcClient.UpdateInstanceTags(ctx, instanceID, tags)

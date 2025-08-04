@@ -33,14 +33,16 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/image"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 // Controller reconciles an IBMNodeClass object to update its status
 type Controller struct {
-	kubeClient     client.Client
-	ibmClient      *ibm.Client
-	subnetProvider subnet.Provider
-	cache          *cache.Cache
+	kubeClient       client.Client
+	ibmClient        *ibm.Client
+	subnetProvider   subnet.Provider
+	cache            *cache.Cache
+	vpcClientManager *vpcclient.Manager
 }
 
 // NewController constructs a controller instance
@@ -62,10 +64,11 @@ func NewController(kubeClient client.Client) (*Controller, error) {
 	zoneSubnetCache := cache.New(15 * time.Minute)
 
 	return &Controller{
-		kubeClient:     kubeClient,
-		ibmClient:      ibmClient,
-		subnetProvider: subnetProvider,
-		cache:          zoneSubnetCache,
+		kubeClient:       kubeClient,
+		ibmClient:        ibmClient,
+		subnetProvider:   subnetProvider,
+		cache:            zoneSubnetCache,
+		vpcClientManager: vpcclient.NewManager(ibmClient, 30*time.Minute),
 	}, nil
 }
 
@@ -308,9 +311,9 @@ func (c *Controller) validateBusinessLogic(ctx context.Context, nc *v1alpha1.IBM
 
 // validateVPC checks if the VPC exists and is accessible
 func (c *Controller) validateVPC(ctx context.Context, vpcID string) error {
-	vpcClient, err := c.ibmClient.GetVPCClient()
+	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return fmt.Errorf("getting VPC client: %w", err)
+		return err
 	}
 
 	_, err = vpcClient.GetVPC(ctx, vpcID)
@@ -410,9 +413,9 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 
 // validateImage checks if the image exists and is accessible
 func (c *Controller) validateImage(ctx context.Context, imageIdentifier, region string) error {
-	vpcClient, err := c.ibmClient.GetVPCClient()
+	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return fmt.Errorf("getting VPC client: %w", err)
+		return err
 	}
 
 	// Use image resolver to handle both IDs and names

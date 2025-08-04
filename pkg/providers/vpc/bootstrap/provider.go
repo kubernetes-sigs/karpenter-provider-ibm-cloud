@@ -35,19 +35,22 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 // VPCBootstrapProvider provides VPC-specific bootstrap functionality
 type VPCBootstrapProvider struct {
-	client     *ibm.Client
-	k8sClient  kubernetes.Interface
-	kubeClient client.Client
+	client           *ibm.Client
+	k8sClient        kubernetes.Interface
+	kubeClient       client.Client
+	vpcClientManager *vpcclient.Manager
 }
 
 // NewVPCBootstrapProvider creates a new VPC bootstrap provider
 func NewVPCBootstrapProvider(client *ibm.Client, k8sClient kubernetes.Interface, kubeClient client.Client) *VPCBootstrapProvider {
 	return &VPCBootstrapProvider{
-		client:     client,
+		client:           client,
+		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
 		k8sClient:  k8sClient,
 		kubeClient: kubeClient,
 	}
@@ -519,9 +522,10 @@ func (p *VPCBootstrapProvider) detectArchitectureFromInstanceProfile(instancePro
 		return "", fmt.Errorf("IBM Cloud client is not initialized")
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	ctx := context.Background()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get VPC client: %w", err)
+		return "", err
 	}
 
 	profileCollection, _, err := vpcClient.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
@@ -629,9 +633,9 @@ func (p *VPCBootstrapProvider) PollInstanceBootstrapStatus(ctx context.Context, 
 		return nil, fmt.Errorf("IBM Cloud client is not initialized")
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get VPC client for status polling: %w", err)
+		return nil, err
 	}
 
 	// Get instance console output (this would require IBM Cloud API support for console output)

@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
@@ -34,6 +35,7 @@ import (
 	v1alpha1 "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 // ExtendedInstanceType adds fields needed for automatic placement
@@ -44,14 +46,16 @@ type ExtendedInstanceType struct {
 }
 
 type IBMInstanceTypeProvider struct {
-	client          *ibm.Client
-	pricingProvider pricing.Provider
+	client           *ibm.Client
+	pricingProvider  pricing.Provider
+	vpcClientManager *vpcclient.Manager
 }
 
 func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider {
 	return &IBMInstanceTypeProvider{
-		client:          client,
-		pricingProvider: pricingProvider,
+		client:           client,
+		pricingProvider:  pricingProvider,
+		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
 	}
 }
 
@@ -102,7 +106,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudp
 	}
 
 	// Try VPC API first - more reliable than catalog
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err == nil {
 		// List all profiles and find the one we want
 		profiles, _, profilesErr := vpcClient.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
@@ -351,9 +355,9 @@ func (p *IBMInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovid
 func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
 	logger := log.FromContext(ctx)
 
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
+		return nil, err
 	}
 
 	// List instance profiles from VPC
