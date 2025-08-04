@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -273,6 +274,21 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 			"status_code", ibmErr.StatusCode,
 			"error_code", ibmErr.Code,
 			"retryable", ibmErr.Retryable)
+		
+		// Check if this is a partial failure that might have created resources
+		if p.isPartialFailure(ibmErr) {
+			logger.Info("Instance creation failed after partial resource creation, attempting cleanup",
+				"instance_name", nodeClaim.Name,
+				"error_code", ibmErr.Code)
+			
+			// Attempt to clean up any orphaned resources
+			if cleanupErr := p.cleanupOrphanedResources(ctx, vpcClient, nodeClaim.Name, nodeClass.Spec.VPC, logger); cleanupErr != nil {
+				logger.Error(cleanupErr, "Failed to cleanup orphaned resources after instance creation failure",
+					"instance_name", nodeClaim.Name)
+				// Don't fail the original error, but log the cleanup failure
+			}
+		}
+		
 		return nil, fmt.Errorf("creating VPC instance: %w", err)
 	}
 
@@ -455,17 +471,153 @@ func extractInstanceIDFromProviderID(providerID string) string {
 
 // getDefaultSecurityGroup gets the default security group for a VPC
 func (p *VPCInstanceProvider) getDefaultSecurityGroup(ctx context.Context, vpcClient *ibm.VPCClient, vpcID string) (*vpcv1.SecurityGroup, error) {
-	// TODO: implement security group lookup via VPC API
-	// The VPCClient would need a ListSecurityGroups method
-	return &vpcv1.SecurityGroup{
-		ID:   &[]string{"default-sg"}[0],
-		Name: &[]string{"default"}[0],
-	}, nil
+	// List security groups for the VPC to find the default one
+	options := &vpcv1.ListSecurityGroupsOptions{
+		VPCID: &vpcID,
+	}
+	
+	securityGroups, _, err := vpcClient.ListSecurityGroupsWithContext(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("listing security groups for VPC %s: %w", vpcID, err)
+	}
+	
+	// Find the default security group
+	for _, sg := range securityGroups.SecurityGroups {
+		if sg.Name != nil && *sg.Name == "default" {
+			return &sg, nil
+		}
+	}
+	
+	// If no default security group found, return an error
+	return nil, fmt.Errorf("default security group not found for VPC %s", vpcID)
 }
 
 // isIBMInstanceNotFoundError checks if the error indicates an instance was not found in IBM Cloud VPC
 func isIBMInstanceNotFoundError(err error) bool {
 	return ibm.IsNotFound(err)
+}
+
+// isPartialFailure determines if an instance creation error indicates partial resource creation
+func (p *VPCInstanceProvider) isPartialFailure(ibmErr *ibm.IBMError) bool {
+	if ibmErr == nil {
+		return false
+	}
+	
+	// Check for specific error codes that indicate partial failure
+	switch ibmErr.Code {
+	case "vpc_instance_quota_exceeded", "vpc_instance_profile_not_available":
+		// These errors can occur after VNI creation but before instance completion
+		return true
+	case "vpc_security_group_not_found", "vpc_subnet_not_available":
+		// These might occur after some network resources are created
+		return true
+	case "vpc_volume_capacity_insufficient", "vpc_boot_volume_creation_failed":
+		// Volume creation failures might leave network resources
+		return true
+	default:
+		// For unknown errors with 5xx status codes, assume potential partial failure
+		return ibmErr.StatusCode >= 500 && ibmErr.StatusCode < 600
+	}
+}
+
+// cleanupOrphanedResources attempts to clean up resources that might be left after instance creation failure
+func (p *VPCInstanceProvider) cleanupOrphanedResources(ctx context.Context, vpcClient *ibm.VPCClient, instanceName, vpcID string, logger logr.Logger) error {
+	logger.Info("Starting cleanup of potentially orphaned resources", "instance_name", instanceName)
+	
+	var errors []error
+	
+	// Look for orphaned VNIs with the expected name pattern
+	vniName := fmt.Sprintf("%s-vni", instanceName)
+	if err := p.cleanupOrphanedVNI(ctx, vpcClient, vniName, vpcID, logger); err != nil {
+		errors = append(errors, fmt.Errorf("cleaning up VNI %s: %w", vniName, err))
+	}
+	
+	// Look for orphaned volumes with the expected name pattern
+	volumeName := fmt.Sprintf("%s-boot", instanceName)
+	if err := p.cleanupOrphanedVolume(ctx, vpcClient, volumeName, logger); err != nil {
+		errors = append(errors, fmt.Errorf("cleaning up volume %s: %w", volumeName, err))
+	}
+	
+	if len(errors) > 0 {
+		return fmt.Errorf("cleanup failed with %d errors: %v", len(errors), errors)
+	}
+	
+	logger.Info("Cleanup of orphaned resources completed successfully")
+	return nil
+}
+
+// cleanupOrphanedVNI removes a VNI that might have been created during failed instance creation
+func (p *VPCInstanceProvider) cleanupOrphanedVNI(ctx context.Context, vpcClient *ibm.VPCClient, vniName, vpcID string, logger logr.Logger) error {
+	logger.Info("Searching for orphaned VNI to cleanup", "vni_name", vniName, "vpc_id", vpcID)
+	
+	// List virtual network interfaces to find the orphaned one
+	options := &vpcv1.ListVirtualNetworkInterfacesOptions{
+		// Note: VNI listing doesn't support name filtering, so we list all and filter manually
+	}
+	
+	vnis, err := vpcClient.ListVirtualNetworkInterfaces(ctx, options)
+	if err != nil {
+		return fmt.Errorf("listing virtual network interfaces for cleanup: %w", err)
+	}
+	
+	// Look for VNI with matching name
+	for _, vni := range vnis.VirtualNetworkInterfaces {
+		if vni.Name != nil && *vni.Name == vniName {
+			logger.Info("Found orphaned VNI, attempting deletion", "vni_id", *vni.ID, "vni_name", vniName)
+			
+			if err := vpcClient.DeleteVirtualNetworkInterface(ctx, *vni.ID); err != nil {
+				// Check if it's already deleted (not found error is acceptable)
+				if ibm.IsNotFound(err) {
+					logger.Info("VNI already deleted during cleanup", "vni_id", *vni.ID)
+					return nil
+				}
+				return fmt.Errorf("deleting orphaned VNI %s: %w", *vni.ID, err)
+			}
+			
+			logger.Info("Successfully cleaned up orphaned VNI", "vni_id", *vni.ID, "vni_name", vniName)
+			return nil
+		}
+	}
+	
+	logger.Info("No orphaned VNI found with expected name", "vni_name", vniName)
+	return nil
+}
+
+// cleanupOrphanedVolume removes a volume that might have been created during failed instance creation
+func (p *VPCInstanceProvider) cleanupOrphanedVolume(ctx context.Context, vpcClient *ibm.VPCClient, volumeName string, logger logr.Logger) error {
+	logger.Info("Searching for orphaned volume to cleanup", "volume_name", volumeName)
+	
+	// List volumes to find the orphaned one
+	options := &vpcv1.ListVolumesOptions{
+		Name: &volumeName,
+	}
+	
+	volumes, err := vpcClient.ListVolumes(ctx, options)
+	if err != nil {
+		return fmt.Errorf("listing volumes for cleanup: %w", err)
+	}
+	
+	// Look for volume with matching name
+	for _, volume := range volumes.Volumes {
+		if volume.Name != nil && *volume.Name == volumeName {
+			logger.Info("Found orphaned volume, attempting deletion", "volume_id", *volume.ID, "volume_name", volumeName)
+			
+			if err := vpcClient.DeleteVolume(ctx, *volume.ID); err != nil {
+				// Check if it's already deleted (not found error is acceptable)
+				if ibm.IsNotFound(err) {
+					logger.Info("Volume already deleted during cleanup", "volume_id", *volume.ID)
+					return nil
+				}
+				return fmt.Errorf("deleting orphaned volume %s: %w", *volume.ID, err)
+			}
+			
+			logger.Info("Successfully cleaned up orphaned volume", "volume_id", *volume.ID, "volume_name", volumeName)
+			return nil
+		}
+	}
+	
+	logger.Info("No orphaned volume found with expected name", "volume_name", volumeName)
+	return nil
 }
 
 // generateBootstrapUserData generates bootstrap user data using the VPC bootstrap provider

@@ -48,26 +48,102 @@ func (m *MockVPCSDKClient) ListImagesWithContext(ctx context.Context, options *v
 	return &vpcv1.ImageCollection{Images: []vpcv1.Image{}}, &core.DetailedResponse{}, nil
 }
 
-// Stub implementations for interface compliance
-func (m *MockVPCSDKClient) CreateInstanceWithContext(context.Context, *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) DeleteInstanceWithContext(context.Context, *vpcv1.DeleteInstanceOptions) (*core.DetailedResponse, error) { return nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) GetInstanceWithContext(context.Context, *vpcv1.GetInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) ListInstancesWithContext(context.Context, *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) UpdateInstanceWithContext(context.Context, *vpcv1.UpdateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) ListSubnetsWithContext(context.Context, *vpcv1.ListSubnetsOptions) (*vpcv1.SubnetCollection, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) GetSubnetWithContext(context.Context, *vpcv1.GetSubnetOptions) (*vpcv1.Subnet, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) GetVPCWithContext(context.Context, *vpcv1.GetVPCOptions) (*vpcv1.VPC, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) ListInstanceProfilesWithContext(context.Context, *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) ListSecurityGroupsWithContext(context.Context, *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) GetLoadBalancerWithContext(context.Context, *vpcv1.GetLoadBalancerOptions) (*vpcv1.LoadBalancer, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) ListLoadBalancerPoolsWithContext(context.Context, *vpcv1.ListLoadBalancerPoolsOptions) (*vpcv1.LoadBalancerPoolCollection, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) GetLoadBalancerPoolWithContext(context.Context, *vpcv1.GetLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) CreateLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.CreateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) DeleteLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.DeleteLoadBalancerPoolMemberOptions) (*core.DetailedResponse, error) { return nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) GetLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.GetLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) ListLoadBalancerPoolMembersWithContext(context.Context, *vpcv1.ListLoadBalancerPoolMembersOptions) (*vpcv1.LoadBalancerPoolMemberCollection, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) UpdateLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
-func (m *MockVPCSDKClient) UpdateLoadBalancerPoolWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) { return nil, nil, fmt.Errorf("not implemented") }
+// Implement all required interface methods with no-op implementations
+func (m *MockVPCSDKClient) CreateInstanceWithContext(context.Context, *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) DeleteInstanceWithContext(context.Context, *vpcv1.DeleteInstanceOptions) (*core.DetailedResponse, error) {
+	return &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) GetInstanceWithContext(context.Context, *vpcv1.GetInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListInstancesWithContext(context.Context, *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) UpdateInstanceWithContext(context.Context, *vpcv1.UpdateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListSubnetsWithContext(context.Context, *vpcv1.ListSubnetsOptions) (*vpcv1.SubnetCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) GetSubnetWithContext(context.Context, *vpcv1.GetSubnetOptions) (*vpcv1.Subnet, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) GetVPCWithContext(context.Context, *vpcv1.GetVPCOptions) (*vpcv1.VPC, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListInstanceProfilesWithContext(context.Context, *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListSecurityGroupsWithContext(context.Context, *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+// Volume methods
+func (m *MockVPCSDKClient) ListVolumesWithContext(context.Context, *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) DeleteVolumeWithContext(context.Context, *vpcv1.DeleteVolumeOptions) (*core.DetailedResponse, error) {
+	return &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+// Virtual Network Interface methods
+func (m *MockVPCSDKClient) ListVirtualNetworkInterfacesWithContext(context.Context, *vpcv1.ListVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterfaceCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) DeleteVirtualNetworkInterfacesWithContext(context.Context, *vpcv1.DeleteVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterface, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+// Load Balancer methods
+func (m *MockVPCSDKClient) GetLoadBalancerWithContext(context.Context, *vpcv1.GetLoadBalancerOptions) (*vpcv1.LoadBalancer, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListLoadBalancerPoolsWithContext(context.Context, *vpcv1.ListLoadBalancerPoolsOptions) (*vpcv1.LoadBalancerPoolCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) GetLoadBalancerPoolWithContext(context.Context, *vpcv1.GetLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) CreateLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.CreateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) DeleteLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.DeleteLoadBalancerPoolMemberOptions) (*core.DetailedResponse, error) {
+	return &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) GetLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.GetLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListLoadBalancerPoolMembersWithContext(context.Context, *vpcv1.ListLoadBalancerPoolMembersOptions) (*vpcv1.LoadBalancerPoolMemberCollection, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) UpdateLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) UpdateLoadBalancerPoolWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
 
 func TestNewResolver(t *testing.T) {
 	// Create a mock SDK client that implements the interface

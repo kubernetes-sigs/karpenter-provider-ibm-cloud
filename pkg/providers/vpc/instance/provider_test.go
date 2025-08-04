@@ -139,6 +139,40 @@ func (m *MockVPCSDKClient) ListSecurityGroupsWithContext(ctx context.Context, op
 	return args.Get(0).(*vpcv1.SecurityGroupCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
 }
 
+// Volume methods
+func (m *MockVPCSDKClient) ListVolumesWithContext(ctx context.Context, options *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, *core.DetailedResponse, error) {
+	args := m.Called(ctx, options)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*vpcv1.VolumeCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
+}
+
+func (m *MockVPCSDKClient) DeleteVolumeWithContext(ctx context.Context, options *vpcv1.DeleteVolumeOptions) (*core.DetailedResponse, error) {
+	args := m.Called(ctx, options)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*core.DetailedResponse), args.Error(1)
+}
+
+// Virtual Network Interface methods
+func (m *MockVPCSDKClient) ListVirtualNetworkInterfacesWithContext(ctx context.Context, options *vpcv1.ListVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterfaceCollection, *core.DetailedResponse, error) {
+	args := m.Called(ctx, options)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*vpcv1.VirtualNetworkInterfaceCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
+}
+
+func (m *MockVPCSDKClient) DeleteVirtualNetworkInterfacesWithContext(ctx context.Context, options *vpcv1.DeleteVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterface, *core.DetailedResponse, error) {
+	args := m.Called(ctx, options)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*vpcv1.VirtualNetworkInterface), args.Get(1).(*core.DetailedResponse), args.Error(2)
+}
+
 // Load Balancer methods
 func (m *MockVPCSDKClient) GetLoadBalancerWithContext(ctx context.Context, options *vpcv1.GetLoadBalancerOptions) (*vpcv1.LoadBalancer, *core.DetailedResponse, error) {
 	args := m.Called(ctx, options)

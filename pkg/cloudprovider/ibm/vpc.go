@@ -37,6 +37,12 @@ type vpcClientInterface interface {
 	ListImagesWithContext(context.Context, *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error)
 	ListInstanceProfilesWithContext(context.Context, *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error)
 	ListSecurityGroupsWithContext(context.Context, *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error)
+	// Volume methods
+	ListVolumesWithContext(context.Context, *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, *core.DetailedResponse, error)
+	DeleteVolumeWithContext(context.Context, *vpcv1.DeleteVolumeOptions) (*core.DetailedResponse, error)
+	// Virtual Network Interface methods
+	ListVirtualNetworkInterfacesWithContext(context.Context, *vpcv1.ListVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterfaceCollection, *core.DetailedResponse, error)
+	DeleteVirtualNetworkInterfacesWithContext(context.Context, *vpcv1.DeleteVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterface, *core.DetailedResponse, error)
 	// Load Balancer methods
 	GetLoadBalancerWithContext(context.Context, *vpcv1.GetLoadBalancerOptions) (*vpcv1.LoadBalancer, *core.DetailedResponse, error)
 	ListLoadBalancerPoolsWithContext(context.Context, *vpcv1.ListLoadBalancerPoolsOptions) (*vpcv1.LoadBalancerPoolCollection, *core.DetailedResponse, error)
@@ -274,6 +280,70 @@ func (c *VPCClient) ListSecurityGroupsWithContext(ctx context.Context, options *
 	}
 
 	return c.client.ListSecurityGroupsWithContext(ctx, options)
+}
+
+// ListVolumes lists volumes in the VPC
+func (c *VPCClient) ListVolumes(ctx context.Context, options *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("VPC client not initialized")
+	}
+	
+	volumes, _, err := c.client.ListVolumesWithContext(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("listing volumes: %w", err)
+	}
+	
+	return volumes, nil
+}
+
+// DeleteVolume deletes a volume by ID
+func (c *VPCClient) DeleteVolume(ctx context.Context, volumeID string) error {
+	if c.client == nil {
+		return fmt.Errorf("VPC client not initialized")
+	}
+	
+	options := &vpcv1.DeleteVolumeOptions{
+		ID: &volumeID,
+	}
+	
+	_, err := c.client.DeleteVolumeWithContext(ctx, options)
+	if err != nil {
+		return fmt.Errorf("deleting volume %s: %w", volumeID, err)
+	}
+	
+	return nil
+}
+
+// ListVirtualNetworkInterfaces lists virtual network interfaces
+func (c *VPCClient) ListVirtualNetworkInterfaces(ctx context.Context, options *vpcv1.ListVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterfaceCollection, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("VPC client not initialized")
+	}
+	
+	vnis, _, err := c.client.ListVirtualNetworkInterfacesWithContext(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("listing virtual network interfaces: %w", err)
+	}
+	
+	return vnis, nil
+}
+
+// DeleteVirtualNetworkInterface deletes a virtual network interface by ID
+func (c *VPCClient) DeleteVirtualNetworkInterface(ctx context.Context, vniID string) error {
+	if c.client == nil {
+		return fmt.Errorf("VPC client not initialized")
+	}
+	
+	options := &vpcv1.DeleteVirtualNetworkInterfacesOptions{
+		ID: &vniID,
+	}
+	
+	_, _, err := c.client.DeleteVirtualNetworkInterfacesWithContext(ctx, options)
+	if err != nil {
+		return fmt.Errorf("deleting virtual network interface %s: %w", vniID, err)
+	}
+	
+	return nil
 }
 
 // ListSubnetsWithContext lists subnets with context

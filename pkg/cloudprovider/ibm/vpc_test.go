@@ -197,6 +197,36 @@ func (m *mockVPCClient) UpdateLoadBalancerPoolWithContext(_ context.Context, _ *
 	return &vpcv1.LoadBalancerPool{}, &core.DetailedResponse{}, nil
 }
 
+// Volume methods
+func (m *mockVPCClient) ListVolumesWithContext(_ context.Context, _ *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, *core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	return &vpcv1.VolumeCollection{}, &core.DetailedResponse{}, nil
+}
+
+func (m *mockVPCClient) DeleteVolumeWithContext(_ context.Context, _ *vpcv1.DeleteVolumeOptions) (*core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &core.DetailedResponse{}, nil
+}
+
+// Virtual Network Interface methods
+func (m *mockVPCClient) ListVirtualNetworkInterfacesWithContext(_ context.Context, _ *vpcv1.ListVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterfaceCollection, *core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	return &vpcv1.VirtualNetworkInterfaceCollection{}, &core.DetailedResponse{}, nil
+}
+
+func (m *mockVPCClient) DeleteVirtualNetworkInterfacesWithContext(_ context.Context, _ *vpcv1.DeleteVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterface, *core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	return &vpcv1.VirtualNetworkInterface{}, &core.DetailedResponse{}, nil
+}
+
 func TestNewVPCClient(t *testing.T) {
 	baseURL := "https://test.vpc.url"
 	authType := "iam"
