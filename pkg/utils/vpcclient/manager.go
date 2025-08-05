@@ -108,16 +108,6 @@ func (m *Manager) getCacheInvalidationReason() string {
 	return "unknown"
 }
 
-// MustGetVPCClient is a convenience wrapper that panics on error
-// Use only in initialization code where errors are fatal
-func (m *Manager) MustGetVPCClient(ctx context.Context) *ibm.VPCClient {
-	client, err := m.GetVPCClient(ctx)
-	if err != nil {
-		panic(fmt.Sprintf("failed to get VPC client: %v", err))
-	}
-	return client
-}
-
 // WithVPCClient executes a function with a VPC client, handling errors consistently
 func (m *Manager) WithVPCClient(ctx context.Context, fn func(*ibm.VPCClient) error) error {
 	client, err := m.GetVPCClient(ctx)

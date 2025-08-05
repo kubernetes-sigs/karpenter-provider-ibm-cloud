@@ -140,16 +140,6 @@ func TestManager_GetVPCClient_ErrorHandling(t *testing.T) {
 	assert.Contains(t, err.Error(), "getting VPC client")
 }
 
-func TestManager_MustGetVPCClient_Panics(t *testing.T) {
-	ctx := context.Background()
-	manager := NewManager(nil, 1*time.Hour)
-	
-	// Should panic with nil client
-	assert.Panics(t, func() {
-		manager.MustGetVPCClient(ctx)
-	})
-}
-
 func TestManager_WithVPCClient_ErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	manager := NewManager(nil, 1*time.Hour)
