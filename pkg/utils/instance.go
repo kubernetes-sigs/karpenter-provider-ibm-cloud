@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
+// ParseInstanceID extracts the instance ID from a provider ID string
 func ParseInstanceID(providerID string) (string, error) {
 	if providerID == "" {
 		return "", fmt.Errorf("provider ID is empty")
@@ -30,6 +31,7 @@ func ParseInstanceID(providerID string) (string, error) {
 	return providerID, nil
 }
 
+// GetAllSingleValuedRequirementLabels returns labels for requirements that have exactly one value
 func GetAllSingleValuedRequirementLabels(instanceType *cloudprovider.InstanceType) map[string]string {
 	labels := map[string]string{}
 	if instanceType == nil {

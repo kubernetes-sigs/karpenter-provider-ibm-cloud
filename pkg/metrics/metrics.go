@@ -110,7 +110,7 @@ var (
 	)
 )
 
-// RecordAPIRequest records an IBM Cloud API request with service, operation, and status code
+// RecordAPIRequest increments the counter for IBM Cloud API requests
 func RecordAPIRequest(service, operation, statusCode string) {
 	APIRequestsTotal.WithLabelValues(service, operation, statusCode).Inc()
 }

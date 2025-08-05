@@ -514,6 +514,7 @@ func (c *CloudProvider) GetSubnetProvider() subnet.Provider {
 	return c.subnetProvider
 }
 
+// GetSupportedNodeClasses returns the list of supported node class types for the IBM cloud provider
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 	return []status.Object{&v1alpha1.IBMNodeClass{}}
 }
