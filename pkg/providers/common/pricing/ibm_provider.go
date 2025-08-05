@@ -180,7 +180,9 @@ func (p *IBMPricingProvider) fetchPricingData(ctx context.Context) (map[string]m
 		price, err := p.fetchInstancePricing(ctx, catalogClient, entry)
 		if err != nil {
 			// Skip this instance type if pricing unavailable
-			fmt.Printf("Warning: Skipping instance type %s due to pricing error: %v\n", instanceTypeName, err)
+			p.logger.Warn("Skipping instance type due to pricing error",
+				"instanceType", instanceTypeName,
+				"error", err)
 			continue
 		}
 

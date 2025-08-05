@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
 )
@@ -263,11 +264,16 @@ func (o *Options) Validate() error {
 		}
 		
 		// Warn if values seem unreasonably high
+		logger := log.Log.WithName("options-validation")
 		if o.CircuitBreakerRateLimitPerMinute > 100 {
-			fmt.Printf("WARNING: Circuit breaker rate limit of %d/minute seems very high for production use\n", o.CircuitBreakerRateLimitPerMinute)
+			logger.V(1).Info("Circuit breaker rate limit seems very high for production use",
+				"rateLimit", o.CircuitBreakerRateLimitPerMinute,
+				"recommendation", "Consider using a lower value")
 		}
 		if o.CircuitBreakerMaxConcurrentInstances > 50 {
-			fmt.Printf("WARNING: Circuit breaker max concurrent instances of %d seems very high\n", o.CircuitBreakerMaxConcurrentInstances)
+			logger.V(1).Info("Circuit breaker max concurrent instances seems very high",
+				"maxConcurrent", o.CircuitBreakerMaxConcurrentInstances,
+				"recommendation", "Consider using a lower value")
 		}
 	}
 	
