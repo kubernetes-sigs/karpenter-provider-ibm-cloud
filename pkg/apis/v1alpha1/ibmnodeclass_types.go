@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -227,7 +227,7 @@ type InstanceTypeRequirements struct {
 // VPC ID Format: Must follow pattern "r###-########-####-####-####-############"
 // Example: "r010-12345678-1234-5678-9abc-def012345678"
 //
-// Subnet ID Format: Must follow pattern "####-########-####-####-####-############" 
+// Subnet ID Format: Must follow pattern "####-########-####-####-####-############"
 // Example: "0717-197e06f4-b500-426c-bc0f-900b215f996c"
 //
 // Configuration Rules:
@@ -238,9 +238,9 @@ type InstanceTypeRequirements struct {
 // +kubebuilder:validation:XValidation:rule="has(self.instanceProfile) || has(self.instanceRequirements)", message="either instanceProfile or instanceRequirements must be specified"
 // +kubebuilder:validation:XValidation:rule="!(has(self.instanceProfile) && has(self.instanceRequirements))", message="instanceProfile and instanceRequirements are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="self.bootstrapMode != 'iks-api' || has(self.iksClusterID)", message="iksClusterID is required when bootstrapMode is 'iks-api'"
-// +kubebuilder:validation:XValidation:rule="self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1]) || self.zone == ''", message="zone must be within the specified region"
+// +kubebuilder:validation:XValidation:rule="self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1]) || self.zone == ”", message="zone must be within the specified region"
 // +kubebuilder:validation:XValidation:rule="self.vpc.matches('^r[0-9]{3}-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')", message="vpc must be a valid IBM Cloud VPC ID format"
-// +kubebuilder:validation:XValidation:rule="self.subnet == '' || self.subnet.matches('^[0-9a-z]{4}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$')", message="subnet must be a valid IBM Cloud subnet ID format"
+// +kubebuilder:validation:XValidation:rule="self.subnet == ” || self.subnet.matches('^[0-9a-z]{4}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$')", message="subnet must be a valid IBM Cloud subnet ID format"
 // +kubebuilder:validation:XValidation:rule="self.image.matches('^[a-z0-9-]+$')", message="image must contain only lowercase letters, numbers, and hyphens"
 type IBMNodeClassSpec struct {
 	// Region is the IBM Cloud region where nodes will be created.

@@ -46,15 +46,15 @@ report_status() {
     local status="$1"
     local phase="$2"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    
+
     echo "$(date): 📊 Reporting status: $status, phase: $phase"
-    
+
     # Use instance ID passed from template
     if [[ -n "$INSTANCE_ID" && "$INSTANCE_ID" != "unknown" ]]; then
         echo "$(date): Instance ID: $INSTANCE_ID"
-        echo "$(date): NodeClaim: $NODE_NAME" 
+        echo "$(date): NodeClaim: $NODE_NAME"
         echo "$(date): Status: $status, Phase: $phase, Time: $timestamp" >> /var/log/karpenter-status.log
-        
+
         # Create structured status for operator polling
         cat > /var/log/karpenter-bootstrap-status.json << EOF
 {
@@ -70,10 +70,10 @@ EOF
     else
         echo "$(date): ⚠️ Instance ID not available for status reporting"
     fi
-    
+
     # Always log status locally for debugging
     echo "$timestamp|$INSTANCE_ID|$NODE_NAME|$status|$phase" >> /var/log/karpenter-bootstrap-status.log
-    
+
     # Enhanced error capture with detailed diagnostics
     if [[ "$status" == "failed" ]]; then
         echo "$(date): 🔍 BOOTSTRAP FAILURE DIAGNOSTICS" >> /var/log/karpenter-bootstrap-failure.log
@@ -82,15 +82,15 @@ EOF
         echo "$(date): NodeClaim: $NODE_NAME" >> /var/log/karpenter-bootstrap-failure.log
         echo "$(date): Error details below:" >> /var/log/karpenter-bootstrap-failure.log
         echo "----------------------------------------" >> /var/log/karpenter-bootstrap-failure.log
-        
+
         # Capture recent system logs for debugging
         echo "Recent system logs:" >> /var/log/karpenter-bootstrap-failure.log
         journalctl --no-pager -n 20 >> /var/log/karpenter-bootstrap-failure.log 2>/dev/null || echo "Could not capture journalctl logs" >> /var/log/karpenter-bootstrap-failure.log
-        
+
         echo "----------------------------------------" >> /var/log/karpenter-bootstrap-failure.log
         echo "Network interface status:" >> /var/log/karpenter-bootstrap-failure.log
         ip addr show >> /var/log/karpenter-bootstrap-failure.log 2>/dev/null || echo "Could not capture network interfaces" >> /var/log/karpenter-bootstrap-failure.log
-        
+
         echo "----------------------------------------" >> /var/log/karpenter-bootstrap-failure.log
         echo "DNS resolution test:" >> /var/log/karpenter-bootstrap-failure.log
         nslookup kubernetes.default.svc.cluster.local >> /var/log/karpenter-bootstrap-failure.log 2>&1 || echo "DNS resolution failed" >> /var/log/karpenter-bootstrap-failure.log
@@ -199,7 +199,7 @@ install_containerd() {
     # Configure containerd
     echo "$(date): Configuring containerd..."
     mkdir -p /etc/containerd
-    
+
     # Create containerd config with proper systemd cgroup configuration
     cat > /etc/containerd/config.toml << 'EOF'
 disabled_plugins = []
@@ -285,7 +285,7 @@ version = 2
           [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
             SystemdCgroup = true
 EOF
-    
+
     systemctl restart containerd
     systemctl enable containerd
     echo "$(date): ✅ Containerd configured and started"
@@ -293,17 +293,17 @@ EOF
 
 install_crio() {
     echo "$(date): Installing CRI-O..."
-    
+
     # Add CRI-O repository
     curl -fsSL https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_20.04/Release.key | apt-key add -
     curl -fsSL https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/1.24/xUbuntu_20.04/Release.key | apt-key add -
-    
+
     echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_20.04/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
     echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/1.24/xUbuntu_20.04/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:1.24.list
-    
+
     apt-get update
     apt-get install -y cri-o cri-o-runc
-    
+
     # Start CRI-O
     systemctl enable crio
     systemctl start crio
@@ -498,12 +498,12 @@ echo "$(date): ✅ CNI binaries installed"
 case "$CNI_PLUGIN" in
   "calico")
     echo "$(date): Installing Calico CNI configuration..."
-    
+
     # Create nodename file - this is critical for Calico CNI to work
     # This prevents the race condition where CNI is invoked before the DaemonSet creates this file
     echo "$HOSTNAME" > /var/lib/calico/nodename
     echo "$(date): ✅ Created Calico nodename file: $HOSTNAME"
-    
+
     cat > /etc/cni/net.d/10-calico.conflist << 'EOF'
 {
   "name": "k8s-pod-network",
@@ -626,13 +626,13 @@ check_cni_ready() {
         # Check 1: CNI binaries exist and are executable
         [ -x /opt/cni/bin/calico ] || return 1
         [ -x /opt/cni/bin/calico-ipam ] || return 1
-        
+
         # Check 2: CNI configuration exists and is valid JSON
         [ -f /etc/cni/net.d/10-calico.conflist ] || return 1
-        
+
         # Check 3: Calico nodename file exists (created during bootstrap)
         [ -f /var/lib/calico/nodename ] || return 1
-        
+
         # Check 4: CNI can be invoked successfully
         if [ -x /opt/cni/bin/calico ] && [ -f /etc/cni/net.d/10-calico.conflist ]; then
             # Try a simple CNI version check
@@ -642,10 +642,10 @@ check_cni_ready() {
       "cilium")
         # Check 1: CNI binaries exist and are executable
         [ -x /opt/cni/bin/cilium-cni ] || return 1
-        
+
         # Check 2: CNI configuration exists
         [ -f /etc/cni/net.d/05-cilium.conflist ] || return 1
-        
+
         # Check 3: Cilium agent is running (if crictl available)
         if command -v crictl >/dev/null 2>&1; then
             crictl ps 2>/dev/null | grep -q cilium || return 1
@@ -654,10 +654,10 @@ check_cni_ready() {
       "flannel")
         # Check 1: CNI binaries exist and are executable
         [ -x /opt/cni/bin/flannel ] || return 1
-        
+
         # Check 2: CNI configuration exists
         [ -f /etc/cni/net.d/10-flannel.conflist ] || return 1
-        
+
         # Check 3: Flannel is running (if crictl available)
         if command -v crictl >/dev/null 2>&1; then
             crictl ps 2>/dev/null | grep -q flannel || return 1
@@ -672,7 +672,7 @@ check_cni_ready() {
         [ -x /opt/cni/bin/loopback ] || return 1
         ;;
     esac
-    
+
     return 0
 }
 
@@ -681,9 +681,9 @@ while [ $elapsed -lt $CNI_WAIT_TIMEOUT ]; do
     echo "$(date): ✅ $CNI_PLUGIN CNI is fully operational"
     break
   fi
-  
+
   echo "$(date): Waiting for $CNI_PLUGIN CNI readiness... (elapsed: ${elapsed}s)"
-  
+
   # Detailed status for debugging every 30 seconds
   if [ $((elapsed % 30)) -eq 0 ] && [ $elapsed -gt 0 ]; then
     echo "$(date): CNI Status Check:"
@@ -716,7 +716,7 @@ while [ $elapsed -lt $CNI_WAIT_TIMEOUT ]; do
         ;;
     esac
   fi
-  
+
   sleep $CNI_WAIT_INTERVAL
   elapsed=$((elapsed + CNI_WAIT_INTERVAL))
 done
@@ -725,15 +725,15 @@ done
 if [ $elapsed -ge $CNI_WAIT_TIMEOUT ]; then
   echo "$(date): ⚠️ $CNI_PLUGIN CNI failed to become ready after ${CNI_WAIT_TIMEOUT}s"
   echo "$(date): Comprehensive diagnostic information:"
-  
+
   # CNI binaries
   echo "  CNI binaries in /opt/cni/bin/:"
   ls -la /opt/cni/bin/ 2>/dev/null || echo "    Directory does not exist"
-  
+
   # CNI configs
   echo "  CNI configs in /etc/cni/net.d/:"
   ls -la /etc/cni/net.d/ 2>/dev/null || echo "    Directory does not exist"
-  
+
   # Plugin-specific diagnostics
   case "$CNI_PLUGIN" in
     "calico")
@@ -763,23 +763,23 @@ if [ $elapsed -ge $CNI_WAIT_TIMEOUT ]; then
       ls -la /var/run/flannel/ 2>/dev/null || echo "    Directory does not exist"
       ;;
   esac
-  
+
   # Container runtime status
   if command -v crictl >/dev/null 2>&1; then
     echo "  Running containers:"
     crictl ps 2>/dev/null | head -10 | sed 's/^/    /' || echo "    Could not list containers"
   fi
-  
+
   # Kubelet logs for CNI errors
   echo "  Recent kubelet CNI logs:"
   journalctl -u kubelet --no-pager -n 10 2>/dev/null | grep -i cni | tail -5 | sed 's/^/    /' || echo "    No CNI-related logs found"
-  
+
   # Try to get CNI pod status
   if command -v kubectl >/dev/null 2>&1; then
     echo "  $CNI_PLUGIN pod status:"
     kubectl --kubeconfig=/var/lib/kubelet/kubeconfig get pods -n kube-system -l k8s-app=$CNI_PLUGIN --field-selector spec.nodeName=$(hostname) -o wide 2>/dev/null | sed 's/^/    /' || echo "    Could not get pod status"
   fi
-  
+
   # Continue anyway - let Kubernetes handle the CNI readiness
   echo "$(date): Continuing bootstrap despite CNI issues..."
 else

@@ -18,22 +18,22 @@ The Karpenter IBM Cloud Provider enables automatic node provisioning and scaling
 
 <div class="grid cards" markdown>
 
-- :rocket: **[Getting Started](getting-started.md)**  
+- :rocket: **[Getting Started](getting-started.md)**
   Get up and running with Karpenter on IBM Cloud in minutes
 
-- :cloud: **[VPC Integration](vpc-integration.md)**  
+- :cloud: **[VPC Integration](vpc-integration.md)**
   Deploy on self-managed Kubernetes clusters with full control
 
-- :office: **[IKS Integration](iks-integration.md)**  
+- :office: **[IKS Integration](iks-integration.md)**
   Seamless integration with IBM Kubernetes Service
 
-- :gear: **[Configuration](bootstrap-methods.md)**  
+- :gear: **[Configuration](bootstrap-methods.md)**
   Learn about bootstrap methods and configuration options
 
-- :building_construction: **[Nightly Builds](nightly-builds.md)**  
+- :building_construction: **[Nightly Builds](nightly-builds.md)**
   Access bleeding-edge features and development versions
 
-- :speaking_head: **[Presentations](presentations.md)**  
+- :speaking_head: **[Presentations](presentations.md)**
   Conference talks and demos about the project
 
 </div>
@@ -67,13 +67,13 @@ graph TB
         INC[IBMNodeClass]
         P[Pending Pods]
     end
-    
+
     subgraph "IBM Cloud"
         VPC[VPC Infrastructure]
         IKS[IKS Service]
         VSI[Virtual Server Instances]
     end
-    
+
     P -->|Triggers| K
     K -->|Creates| NC
     K -->|Reads| NP

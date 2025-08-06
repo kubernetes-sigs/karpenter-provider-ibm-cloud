@@ -43,7 +43,7 @@ func TestNewOptions(t *testing.T) {
 	assert.Empty(t, opts.Region)
 	assert.Empty(t, opts.Zone)
 	assert.Empty(t, opts.ResourceGroupID)
-	
+
 	// Check circuit breaker defaults
 	assert.True(t, opts.CircuitBreakerEnabled)
 	assert.Equal(t, 3, opts.CircuitBreakerFailureThreshold)
@@ -400,7 +400,7 @@ func TestCircuitBreakerConfigParsing(t *testing.T) {
 		validate func(t *testing.T, opts *Options)
 	}{
 		{
-			name: "default circuit breaker values",
+			name:    "default circuit breaker values",
 			envVars: map[string]string{},
 			validate: func(t *testing.T, opts *Options) {
 				assert.True(t, opts.CircuitBreakerEnabled)
@@ -447,7 +447,7 @@ func TestCircuitBreakerConfigParsing(t *testing.T) {
 		{
 			name: "invalid integer values use defaults",
 			envVars: map[string]string{
-				"CIRCUIT_BREAKER_FAILURE_THRESHOLD":      "not-a-number",
+				"CIRCUIT_BREAKER_FAILURE_THRESHOLD":     "not-a-number",
 				"CIRCUIT_BREAKER_RATE_LIMIT_PER_MINUTE": "-5",
 			},
 			validate: func(t *testing.T, opts *Options) {
@@ -558,12 +558,12 @@ func TestCircuitBreakerValidation(t *testing.T) {
 		{
 			name: "disabled circuit breaker skips validation",
 			opts: &Options{
-				APIKey:                          "test-key",
-				Region:                          "us-south", 
-				Zone:                            "us-south-1",
-				ResourceGroupID:                 "test-rg",
-				CircuitBreakerEnabled:           false,
-				CircuitBreakerFailureThreshold:  0, // Invalid, but should be ignored
+				APIKey:                         "test-key",
+				Region:                         "us-south",
+				Zone:                           "us-south-1",
+				ResourceGroupID:                "test-rg",
+				CircuitBreakerEnabled:          false,
+				CircuitBreakerFailureThreshold: 0, // Invalid, but should be ignored
 			},
 			wantErr: false,
 		},
@@ -572,7 +572,7 @@ func TestCircuitBreakerValidation(t *testing.T) {
 			opts: &Options{
 				APIKey:                               "test-key",
 				Region:                               "us-south",
-				Zone:                                 "us-south-1", 
+				Zone:                                 "us-south-1",
 				ResourceGroupID:                      "test-rg",
 				CircuitBreakerEnabled:                true,
 				CircuitBreakerFailureThreshold:       0,
@@ -591,7 +591,7 @@ func TestCircuitBreakerValidation(t *testing.T) {
 				APIKey:                               "test-key",
 				Region:                               "us-south",
 				Zone:                                 "us-south-1",
-				ResourceGroupID:                      "test-rg", 
+				ResourceGroupID:                      "test-rg",
 				CircuitBreakerEnabled:                true,
 				CircuitBreakerFailureThreshold:       3,
 				CircuitBreakerFailureWindow:          5 * time.Minute,

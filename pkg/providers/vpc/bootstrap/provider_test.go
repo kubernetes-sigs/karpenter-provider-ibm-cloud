@@ -970,12 +970,12 @@ func TestVPCBootstrapProvider_detectArchitectureFromInstanceProfile(t *testing.T
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Empty(t, result)
-				
+
 				// Verify we get the expected error message, not a nil pointer panic
 				if tt.errorContains != "" {
 					assert.Contains(t, err.Error(), tt.errorContains)
 				}
-				
+
 				// Most importantly: verify we don't get the old nil pointer error
 				assert.NotContains(t, err.Error(), "listInstanceProfilesOptions cannot be nil")
 			} else {
@@ -1050,7 +1050,7 @@ func TestVPCBootstrapProvider_ReportBootstrapStatus(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
-				
+
 				// For successful tests, verify ConfigMap was created
 				if tt.instanceID != "" {
 					configMapName := "bootstrap-status-" + tt.instanceID
@@ -1102,10 +1102,10 @@ func TestVPCBootstrapProvider_GetBootstrapStatus(t *testing.T) {
 			errorContains: "getting bootstrap status ConfigMap",
 		},
 		{
-			name:       "empty instance ID - should error",
-			instanceID: "",
-			setupMocks: func(ibmClient *MockIBMClient, vpcClient *MockVPCClient) {},
-			expectError: true,
+			name:          "empty instance ID - should error",
+			instanceID:    "",
+			setupMocks:    func(ibmClient *MockIBMClient, vpcClient *MockVPCClient) {},
+			expectError:   true,
 			errorContains: "instance ID is required for status retrieval",
 		},
 	}
@@ -1175,32 +1175,32 @@ func TestCloudInitStatusReporting(t *testing.T) {
 	// Test that the cloud-init template contains status reporting calls
 	t.Run("cloud-init template includes status reporting", func(t *testing.T) {
 		ctx := context.Background()
-		
+
 		// Create test options
 		options := commonTypes.Options{
 			ClusterEndpoint: "https://test-cluster:6443",
 			BootstrapToken:  "test-token",
-			NodeName:       "test-node",
-			InstanceID:     "test-instance-123",
-			Region:         "us-south",
-			Zone:           "us-south-1",
+			NodeName:        "test-node",
+			InstanceID:      "test-instance-123",
+			Region:          "us-south",
+			Zone:            "us-south-1",
 		}
-		
+
 		// Create VPC bootstrap provider
 		provider := NewVPCBootstrapProvider(nil, nil, nil)
-		
+
 		// Generate cloud-init script
 		script, err := provider.generateCloudInitScript(ctx, options)
-		
+
 		// Validate results
 		assert.NoError(t, err)
 		assert.NotEmpty(t, script)
-		
+
 		// Verify status reporting function is included
 		assert.Contains(t, script, "report_status() {")
 		assert.Contains(t, script, "karpenter-bootstrap-status.json")
 		assert.Contains(t, script, "karpenter-bootstrap-status.log")
-		
+
 		// Verify status reporting calls are included at key points
 		assert.Contains(t, script, `report_status "starting" "hostname-setup"`)
 		assert.Contains(t, script, `report_status "configuring" "system-setup"`)
@@ -1210,11 +1210,11 @@ func TestCloudInitStatusReporting(t *testing.T) {
 		assert.Contains(t, script, `report_status "starting" "kubelet-startup"`)
 		assert.Contains(t, script, `report_status "running" "kubelet-active"`)
 		assert.Contains(t, script, `report_status "completed" "bootstrap-finished"`)
-		
+
 		// Verify instance ID is retrieved from metadata service and node name is templated
 		assert.Contains(t, script, "INSTANCE_ID=$(curl -s -f --max-time 10 -H \"Authorization: Bearer $INSTANCE_IDENTITY_TOKEN\" \"http://api.metadata.cloud.ibm.com/metadata/v1/instance?version=2022-03-29\" | grep -o \"\\\"id\\\":\\\"02c7_[^\\\"]*\" | head -1 | cut -d\"\\\"\" -f4)")
 		assert.Contains(t, script, "NODE_NAME=\"test-node\"")
-		
+
 		// Verify structured JSON status creation
 		assert.Contains(t, script, `"instanceId": "$INSTANCE_ID"`)
 		assert.Contains(t, script, `"nodeClaimName": "$NODE_NAME"`)
@@ -1225,11 +1225,11 @@ func TestCloudInitStatusReporting(t *testing.T) {
 
 func TestVPCBootstrapProvider_GetClusterDNS(t *testing.T) {
 	tests := []struct {
-		name         string
-		services     []corev1.Service
-		configMaps   []corev1.ConfigMap
-		expectedDNS  string
-		expectError  bool
+		name        string
+		services    []corev1.Service
+		configMaps  []corev1.ConfigMap
+		expectedDNS string
+		expectError bool
 	}{
 		{
 			name: "kube-dns service found",

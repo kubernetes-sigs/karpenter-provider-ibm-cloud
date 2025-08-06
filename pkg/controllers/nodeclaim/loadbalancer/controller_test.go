@@ -49,9 +49,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 		controller               *Controller
 		client                   client.Client
 		mockLoadBalancerProvider *MockLoadBalancerProvider
-		nodeClaim               *karpv1.NodeClaim
-		nodeClass               *v1alpha1.IBMNodeClass
-		node                    *corev1.Node
+		nodeClaim                *karpv1.NodeClaim
+		nodeClass                *v1alpha1.IBMNodeClass
+		node                     *corev1.Node
 	)
 
 	BeforeEach(func() {
@@ -59,7 +59,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
-		
+
 		// Add Karpenter v1 types manually
 		gv := schema.GroupVersion{Group: "karpenter.sh", Version: "v1"}
 		scheme.AddKnownTypes(gv,

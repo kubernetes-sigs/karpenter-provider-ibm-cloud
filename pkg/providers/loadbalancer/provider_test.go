@@ -125,7 +125,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 			setupMocks: func(m *MockVPCClient) {
 				poolID := "pool-123"
 				memberID := "member-123"
-				
+
 				// Mock ListLoadBalancerPools
 				pools := &vpcv1.LoadBalancerPoolCollection{
 					Pools: []vpcv1.LoadBalancerPool{
@@ -136,7 +136,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 					},
 				}
 				m.On("ListLoadBalancerPools", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678").Return(pools, nil)
-				
+
 				// Mock CreateLoadBalancerPoolMember
 				member := &vpcv1.LoadBalancerPoolMember{
 					ID: &memberID,
@@ -226,7 +226,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 				poolID2 := "pool-456"
 				memberID1 := "member-123"
 				memberID2 := "member-456"
-				
+
 				// Mock first load balancer
 				pools1 := &vpcv1.LoadBalancerPoolCollection{
 					Pools: []vpcv1.LoadBalancerPool{
@@ -237,12 +237,12 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 					},
 				}
 				m.On("ListLoadBalancerPools", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678").Return(pools1, nil)
-				
+
 				member1 := &vpcv1.LoadBalancerPoolMember{
 					ID: &memberID1,
 				}
 				m.On("CreateLoadBalancerPoolMember", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678", poolID1, mock.Anything, int64(80), int64(50)).Return(member1, nil)
-				
+
 				// Mock second load balancer
 				pools2 := &vpcv1.LoadBalancerPoolCollection{
 					Pools: []vpcv1.LoadBalancerPool{
@@ -253,7 +253,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 					},
 				}
 				m.On("ListLoadBalancerPools", mock.Anything, "r010-87654321-4321-8765-cba9-fed210987654").Return(pools2, nil)
-				
+
 				member2 := &vpcv1.LoadBalancerPoolMember{
 					ID: &memberID2,
 				}
@@ -314,7 +314,7 @@ func TestLoadBalancerProvider_DeregisterInstance(t *testing.T) {
 			setupMocks: func(m *MockVPCClient) {
 				poolID := "pool-123"
 				memberID := "member-123"
-				
+
 				// Mock ListLoadBalancerPools
 				pools := &vpcv1.LoadBalancerPoolCollection{
 					Pools: []vpcv1.LoadBalancerPool{
@@ -325,7 +325,7 @@ func TestLoadBalancerProvider_DeregisterInstance(t *testing.T) {
 					},
 				}
 				m.On("ListLoadBalancerPools", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678").Return(pools, nil)
-				
+
 				// Mock ListLoadBalancerPoolMembers
 				members := &vpcv1.LoadBalancerPoolMemberCollection{
 					Members: []vpcv1.LoadBalancerPoolMember{
@@ -338,7 +338,7 @@ func TestLoadBalancerProvider_DeregisterInstance(t *testing.T) {
 					},
 				}
 				m.On("ListLoadBalancerPoolMembers", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678", poolID).Return(members, nil)
-				
+
 				// Mock DeleteLoadBalancerPoolMember
 				m.On("DeleteLoadBalancerPoolMember", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678", poolID, memberID).Return(nil)
 			},
@@ -418,7 +418,7 @@ func TestLoadBalancerProvider_ValidateLoadBalancerConfiguration(t *testing.T) {
 					Name: ptr("test-lb"),
 				}
 				m.On("GetLoadBalancer", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678").Return(lb, nil)
-				
+
 				// Mock ListLoadBalancerPools
 				poolID := "pool-123"
 				pools := &vpcv1.LoadBalancerPoolCollection{

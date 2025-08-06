@@ -52,12 +52,12 @@ type Options struct {
 	ResourceGroupID string
 
 	// CircuitBreaker configuration
-	CircuitBreakerEnabled            bool
-	CircuitBreakerFailureThreshold   int
-	CircuitBreakerFailureWindow      time.Duration
-	CircuitBreakerRecoveryTimeout    time.Duration
-	CircuitBreakerHalfOpenMaxRequests int
-	CircuitBreakerRateLimitPerMinute int
+	CircuitBreakerEnabled                bool
+	CircuitBreakerFailureThreshold       int
+	CircuitBreakerFailureWindow          time.Duration
+	CircuitBreakerRecoveryTimeout        time.Duration
+	CircuitBreakerHalfOpenMaxRequests    int
+	CircuitBreakerRateLimitPerMinute     int
 	CircuitBreakerMaxConcurrentInstances int
 }
 
@@ -120,7 +120,7 @@ func NewOptions() Options {
 
 	// Parse circuit breaker configuration from environment variables
 	options.parseCircuitBreakerConfig()
-	
+
 	return options
 }
 
@@ -199,7 +199,7 @@ func (o *Options) GetCircuitBreakerConfig() *CircuitBreakerConfig {
 	if !o.CircuitBreakerEnabled {
 		return nil
 	}
-	
+
 	return &CircuitBreakerConfig{
 		FailureThreshold:       o.CircuitBreakerFailureThreshold,
 		FailureWindow:          o.CircuitBreakerFailureWindow,
@@ -263,7 +263,7 @@ func (o *Options) Validate() error {
 		if o.CircuitBreakerMaxConcurrentInstances < 1 {
 			return fmt.Errorf("circuit breaker max concurrent instances must be at least 1, got %d", o.CircuitBreakerMaxConcurrentInstances)
 		}
-		
+
 		// Warn if values seem unreasonably high
 		logger := log.Log.WithName("options-validation")
 		if o.CircuitBreakerRateLimitPerMinute > 100 {
@@ -277,7 +277,7 @@ func (o *Options) Validate() error {
 				"recommendation", "Consider using a lower value")
 		}
 	}
-	
+
 	return nil
 }
 
@@ -288,17 +288,17 @@ func validateRegionZonePair(region, zone string) error {
 	if !strings.HasPrefix(zone, expectedPrefix) {
 		return fmt.Errorf("zone %s does not match region %s: expected format %sN", zone, region, expectedPrefix)
 	}
-	
+
 	// Extract and validate the zone number
 	zoneSuffix := strings.TrimPrefix(zone, expectedPrefix)
 	if len(zoneSuffix) != 1 {
 		return fmt.Errorf("invalid zone format %s: expected single digit after %s", zone, expectedPrefix)
 	}
-	
+
 	// Check if it's a digit
 	if zoneSuffix[0] < '1' || zoneSuffix[0] > '9' {
 		return fmt.Errorf("invalid zone number in %s: must be between 1-9", zone)
 	}
-	
+
 	return nil
 }

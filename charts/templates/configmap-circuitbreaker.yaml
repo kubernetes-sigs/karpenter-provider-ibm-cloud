@@ -10,7 +10,7 @@ metadata:
 data:
   # Circuit breaker configuration
   {{- $config := .Values.circuitBreaker.config }}
-  
+
   {{- if ne .Values.circuitBreaker.preset "custom" }}
   # Using preset: {{ .Values.circuitBreaker.preset }}
   {{- $preset := index .Values.circuitBreaker.presets .Values.circuitBreaker.preset }}
@@ -18,20 +18,20 @@ data:
   {{- $config = $preset }}
   {{- end }}
   {{- end }}
-  
+
   # Failure handling configuration
   failure-threshold: {{ $config.failureThreshold | quote }}
   failure-window: {{ $config.failureWindow | quote }}
   recovery-timeout: {{ $config.recoveryTimeout | quote }}
   half-open-max-requests: {{ $config.halfOpenMaxRequests | quote }}
-  
+
   # Rate limiting configuration
   rate-limit-per-minute: {{ $config.rateLimitPerMinute | quote }}
   max-concurrent-instances: {{ $config.maxConcurrentInstances | quote }}
-  
+
   # Circuit breaker enabled state
   enabled: {{ .Values.circuitBreaker.enabled | quote }}
-  
+
   # Current preset (for reference)
   preset: {{ .Values.circuitBreaker.preset | quote }}
 {{- end }}

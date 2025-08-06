@@ -35,10 +35,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"k8s.io/client-go/tools/clientcmd"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
@@ -57,12 +57,12 @@ const (
 func init() {
 	// Initialize logger for controller-runtime to avoid warnings
 	zapConfig := zap.NewDevelopmentConfig()
-	
+
 	// Reduce noise in e2e tests unless verbose mode is enabled
 	if os.Getenv("E2E_VERBOSE") != "true" {
 		zapConfig.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	}
-	
+
 	zapLogger, _ := zapConfig.Build()
 	log.SetLogger(zapr.NewLogger(zapLogger))
 }
@@ -119,7 +119,7 @@ func SetupE2ETestSuite(t *testing.T) *E2ETestSuite {
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1alpha1.AddToScheme(scheme))
 	require.NoError(t, corev1.AddToScheme(scheme))
-	
+
 	// Add Karpenter v1 types manually with proper group version registration
 	karpenterGV := schema.GroupVersion{Group: "karpenter.sh", Version: "v1"}
 	metav1.AddToGroupVersion(scheme, karpenterGV)
@@ -230,9 +230,9 @@ func (s *E2ETestSuite) createTestNodeClass(t *testing.T, testName string) *v1alp
 			Subnet:            s.testSubnet,
 			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
 			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"), // Internal cluster endpoint
-			BootstrapMode:     &[]string{"cloud-init"}[0],  // Explicit bootstrap mode
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"), // Resource group from env
-			SSHKeys:           []string{os.Getenv("IBM_SSH_KEY_ID")}, // SSH key for troubleshooting
+			BootstrapMode:     &[]string{"cloud-init"}[0],                  // Explicit bootstrap mode
+			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),          // Resource group from env
+			SSHKeys:           []string{os.Getenv("IBM_SSH_KEY_ID")},       // SSH key for troubleshooting
 			Tags: map[string]string{
 				"test":       "e2e",
 				"test-name":  testName,
@@ -373,7 +373,7 @@ func (s *E2ETestSuite) verifyInstanceInIBMCloud(t *testing.T, nodeClaimName stri
 	require.NotEmpty(t, nodeClaim.Status.ProviderID)
 
 	t.Logf("Verifying instance with ProviderID: %s", nodeClaim.Status.ProviderID)
-	
+
 	// Add a small delay to ensure instance is fully available in IBM Cloud API
 	time.Sleep(5 * time.Second)
 
@@ -511,11 +511,11 @@ func TestE2ENodeClassValidation(t *testing.T) {
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:          "us-south",
-			Zone:            "us-south-1", 
+			Zone:            "us-south-1",
 			InstanceProfile: "bx2-2x8",
-			Image:           "r010-00000000-0000-0000-0000-000000000000", // Valid format but non-existent image
-			VPC:             "r010-00000000-0000-0000-0000-000000000000", // Valid format but non-existent VPC
-			Subnet:          "02b7-00000000-0000-0000-0000-000000000000", // Valid format but non-existent subnet
+			Image:           "r010-00000000-0000-0000-0000-000000000000",           // Valid format but non-existent image
+			VPC:             "r010-00000000-0000-0000-0000-000000000000",           // Valid format but non-existent VPC
+			Subnet:          "02b7-00000000-0000-0000-0000-000000000000",           // Valid format but non-existent subnet
 			SecurityGroups:  []string{"r010-00000000-0000-0000-0000-000000000000"}, // Valid format but non-existent security group
 		},
 	}
@@ -536,16 +536,16 @@ func TestE2ENodeClassValidation(t *testing.T) {
 		// Check if validation has been processed (either Ready=True or Ready=False)
 		for _, condition := range updatedNodeClass.Status.Conditions {
 			if condition.Type == "Ready" {
-				t.Logf("NodeClass validation processed: Ready=%s, Reason=%s, Message=%s", 
+				t.Logf("NodeClass validation processed: Ready=%s, Reason=%s, Message=%s",
 					condition.Status, condition.Reason, condition.Message)
 				return true, nil
 			}
 		}
-		
+
 		t.Logf("Waiting for status controller to process NodeClass validation...")
 		return false, nil
 	})
-	
+
 	require.NoError(t, err, "Status controller should process NodeClass validation within timeout")
 
 	// Should have conditions indicating validation failure
@@ -557,7 +557,7 @@ func TestE2ENodeClassValidation(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "Invalid NodeClass should have Ready=False condition")
-	
+
 	// Clean up test resources after validation is complete
 	suite.cleanupTestResources(t, testName)
 }
@@ -609,23 +609,23 @@ func TestE2EInstanceTypeSelection(t *testing.T) {
 			t.Logf("Autoplacement controller set InstanceProfile: %s", updatedNodeClass.Spec.InstanceProfile)
 			return true, nil
 		}
-		
+
 		if len(updatedNodeClass.Status.SelectedInstanceTypes) > 0 {
 			t.Logf("Autoplacement controller populated SelectedInstanceTypes: %v", updatedNodeClass.Status.SelectedInstanceTypes)
 			return true, nil
 		}
-		
+
 		// Check conditions for autoplacement status
 		for _, condition := range updatedNodeClass.Status.Conditions {
 			if condition.Type == "AutoPlacement" {
-				t.Logf("AutoPlacement condition: Status=%s, Reason=%s, Message=%s", 
+				t.Logf("AutoPlacement condition: Status=%s, Reason=%s, Message=%s",
 					condition.Status, condition.Reason, condition.Message)
 				if condition.Status == metav1.ConditionFalse {
 					return false, fmt.Errorf("autoplacement failed: %s", condition.Message)
 				}
 			}
 		}
-		
+
 		t.Logf("Waiting for autoplacement controller to process instance requirements...")
 		return false, nil
 	})
@@ -633,7 +633,7 @@ func TestE2EInstanceTypeSelection(t *testing.T) {
 	// If autoplacement didn't work, debug by listing available instance types
 	if err != nil || (updatedNodeClass.Spec.InstanceProfile == "" && len(updatedNodeClass.Status.SelectedInstanceTypes) == 0) {
 		t.Logf("Autoplacement failed or didn't complete, debugging...")
-		
+
 		// List available instance types to debug
 		debugCtx := context.Background()
 		instanceTypes, listErr := suite.instanceTypeProvider.List(debugCtx)
@@ -647,7 +647,7 @@ func TestE2EInstanceTypeSelection(t *testing.T) {
 				}
 			}
 		}
-		
+
 		// Also check if we can filter instance types
 		if nodeClass.Spec.InstanceRequirements != nil {
 			filteredTypes, filterErr := suite.instanceTypeProvider.FilterInstanceTypes(debugCtx, nodeClass.Spec.InstanceRequirements)
@@ -662,7 +662,7 @@ func TestE2EInstanceTypeSelection(t *testing.T) {
 	require.NoError(t, err, "Autoplacement controller should process NodeClass within timeout")
 	assert.NotEmpty(t, updatedNodeClass.Status.SelectedInstanceTypes, "Instance types should be auto-selected")
 	t.Logf("Auto-selected instance types: %v", updatedNodeClass.Status.SelectedInstanceTypes)
-	
+
 	// Clean up test resources after validation is complete
 	suite.cleanupTestResources(t, testName)
 }
@@ -736,7 +736,7 @@ func (s *E2ETestSuite) dumpBootstrapLogs(t *testing.T, nodeClaimName string) {
 	floatingIP, err := s.createFloatingIPForInstance(t, instanceID, nodeClaimName)
 	if err != nil {
 		t.Logf("Failed to create floating IP for bootstrap log dump: %v", err)
-		
+
 		// Check if it's the network attachment issue
 		if strings.Contains(err.Error(), "network_attachment is used") {
 			t.Logf("Instance uses network attachment - SSH troubleshooting not available for this configuration")
@@ -773,11 +773,11 @@ func (s *E2ETestSuite) createFloatingIPForInstance(t *testing.T, instanceID, ins
 
 	// Use IBM Cloud CLI to create floating IP
 	fipName := fmt.Sprintf("e2e-debug-%s", instanceName)
-	cmd = exec.Command("ibmcloud", "is", "floating-ip-reserve", 
-		fipName, 
-		"--zone", s.testZone, 
+	cmd = exec.Command("ibmcloud", "is", "floating-ip-reserve",
+		fipName,
+		"--zone", s.testZone,
 		"--output", "json")
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to create floating IP: %v", err)
@@ -817,7 +817,7 @@ func (s *E2ETestSuite) createFloatingIPForInstance(t *testing.T, instanceID, ins
 	if nicStart == -1 {
 		return "", fmt.Errorf("failed to find primary network interface")
 	}
-	
+
 	idStart := strings.Index(instanceStr[nicStart:], `"id": "`) + len(`"id": "`)
 	if idStart < len(`"id": "`) {
 		return "", fmt.Errorf("failed to find interface ID")
@@ -832,7 +832,7 @@ func (s *E2ETestSuite) createFloatingIPForInstance(t *testing.T, instanceID, ins
 	// Associate floating IP with instance using the FIP ID
 	cmd = exec.Command("ibmcloud", "is", "instance-network-interface-floating-ip-add",
 		instanceID, nicID, fipID)
-	
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		// Check if it's the network attachment error we've seen
 		if strings.Contains(string(output), "network_attachment is used") {
@@ -848,7 +848,7 @@ func (s *E2ETestSuite) createFloatingIPForInstance(t *testing.T, instanceID, ins
 // cleanupFloatingIP removes the floating IP
 func (s *E2ETestSuite) cleanupFloatingIP(t *testing.T, floatingIP string) {
 	t.Logf("Cleaning up floating IP: %s", floatingIP)
-	
+
 	// Get floating IP details to find ID
 	cmd := exec.Command("ibmcloud", "is", "floating-ips", "--output", "json")
 	output, err := cmd.Output()
@@ -868,7 +868,7 @@ func (s *E2ETestSuite) cleanupFloatingIP(t *testing.T, floatingIP string) {
 	if ipIndex == -1 {
 		return
 	}
-	
+
 	// Look backwards for the ID field
 	beforeIP := outputStr[:ipIndex]
 	idStart := strings.LastIndex(beforeIP, `"id": "`) + len(`"id": "`)
@@ -895,10 +895,10 @@ func (s *E2ETestSuite) cleanupFloatingIP(t *testing.T, floatingIP string) {
 // attemptBootstrapLogDump tries to SSH and dump bootstrap logs with retries
 func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanceID string, maxRetries int) {
 	sshKey := "~/.ssh/eb"
-	
+
 	logFiles := []string{
 		"/var/log/cloud-init.log",
-		"/var/log/cloud-init-output.log", 
+		"/var/log/cloud-init-output.log",
 		"/var/log/karpenter-bootstrap.log",
 		"/var/log/apt/history.log",
 	}
@@ -922,10 +922,10 @@ func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanc
 		t.Logf("Bootstrap log dump attempt %d/%d for instance %s (IP: %s)", retry, maxRetries, instanceID, floatingIP)
 
 		// Test SSH connectivity first
-		testCmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no", 
+		testCmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no",
 			"-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
 			fmt.Sprintf("root@%s", floatingIP), "echo 'SSH_OK'")
-		
+
 		if output, err := testCmd.Output(); err != nil || !strings.Contains(string(output), "SSH_OK") {
 			t.Logf("SSH connectivity test failed (attempt %d): %v", retry, err)
 			if retry < maxRetries {
@@ -945,7 +945,7 @@ func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanc
 			cmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no",
 				"-o", "ConnectTimeout=10", fmt.Sprintf("root@%s", floatingIP),
 				fmt.Sprintf("tail -50 %s 2>/dev/null || echo 'File %s not found or empty'", logFile, logFile))
-			
+
 			if output, err := cmd.Output(); err != nil {
 				t.Logf("Failed to read %s: %v", logFile, err)
 			} else {
@@ -958,7 +958,7 @@ func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanc
 			t.Logf("=== Running: %s ===", cmdInfo.name)
 			cmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no",
 				"-o", "ConnectTimeout=10", fmt.Sprintf("root@%s", floatingIP), cmdInfo.cmd)
-			
+
 			if output, err := cmd.Output(); err != nil {
 				t.Logf("Command '%s' failed: %v", cmdInfo.name, err)
 			} else {

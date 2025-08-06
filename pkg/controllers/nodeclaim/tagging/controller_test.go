@@ -35,7 +35,6 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
-
 func TestController_Name(t *testing.T) {
 	controller := &Controller{}
 	assert.Equal(t, "nodeclaim.tagging", controller.Name())
@@ -451,7 +450,7 @@ func TestNewController(t *testing.T) {
 
 	// Test creating controller
 	controller, err := NewController(fakeClient)
-	
+
 	// In test environment without IBM credentials, this will fail
 	// but we're testing that the function exists and returns appropriate error
 	if err != nil {
@@ -567,7 +566,7 @@ func TestTagsExtraction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tags := make(map[string]string)
-			
+
 			// Extract tags using the same logic as the controller
 			for _, req := range tt.requirements {
 				if req.Key == "karpenter.ibm.sh/tags" {
@@ -579,7 +578,7 @@ func TestTagsExtraction(t *testing.T) {
 					}
 				}
 			}
-			
+
 			assert.Equal(t, tt.expectedTags, tags)
 		})
 	}

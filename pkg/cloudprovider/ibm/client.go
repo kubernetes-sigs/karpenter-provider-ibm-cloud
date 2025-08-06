@@ -102,7 +102,6 @@ func (c *Client) GetIAMClient() *IAMClient {
 	return c.iamClient
 }
 
-
 // GetRegion returns the configured region
 func (c *Client) GetRegion() string {
 	return c.region

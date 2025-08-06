@@ -55,23 +55,23 @@ jobs:
           # Get the latest tag
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Latest tag: $LATEST_TAG"
-          
+
           # Get commit info
           SHORT_SHA=$(git rev-parse --short HEAD)
           COMMIT_DATE=$(git show -s --format=%cs)
-          
+
           # Generate nightly version
           # Format: <latest-tag>-<date>-<short-sha>-<suffix>
           SUFFIX="${{ github.event.inputs.tag_suffix || 'nightly' }}"
           NIGHTLY_VERSION="${LATEST_TAG}-${COMMIT_DATE}-${SHORT_SHA}-${SUFFIX}"
-          
+
           echo "nightly_version=$NIGHTLY_VERSION" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "commit_date=$COMMIT_DATE" >> $GITHUB_OUTPUT
-          
+
           # Also create a simple 'nightly' tag that always points to latest
           echo "latest_tag=nightly" >> $GITHUB_OUTPUT
-          
+
           echo "Generated nightly version: $NIGHTLY_VERSION"
 
       - name: Build and push multi-arch images
@@ -95,7 +95,7 @@ jobs:
           # Verify the manifests
           echo "Verifying nightly version manifest..."
           docker buildx imagetools inspect $KO_DOCKER_REPO:${{ steps.version.outputs.nightly_version }}
-          
+
           echo "Verifying latest nightly manifest..."
           docker buildx imagetools inspect $KO_DOCKER_REPO:${{ steps.version.outputs.latest_tag }}
 
@@ -103,27 +103,27 @@ jobs:
         run: |
           cat >> $GITHUB_STEP_SUMMARY <<EOF
           # Nightly Build Summary
-          
+
           ## Version Information
           - **Nightly Version**: \`${{ steps.version.outputs.nightly_version }}\`
           - **Commit SHA**: \`${{ steps.version.outputs.short_sha }}\`
           - **Commit Date**: \`${{ steps.version.outputs.commit_date }}\`
-          
+
           ## Images Published
           - \`$KO_DOCKER_REPO:${{ steps.version.outputs.nightly_version }}\`
           - \`$KO_DOCKER_REPO:nightly\` (latest nightly)
-          
+
           ## Platforms
           - linux/amd64
           - linux/arm64
-          
+
           ## Usage
-          
+
           To use the latest nightly build:
           \`\`\`bash
           podman pull $KO_DOCKER_REPO:nightly
           \`\`\`
-          
+
           To use this specific nightly build:
           \`\`\`bash
           podman pull $KO_DOCKER_REPO:${{ steps.version.outputs.nightly_version }}
@@ -150,7 +150,7 @@ jobs:
           script: |
             const date = new Date().toISOString().split('T')[0];
             const title = `Nightly build failed - ${date}`;
-            
+
             // Check if issue already exists
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -158,9 +158,9 @@ jobs:
               labels: ['nightly-build-failure'],
               state: 'open'
             });
-            
+
             const existingIssue = issues.data.find(issue => issue.title === title);
-            
+
             if (!existingIssue) {
               await github.rest.issues.create({
                 owner: context.repo.owner,

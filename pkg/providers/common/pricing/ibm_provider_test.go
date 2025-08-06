@@ -331,7 +331,7 @@ func TestIBMPricingProviderCaching(t *testing.T) {
 
 	// Test cache expiration by setting old timestamp
 	provider.lastUpdate = time.Now().Add(-24 * time.Hour)
-	
+
 	// This should attempt refresh (which will fail with nil client)
 	// but should still return cached data since it exists
 	price3, err := provider.GetPrice(ctx, "bx2-2x8", "us-south-1")
@@ -343,7 +343,7 @@ func TestIBMPricingProviderCaching(t *testing.T) {
 
 func TestIBMPricingProviderConcurrency(t *testing.T) {
 	provider := NewIBMPricingProvider(nil)
-	
+
 	// Setup test data
 	provider.pricingMap = map[string]map[string]float64{
 		"bx2-2x8": {
@@ -353,7 +353,7 @@ func TestIBMPricingProviderConcurrency(t *testing.T) {
 	provider.lastUpdate = time.Now()
 
 	ctx := context.Background()
-	
+
 	// Test concurrent access
 	var wg sync.WaitGroup
 	results := make(chan float64, 10)
@@ -549,10 +549,10 @@ func TestIBMPricingProviderRegionalPricing(t *testing.T) {
 func TestIBMPricingProviderUseFakeData(t *testing.T) {
 	// Test using fake data for development/testing
 	provider := NewIBMPricingProvider(nil)
-	
+
 	// Simulate using fake pricing data
 	provider.pricingMap = make(map[string]map[string]float64)
-	
+
 	// Use fake data from the test data package
 	for region, prices := range fakedata.IBMInstancePricing {
 		for instanceType, price := range prices {
@@ -602,7 +602,7 @@ func TestFetchInstancePricing_NilEntryID(t *testing.T) {
 		Name: &entryName,
 		// ID is nil - this should cause an error
 	}
-	
+
 	// This should error because entry.ID is nil
 	result, err := provider.fetchInstancePricing(ctx, &ibm.GlobalCatalogClient{}, entry)
 
@@ -632,18 +632,18 @@ func TestRefresh_ImprovedCoverage(t *testing.T) {
 	provider := NewIBMPricingProvider(nil)
 
 	ctx := context.Background()
-	
+
 	// Test the main path which should fail at client check
 	err := provider.Refresh(ctx)
-	
+
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "IBM client not available for pricing API calls")
 }
 
 // MockVPCSDKClient for testing VPC API calls
 type MockVPCSDKClient struct {
-	regions []vpcv1.Region
-	zones   map[string][]vpcv1.Zone
+	regions          []vpcv1.Region
+	zones            map[string][]vpcv1.Zone
 	listRegionsError error
 	listZonesError   error
 }
@@ -652,12 +652,12 @@ func NewMockVPCSDKClient() *MockVPCSDKClient {
 	region1 := "us-south"
 	region2 := "eu-de"
 	status := "available"
-	
+
 	zone1 := "us-south-1"
 	zone2 := "us-south-2"
 	zone3 := "eu-de-1"
 	zone4 := "eu-de-2"
-	
+
 	return &MockVPCSDKClient{
 		regions: []vpcv1.Region{
 			{Name: &region1, Status: &status},
@@ -687,15 +687,15 @@ func (m *MockVPCSDKClient) ListRegionZonesWithContext(ctx context.Context, optio
 	if m.listZonesError != nil {
 		return nil, nil, m.listZonesError
 	}
-	
+
 	if options.RegionName == nil {
 		return nil, nil, fmt.Errorf("region name required")
 	}
-	
+
 	if zones, exists := m.zones[*options.RegionName]; exists {
 		return &vpcv1.ZoneCollection{Zones: zones}, &core.DetailedResponse{}, nil
 	}
-	
+
 	return &vpcv1.ZoneCollection{}, &core.DetailedResponse{}, nil
 }
 
@@ -763,7 +763,7 @@ type TestablePricingProvider struct {
 func NewTestablePricingProvider() *TestablePricingProvider {
 	testClient := NewTestableIBMClient()
 	provider := NewIBMPricingProvider(nil)
-	
+
 	return &TestablePricingProvider{
 		IBMPricingProvider: provider,
 		testClient:         testClient,
@@ -806,7 +806,7 @@ func (t *TestablePricingProvider) getAllRegionsAndZones(ctx context.Context) (ma
 		}
 
 		regionName := *region.Name
-		
+
 		// List zones for this region
 		zonesResult, _, err := sdkClient.ListRegionZonesWithContext(ctx, &vpcv1.ListRegionZonesOptions{
 			RegionName: region.Name,
@@ -889,10 +889,10 @@ func TestGetAllRegionsAndZones(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := NewTestablePricingProvider()
 			tt.setupMock(provider)
-			
+
 			ctx := context.Background()
 			result, err := provider.getAllRegionsAndZones(ctx)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
@@ -914,7 +914,7 @@ func TestFetchPricingFromAPI_ErrorPaths(t *testing.T) {
 	// Instead of testing the private method directly, test it through Refresh
 	provider := NewIBMPricingProvider(nil)
 	ctx := context.Background()
-	
+
 	// This should fail when trying to call fetchPricingFromAPI internally
 	err := provider.Refresh(ctx)
 	assert.Error(t, err)
@@ -965,10 +965,10 @@ func TestFetchPricingData_Comprehensive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := tt.setupProvider()
 			ctx := context.Background()
-			
+
 			// Create a testable version of fetchPricingData
 			result, err := provider.testFetchPricingData(ctx)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
@@ -1074,19 +1074,19 @@ func (t *TestablePricingProvider) testFetchInstancePricing(ctx context.Context, 
 // Test GetPrices with cache refresh scenario
 func TestGetPrices_CacheRefresh(t *testing.T) {
 	provider := NewIBMPricingProvider(nil)
-	
+
 	// Set old timestamp to trigger refresh
 	provider.lastUpdate = time.Now().Add(-24 * time.Hour)
-	
+
 	// Pre-populate with some data
 	provider.pricingMap = map[string]map[string]float64{
 		"bx2-2x8": {
 			"us-south-1": 0.096,
 		},
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// This should trigger refresh attempt (which fails with nil client)
 	// but should still return existing cached data
 	prices, err := provider.GetPrices(ctx, "us-south-1")
@@ -1098,7 +1098,7 @@ func TestGetPrices_CacheRefresh(t *testing.T) {
 // Test GetPrice with cache functionality
 func TestGetPrice_CacheHitAndMiss(t *testing.T) {
 	provider := NewIBMPricingProvider(nil)
-	
+
 	// Pre-populate pricing map
 	provider.pricingMap = map[string]map[string]float64{
 		"bx2-2x8": {
@@ -1106,19 +1106,19 @@ func TestGetPrice_CacheHitAndMiss(t *testing.T) {
 		},
 	}
 	provider.lastUpdate = time.Now()
-	
+
 	ctx := context.Background()
-	
+
 	// First call - should populate cache
 	price1, err := provider.GetPrice(ctx, "bx2-2x8", "us-south-1")
 	assert.NoError(t, err)
 	assert.Equal(t, 0.096, price1)
-	
+
 	// Second call - should hit cache
 	price2, err := provider.GetPrice(ctx, "bx2-2x8", "us-south-1")
 	assert.NoError(t, err)
 	assert.Equal(t, 0.096, price2)
-	
+
 	// Verify cache contains the entry
 	cacheKey := "price:bx2-2x8:us-south-1"
 	cached, exists := provider.priceCache.Get(cacheKey)
@@ -1132,11 +1132,11 @@ func TestPricingEdgeCases(t *testing.T) {
 	pricingData := &globalcatalogv1.PricingGet{
 		Metrics: nil, // This should cause "no pricing data found" error
 	}
-	
+
 	// Simulate the pricing extraction logic
 	var extractedPrice float64
 	var found bool
-	
+
 	if pricingData.Metrics != nil {
 		for _, metric := range pricingData.Metrics {
 			if metric.Amounts != nil {
@@ -1156,15 +1156,15 @@ func TestPricingEdgeCases(t *testing.T) {
 			}
 		}
 	}
-	
+
 	assert.False(t, found)
 	assert.Equal(t, float64(0), extractedPrice)
-	
+
 	// Test with empty metrics slice
 	pricingData2 := &globalcatalogv1.PricingGet{
 		Metrics: []globalcatalogv1.Metrics{}, // Empty slice
 	}
-	
+
 	found2 := false
 	if pricingData2.Metrics != nil {
 		for range pricingData2.Metrics {
@@ -1172,6 +1172,6 @@ func TestPricingEdgeCases(t *testing.T) {
 			break
 		}
 	}
-	
+
 	assert.False(t, found2)
 }

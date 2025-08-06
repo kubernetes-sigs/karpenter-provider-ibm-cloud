@@ -347,7 +347,7 @@ func (c *Controller) updateNodeClaimStatus(ctx context.Context, nodeClaim *karpv
 	if nodeReady && !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue() {
 		logger.Info("node is ready, marking nodeclaim as initialized")
 		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeInitialized)
-		
+
 		// Also ensure the node has the initialized label
 		if err := c.setNodeInitializedLabel(ctx, node); err != nil {
 			logger.Error(err, "failed to set initialized label on node")
@@ -361,7 +361,7 @@ func (c *Controller) updateNodeClaimStatus(ctx context.Context, nodeClaim *karpv
 // setNodeInitializedLabel sets the karpenter.sh/initialized label on the node
 func (c *Controller) setNodeInitializedLabel(ctx context.Context, node *corev1.Node) error {
 	logger := log.FromContext(ctx).WithValues("node", node.Name)
-	
+
 	// Check if label is already set
 	if node.Labels[InitializedLabel] == "true" {
 		logger.V(1).Info("initialized label already set on node")
@@ -375,20 +375,20 @@ func (c *Controller) setNodeInitializedLabel(ctx context.Context, node *corev1.N
 	}
 
 	patch := client.MergeFrom(freshNode.DeepCopy())
-	
+
 	// Ensure labels map exists
 	if freshNode.Labels == nil {
 		freshNode.Labels = make(map[string]string)
 	}
-	
+
 	// Set the initialized label
 	freshNode.Labels[InitializedLabel] = "true"
-	
+
 	logger.Info("setting initialized label on node")
 	if err := c.kubeClient.Patch(ctx, freshNode, patch); err != nil {
 		return fmt.Errorf("patching node with initialized label: %w", err)
 	}
-	
+
 	logger.Info("successfully set initialized label on node")
 	return nil
 }

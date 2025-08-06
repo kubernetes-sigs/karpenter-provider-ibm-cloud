@@ -56,18 +56,18 @@ func (u *UnavailableOfferings) IsUnavailable(offeringID string) bool {
 		u.mu.RUnlock()
 		return false
 	}
-	
+
 	now := time.Now()
 	if !now.After(expiry) {
 		u.mu.RUnlock()
 		return true
 	}
-	
+
 	// Entry is expired, upgrade to write lock to clean it up
 	u.mu.RUnlock()
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	
+
 	// Double-check the entry still exists and is still expired (race condition protection)
 	expiry, exists = u.offerings[offeringID]
 	if exists && now.After(expiry) {

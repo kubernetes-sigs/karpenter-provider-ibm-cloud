@@ -24,7 +24,7 @@ metadata:
   name: lb-integrated-nodeclass
 spec:
   # ... other nodeclass configuration ...
-  
+
   loadBalancerIntegration:
     enabled: true
     targetGroups:
@@ -40,7 +40,7 @@ loadBalancerIntegration:
   enabled: true
   autoDeregister: true
   registrationTimeout: 300
-  
+
   targetGroups:
     # Multiple target groups supported
     - loadBalancerID: "r010-12345678-1234-5678-9abc-def012345678"
@@ -53,7 +53,7 @@ loadBalancerIntegration:
         interval: 30
         timeout: 5
         retryCount: 2
-    
+
     - loadBalancerID: "r010-87654321-4321-8765-cba9-fedcba098765"
       poolName: "api-servers"
       port: 8080
@@ -141,15 +141,15 @@ loadBalancerIntegration:
   enabled: true
   autoDeregister: true
   registrationTimeout: 300
-  
+
   targetGroups:
     # Primary application load balancer
     - loadBalancerID: "r010-primary-lb-id"
       poolName: "app-servers"
       port: 8080
       weight: 50
-      
-    # Metrics/monitoring load balancer  
+
+    # Metrics/monitoring load balancer
     - loadBalancerID: "r010-monitoring-lb-id"
       poolName: "metrics-collection"
       port: 9090
@@ -191,7 +191,7 @@ The service ID or user used by Karpenter needs the following IAM permissions:
           "value": "is"
         },
         {
-          "name": "resourceType", 
+          "name": "resourceType",
           "value": "load-balancer"
         }
       ]

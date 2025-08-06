@@ -37,7 +37,7 @@ spec:
 
 #### Limited Storage Integration
 - **Current**: Basic boot volume support only
-- **Missing**: 
+- **Missing**:
   - Dynamic storage provisioning during node creation
   - Multiple storage attachments
   - Custom storage profiles
@@ -55,7 +55,7 @@ spec:
 #### IKS Mode Instance Type Constraint
 - **Impact**: When using IKS mode (when `iksClusterID` is specified or `bootstrapMode: "iks-api"`), the provisioner cannot dynamically select instance types based on pod requirements
 - **Root Cause**: IKS Worker Pool Resize API (`PATCH /v1/clusters/{id}/workerpools/{poolId}`) adds nodes with instance types pre-configured in the worker pool
-- **Current Behavior**: 
+- **Current Behavior**:
   - `instanceProfile` and `instanceRequirements` fields in IBMNodeClass are ignored in IKS mode
   - All new nodes use the instance type configured in the existing worker pool
 - **Workarounds**:

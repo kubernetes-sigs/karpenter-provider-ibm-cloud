@@ -70,56 +70,56 @@ spec:
   zone: us-south-1                      # Target availability zone
   vpc: vpc-12345678                     # Your VPC ID
   image: r006-12345678                  # Ubuntu 20.04 LTS recommended
-  
+
   # Security and networking
   securityGroups:
   - sg-k8s-workers                      # Security group allowing cluster communication
-  
+
   # Optional: Specific subnet (auto-selected if not specified)
   subnet: subnet-12345678               # Your subnet ID
-  
+
   # Optional: Instance requirements (alternative to specific instance profile)
   instanceRequirements:
     architecture: amd64                 # CPU architecture: amd64, arm64, s390x
     minimumCPU: 2                       # Minimum vCPUs required
     minimumMemory: 4                    # Minimum memory in GiB
     maximumHourlyPrice: "1.00"          # Maximum hourly price in USD
-    
+
   # Optional: Specific instance profile (alternative to instanceRequirements)
   instanceProfile: bx2-4x16             # Specific instance type
-  
+
   # Optional: Placement strategy for zone/subnet selection
   placementStrategy:
     zoneBalance: Balanced               # Balanced, AvailabilityFirst, or CostOptimized
-    
+
   # Optional: SSH access for troubleshooting
   # To find SSH key IDs: ibmcloud is keys --output json | jq '.[] | {name, id}'
   sshKeys:
   - r010-12345678-1234-1234-1234-123456789012  # SSH key ID
-  
+
   # Optional: Resource group ID
   resourceGroup: rg-12345678             # Resource group ID
-  
+
   # Optional: Placement target (dedicated host or placement group)
   placementTarget: ph-12345678
-  
+
   # Optional: Tags to apply to instances
   tags:
     environment: production
     team: devops
-    
+
   # Optional: Bootstrap mode (cloud-init, iks-api, or auto)
   bootstrapMode: cloud-init
-  
+
   # REQUIRED: Internal API server endpoint (find with: kubectl get endpointslice -n default -l kubernetes.io/service-name=kubernetes)
   apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
-  
+
   # Optional: IKS cluster ID (required when bootstrapMode is "iks-api")
   iksClusterID: bng6n48d0t6vj7b33kag
-  
+
   # Optional: IKS worker pool ID (for IKS API bootstrapping)
   iksWorkerPoolID: bng6n48d0t6vj7b33kag-pool1
-  
+
   # Optional: Load balancer integration
   loadBalancerIntegration:
     enabled: true
@@ -130,7 +130,7 @@ spec:
       weight: 50
     autoDeregister: true
     registrationTimeout: 300
-  
+
   # VPC mode uses automatic bootstrap - no userData required!
 ```
 
@@ -151,7 +151,7 @@ spec:
         apiVersion: karpenter.ibm.sh/v1alpha1
         kind: IBMNodeClass
         name: vpc-nodeclass
-      
+
       # Full flexibility in instance requirements
       requirements:
       - key: node.kubernetes.io/instance-type
@@ -163,11 +163,11 @@ spec:
       - key: karpenter.sh/capacity-type
         operator: In
         values: ["on-demand"]
-  
+
   limits:
     cpu: 1000
     memory: 1000Gi
-  
+
   disruption:
     consolidationPolicy: WhenEmpty
     consolidateAfter: 30s
@@ -186,7 +186,7 @@ spec:
 kubectl get endpointslice -n default -l kubernetes.io/service-name=kubernetes
 
 # Example output:
-# NAME         ADDRESSTYPE   PORTS   ENDPOINTS       AGE  
+# NAME         ADDRESSTYPE   PORTS   ENDPOINTS       AGE
 # kubernetes   IPv4          6443    <INTERNAL-IP>   15d
 
 # Use: https://<INTERNAL-IP>:6443
@@ -208,7 +208,7 @@ metadata:
 spec:
   # CRITICAL: Use INTERNAL endpoint from discovery above
   apiServerEndpoint: "https://<INTERNAL-IP>:6443"
-  
+
   region: us-south
   vpc: vpc-12345678
   # ... rest of config
@@ -218,7 +218,7 @@ spec:
 The VPC integration automatically discovers your cluster configuration:
 
 - **API Endpoint**: Uses the internal cluster API server endpoint you configure
-- **CA Certificate**: Extracts cluster CA certificate from existing nodes  
+- **CA Certificate**: Extracts cluster CA certificate from existing nodes
 - **DNS Configuration**: Discovers cluster DNS service IP and search domains
 - **Network Settings**: Detects cluster pod and service CIDR ranges
 - **Runtime Detection**: Matches container runtime used by existing nodes
@@ -293,7 +293,7 @@ spec:
     # GPU drivers and configuration
     apt-get update
     apt-get install -y nvidia-driver-470 nvidia-container-toolkit
-    
+
     # Configure containerd for GPU support
     mkdir -p /etc/containerd
     cat > /etc/containerd/config.toml <<EOF
@@ -302,7 +302,7 @@ spec:
       [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
         BinaryName = "/usr/bin/nvidia-container-runtime"
     EOF
-    
+
     # Bootstrap script automatically appended
 ```
 
@@ -324,16 +324,16 @@ spec:
     #!/bin/bash
     # HPC optimizations
     echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-    
+
     # Memory optimizations
     echo 'vm.swappiness = 1' >> /etc/sysctl.conf
     echo 'vm.dirty_ratio = 15' >> /etc/sysctl.conf
-    
+
     # Install HPC libraries
     apt-get update && apt-get install -y \
       openmpi-bin openmpi-common libopenmpi-dev \
       libblas3 liblapack3
-    
+
     # Network optimizations for high-throughput
     echo 'net.core.rmem_max = 134217728' >> /etc/sysctl.conf
     echo 'net.core.wmem_max = 134217728' >> /etc/sysctl.conf
@@ -353,11 +353,11 @@ spec:
   userData: |
     #!/bin/bash
     # Custom CNI setup before cluster join
-    
+
     # Install Cilium CNI
     curl -L -o /opt/cni/bin/cilium-cni \
       https://github.com/cilium/cilium/releases/download/v1.14.0/cilium-linux-amd64.tar.gz
-    
+
     # Custom CNI configuration
     mkdir -p /etc/cni/net.d
     cat > /etc/cni/net.d/05-cilium.conf <<EOF
@@ -368,7 +368,7 @@ spec:
       "enable-debug": false
     }
     EOF
-    
+
     # Bootstrap script handles the rest
 ```
 
@@ -413,7 +413,7 @@ spec:
 
 #### Wrong API Endpoint Configuration
 
-**Symptoms**: 
+**Symptoms**:
 - NodeClaims created but nodes never register with cluster
 - Kubelet logs show: `"Client.Timeout exceeded while awaiting headers"`
 - Node status remains "Unknown" with "Drifted" = True

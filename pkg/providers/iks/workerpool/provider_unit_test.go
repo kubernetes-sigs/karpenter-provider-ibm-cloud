@@ -39,30 +39,30 @@ func TestNewIKSWorkerPoolProvider_Unit(t *testing.T) {
 		scheme := runtime.NewScheme()
 		require.NoError(t, v1alpha1.AddToScheme(scheme))
 		kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		
+
 		client := &ibm.Client{}
 		provider, err := NewIKSWorkerPoolProvider(client, kubeClient)
-		
+
 		assert.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
-	
+
 	t.Run("nil client", func(t *testing.T) {
 		scheme := runtime.NewScheme()
 		require.NoError(t, v1alpha1.AddToScheme(scheme))
 		kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		
+
 		provider, err := NewIKSWorkerPoolProvider(nil, kubeClient)
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, provider)
 		assert.Contains(t, err.Error(), "IBM client cannot be nil")
 	})
-	
+
 	t.Run("nil kube client", func(t *testing.T) {
 		client := &ibm.Client{}
 		provider, err := NewIKSWorkerPoolProvider(client, nil)
-		
+
 		// The constructor allows nil kubeClient, error checking happens in methods
 		assert.NoError(t, err)
 		assert.NotNil(t, provider)
@@ -72,118 +72,118 @@ func TestNewIKSWorkerPoolProvider_Unit(t *testing.T) {
 // Test Create method early error cases
 func TestIKSWorkerPoolProvider_Create_ErrorCases(t *testing.T) {
 	ctx := context.Background()
-	
+
 	t.Run("missing kubernetes client", func(t *testing.T) {
 		provider := &IKSWorkerPoolProvider{
 			client:     &ibm.Client{},
 			kubeClient: nil,
 		}
-		
+
 		nodeClaim := &karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{Name: "test-nodeclass"},
 			},
 		}
-		
+
 		result, err := provider.Create(ctx, nodeClaim)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "kubernetes client not set")
 	})
-	
+
 	t.Run("nodeclass not found", func(t *testing.T) {
 		// Create fake kubernetes client without the nodeclass
 		scheme := runtime.NewScheme()
 		require.NoError(t, v1alpha1.AddToScheme(scheme))
 		kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		
+
 		provider := &IKSWorkerPoolProvider{
 			client:     &ibm.Client{},
 			kubeClient: kubeClient,
 		}
-		
+
 		nodeClaim := &karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{Name: "nonexistent-nodeclass"},
 			},
 		}
-		
+
 		result, err := provider.Create(ctx, nodeClaim)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "getting NodeClass nonexistent-nodeclass")
 	})
-	
+
 	t.Run("missing cluster ID", func(t *testing.T) {
 		// Create nodeclass without cluster ID
 		nodeClass := &v1alpha1.IBMNodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
-			Spec: v1alpha1.IBMNodeClassSpec{
+			Spec:       v1alpha1.IBMNodeClassSpec{
 				// No IKSClusterID specified
 			},
 		}
-		
+
 		scheme := runtime.NewScheme()
 		require.NoError(t, v1alpha1.AddToScheme(scheme))
 		kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodeClass).Build()
-		
+
 		provider := &IKSWorkerPoolProvider{
 			client:     &ibm.Client{},
 			kubeClient: kubeClient,
 		}
-		
+
 		nodeClaim := &karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{Name: "test-nodeclass"},
 			},
 		}
-		
+
 		// Clear environment variable to ensure it's not used
 		require.NoError(t, os.Unsetenv("IKS_CLUSTER_ID"))
-		
+
 		result, err := provider.Create(ctx, nodeClaim)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "IKS cluster ID not found")
 	})
-	
+
 	t.Run("cluster ID from environment variable", func(t *testing.T) {
 		// Set environment variable
 		require.NoError(t, os.Setenv("IKS_CLUSTER_ID", "env-cluster-id"))
 		defer func() { _ = os.Unsetenv("IKS_CLUSTER_ID") }()
-		
+
 		// Create nodeclass without cluster ID
 		nodeClass := &v1alpha1.IBMNodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
 			Spec: v1alpha1.IBMNodeClassSpec{
 				// No IKSClusterID specified, should use env var
 				InstanceProfile: "bx2.4x16",
-				Zone:           "us-south-1",
+				Zone:            "us-south-1",
 			},
 		}
-		
+
 		scheme := runtime.NewScheme()
 		require.NoError(t, v1alpha1.AddToScheme(scheme))
 		kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodeClass).Build()
-		
+
 		// Use nil client to avoid panic from empty struct
 		provider := &IKSWorkerPoolProvider{
 			client:     nil,
 			kubeClient: kubeClient,
 		}
-		
+
 		nodeClaim := &karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{Name: "test-nodeclass"},
 			},
 		}
-		
+
 		result, err := provider.Create(ctx, nodeClaim)
-		
+
 		// Should error due to nil client
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -197,7 +197,7 @@ func TestIKSWorkerPoolProvider_Create_ErrorCases(t *testing.T) {
 // Test Delete method error cases
 func TestIKSWorkerPoolProvider_Delete_ErrorCases(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
 		name          string
 		nodeLabels    map[string]string
@@ -219,26 +219,26 @@ func TestIKSWorkerPoolProvider_Delete_ErrorCases(t *testing.T) {
 			expectedError: "cluster ID or pool ID not found in node labels",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
 			require.NoError(t, v1alpha1.AddToScheme(scheme))
 			kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			
+
 			provider := &IKSWorkerPoolProvider{
 				client:     nil,
 				kubeClient: kubeClient,
 			}
-			
+
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: tt.nodeLabels,
 				},
 			}
-			
+
 			err := provider.Delete(ctx, node)
-			
+
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedError)
 		})
@@ -248,11 +248,11 @@ func TestIKSWorkerPoolProvider_Delete_ErrorCases(t *testing.T) {
 // Test ResizePool method with nil client
 func TestIKSWorkerPoolProvider_ResizePool_NilClient(t *testing.T) {
 	ctx := context.Background()
-	
+
 	provider := &IKSWorkerPoolProvider{
 		client: nil,
 	}
-	
+
 	err := provider.ResizePool(ctx, "test-cluster", "pool-1", 5)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "IBM client is not initialized")
@@ -261,11 +261,11 @@ func TestIKSWorkerPoolProvider_ResizePool_NilClient(t *testing.T) {
 // Test GetPool method with nil client
 func TestIKSWorkerPoolProvider_GetPool_NilClient(t *testing.T) {
 	ctx := context.Background()
-	
+
 	provider := &IKSWorkerPoolProvider{
 		client: nil,
 	}
-	
+
 	pool, err := provider.GetPool(ctx, "test-cluster", "pool-1")
 	assert.Error(t, err)
 	assert.Nil(t, pool)
@@ -275,11 +275,11 @@ func TestIKSWorkerPoolProvider_GetPool_NilClient(t *testing.T) {
 // Test ListPools method with nil client
 func TestIKSWorkerPoolProvider_ListPools_NilClient(t *testing.T) {
 	ctx := context.Background()
-	
+
 	provider := &IKSWorkerPoolProvider{
 		client: nil,
 	}
-	
+
 	pools, err := provider.ListPools(ctx, "test-cluster")
 	assert.Error(t, err)
 	assert.Nil(t, pools)
@@ -289,7 +289,7 @@ func TestIKSWorkerPoolProvider_ListPools_NilClient(t *testing.T) {
 // Test Get method - not implemented
 func TestIKSWorkerPoolProvider_Get_NotImplemented(t *testing.T) {
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	node, err := provider.Get(context.Background(), "test-provider-id")
 	assert.Error(t, err)
 	assert.Nil(t, node)
@@ -299,7 +299,7 @@ func TestIKSWorkerPoolProvider_Get_NotImplemented(t *testing.T) {
 // Test List method - not implemented
 func TestIKSWorkerPoolProvider_List_NotImplemented(t *testing.T) {
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	nodes, err := provider.List(context.Background())
 	assert.Error(t, err)
 	assert.Nil(t, nodes)
@@ -342,26 +342,26 @@ func TestIKSWorkerPoolProvider_NodeLabelDeletion(t *testing.T) {
 			expectedError: "cluster ID or pool ID not found in node labels",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
 			require.NoError(t, v1alpha1.AddToScheme(scheme))
 			kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			
+
 			provider := &IKSWorkerPoolProvider{
 				client:     nil,
 				kubeClient: kubeClient,
 			}
-			
+
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: tt.nodeLabels,
 				},
 			}
-			
+
 			err := provider.Delete(context.Background(), node)
-			
+
 			if tt.expectsError {
 				assert.Error(t, err)
 				if tt.expectedError != "" {
@@ -401,7 +401,7 @@ func TestClusterIDResolution_Unit(t *testing.T) {
 			expectError: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment
@@ -411,35 +411,35 @@ func TestClusterIDResolution_Unit(t *testing.T) {
 				_ = os.Unsetenv("IKS_CLUSTER_ID")
 			}
 			defer func() { _ = os.Unsetenv("IKS_CLUSTER_ID") }()
-			
+
 			// Create nodeclass
 			nodeClass := &v1alpha1.IBMNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
 				Spec: v1alpha1.IBMNodeClassSpec{
 					IKSClusterID:    tt.nodeClassID,
 					InstanceProfile: "bx2.4x16",
-					Zone:           "us-south-1",
+					Zone:            "us-south-1",
 				},
 			}
-			
+
 			scheme := runtime.NewScheme()
 			require.NoError(t, v1alpha1.AddToScheme(scheme))
 			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodeClass).Build()
-			
+
 			provider := &IKSWorkerPoolProvider{
 				client:     nil,
 				kubeClient: kubeClient,
 			}
-			
+
 			nodeClaim := &karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: &karpv1.NodeClassReference{Name: "test-nodeclass"},
 				},
 			}
-			
+
 			_, err := provider.Create(context.Background(), nodeClaim)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), "IKS cluster ID not found")

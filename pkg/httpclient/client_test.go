@@ -292,14 +292,14 @@ func TestIBMCloudHTTPClient_PostJSON(t *testing.T) {
 		expectedError  bool
 	}{
 		{
-			name:        "successful JSON request/response",
-			requestBody: &TestRequest{Message: "hello", Value: 123},
+			name:         "successful JSON request/response",
+			requestBody:  &TestRequest{Message: "hello", Value: 123},
 			responseBody: &TestResponse{},
 			serverResponse: func(w http.ResponseWriter, r *http.Request) {
 				// Validate request
 				body, err := io.ReadAll(r.Body)
 				assert.NoError(t, err)
-				
+
 				var req TestRequest
 				err = json.Unmarshal(body, &req)
 				assert.NoError(t, err)
@@ -312,8 +312,8 @@ func TestIBMCloudHTTPClient_PostJSON(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name:        "request with nil response body",
-			requestBody: &TestRequest{Message: "test", Value: 456},
+			name:         "request with nil response body",
+			requestBody:  &TestRequest{Message: "test", Value: 456},
 			responseBody: nil,
 			serverResponse: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusAccepted)
@@ -321,8 +321,8 @@ func TestIBMCloudHTTPClient_PostJSON(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name:        "request marshaling error",
-			requestBody: struct{ BadField chan int }{BadField: make(chan int)}, // Cannot be marshaled to JSON
+			name:         "request marshaling error",
+			requestBody:  struct{ BadField chan int }{BadField: make(chan int)}, // Cannot be marshaled to JSON
 			responseBody: &TestResponse{},
 			serverResponse: func(w http.ResponseWriter, r *http.Request) {
 				t.Fatal("Server should not be called")
@@ -390,10 +390,10 @@ func TestIBMCloudError(t *testing.T) {
 
 func TestIBMCloudError_StatusCheckers(t *testing.T) {
 	tests := []struct {
-		name         string
-		statusCode   int
-		isNotFound   bool
-		isForbidden  bool
+		name           string
+		statusCode     int
+		isNotFound     bool
+		isForbidden    bool
 		isUnauthorized bool
 	}{
 		{"not found", 404, true, false, false},
@@ -453,7 +453,7 @@ func TestIBMCloudHTTPClient_parseIBMCloudError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := client.parseIBMCloudError(tt.statusCode, tt.body, tt.endpoint)
-			
+
 			ibmErr, ok := err.(*IBMCloudError)
 			require.True(t, ok)
 			assert.Equal(t, tt.expected.StatusCode, ibmErr.StatusCode)
@@ -497,7 +497,7 @@ func TestIBMCloudHTTPClient_BaseURLHandling(t *testing.T) {
 			client := NewIBMCloudHTTPClient(tt.baseURL, testHeaderSetter)
 			// Replace the baseURL with our test server URL after creation
 			client.baseURL = strings.TrimSuffix(tt.baseURL, "/")
-			
+
 			// We can't directly test the URL construction without making a request,
 			// but we can verify the baseURL is trimmed correctly
 			expectedBase := strings.TrimSuffix(tt.baseURL, "/")
@@ -516,7 +516,7 @@ func TestIBMCloudHTTPClient_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	client := NewIBMCloudHTTPClient(server.URL, testHeaderSetter)
-	
+
 	// Create a context that will be canceled immediately
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately

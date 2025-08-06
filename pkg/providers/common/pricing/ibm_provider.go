@@ -230,7 +230,7 @@ func (p *IBMPricingProvider) getAllRegionsAndZones(ctx context.Context) (map[str
 		}
 
 		regionName := *region.Name
-		
+
 		// List zones for this region
 		zonesResult, _, err := sdkClient.ListRegionZonesWithContext(ctx, &vpcv1.ListRegionZonesOptions{
 			RegionName: region.Name,

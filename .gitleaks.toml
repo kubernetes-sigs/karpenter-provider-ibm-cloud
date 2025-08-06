@@ -8,19 +8,19 @@
   paths = [
     # Ignore test certificates and keys in test files
     '''.*_test\.go$''',
-    
+
     # Ignore example certificates in documentation
     '''\/docs\/.*\.pem$''',
     '''\/examples\/.*\.pem$''',
     '''\/charts\/.*\.pem$''',
-    
+
     # Ignore test fixtures and mock data
     '''\/test\/fixtures\/.*''',
     '''\/testdata\/.*''',
-    
+
     # Ignore vendor dependencies
     '''\/vendor\/.*''',
-    
+
     # Ignore generated files
     '''\/.*\.pb\.go$''',
     '''zz_generated\.deepcopy\.go$''',
@@ -31,24 +31,24 @@
     # Ignore base64-encoded test certificates in test files
     '''LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t.*test''',
     '''LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0t.*test''',
-    
+
     # Ignore placeholder API keys in documentation
     '''your-ibm-api-key''',
     '''your-vpc-api-key''',
     '''test-api-key''',
     '''example-api-key''',
-    
+
     # Ignore placeholder resource IDs
     '''r006-your-vpc-id''',
     '''0717-your-subnet-id''',
     '''test-cluster-id''',
     '''your-cluster-id''',
-    
+
     # Ignore kubeconfig test data with base64 certs
     '''certificate-authority-data: LS0tLS1CRUdJTi.*kubeconfig''',
     '''client-certificate-data: LS0tLS1CRUdJTi.*kubeconfig''',
     '''client-key-data: LS0tLS1CRUdJTi.*kubeconfig''',
-    
+
     # Ignore test data comments
     '''# Test certificate data''',
     '''# Fake certificate for testing''',
@@ -68,7 +68,7 @@
 [extend]
   # Use default GitLeaks rules as base
   useDefault = true
-  
+
   # Additional file extensions to scan
   paths = [
     "*.go",

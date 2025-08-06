@@ -25,13 +25,13 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	
+
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
 func TestIsPartialFailure(t *testing.T) {
 	provider := &VPCInstanceProvider{}
-	
+
 	tests := []struct {
 		name     string
 		ibmErr   *ibm.IBMError
@@ -55,7 +55,7 @@ func TestIsPartialFailure(t *testing.T) {
 			name: "instance profile not available",
 			ibmErr: &ibm.IBMError{
 				StatusCode: 400,
-				Code:       "vpc_instance_profile_not_available", 
+				Code:       "vpc_instance_profile_not_available",
 				Message:    "Instance profile not available",
 			},
 			expected: true,
@@ -133,7 +133,7 @@ func TestIsPartialFailure(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "404 not found - unknown code", 
+			name: "404 not found - unknown code",
 			ibmErr: &ibm.IBMError{
 				StatusCode: 404,
 				Code:       "not_found",
@@ -151,7 +151,7 @@ func TestIsPartialFailure(t *testing.T) {
 			expected: false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := provider.isPartialFailure(tt.ibmErr)
@@ -163,42 +163,42 @@ func TestIsPartialFailure(t *testing.T) {
 func TestCleanupOrphanedResources(t *testing.T) {
 	provider := &VPCInstanceProvider{}
 	ctx := context.Background()
-	
+
 	instanceName := "test-instance"
 	vpcID := "test-vpc-id"
 	logger := logr.Discard() // Use discard logger for tests
-	
+
 	t.Run("successful cleanup with no orphaned resources", func(t *testing.T) {
 		// Create mock VPC client that returns empty results
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockVPCClient := ibm.NewVPCClientWithMock(mockVPCSDKClient)
-		
+
 		// Mock VNI listing - no orphaned VNIs found
 		emptyVNICollection := &vpcv1.VirtualNetworkInterfaceCollection{
 			VirtualNetworkInterfaces: []vpcv1.VirtualNetworkInterface{},
 		}
 		mockVPCSDKClient.On("ListVirtualNetworkInterfacesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVirtualNetworkInterfacesOptions")).
 			Return(emptyVNICollection, &core.DetailedResponse{}, nil)
-		
+
 		// Mock volume listing - no orphaned volumes found
 		emptyVolumeCollection := &vpcv1.VolumeCollection{
 			Volumes: []vpcv1.Volume{},
 		}
 		mockVPCSDKClient.On("ListVolumesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVolumesOptions")).
 			Return(emptyVolumeCollection, &core.DetailedResponse{}, nil)
-		
+
 		err := provider.cleanupOrphanedResources(ctx, mockVPCClient, instanceName, vpcID, logger)
-		
+
 		// Should not error when no orphaned resources are found
 		assert.NoError(t, err)
 		mockVPCSDKClient.AssertExpectations(t)
 	})
-	
+
 	t.Run("cleanup with orphaned resources found and deleted", func(t *testing.T) {
 		// Create mock VPC client
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockVPCClient := ibm.NewVPCClientWithMock(mockVPCSDKClient)
-		
+
 		// Mock VNI listing - orphaned VNI found
 		orphanedVNI := vpcv1.VirtualNetworkInterface{
 			ID:   &[]string{"vni-12345"}[0],
@@ -209,11 +209,11 @@ func TestCleanupOrphanedResources(t *testing.T) {
 		}
 		mockVPCSDKClient.On("ListVirtualNetworkInterfacesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVirtualNetworkInterfacesOptions")).
 			Return(vniCollection, &core.DetailedResponse{}, nil)
-		
+
 		// Mock VNI deletion
 		mockVPCSDKClient.On("DeleteVirtualNetworkInterfacesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.DeleteVirtualNetworkInterfacesOptions")).
 			Return(&vpcv1.VirtualNetworkInterface{}, &core.DetailedResponse{}, nil)
-		
+
 		// Mock volume listing - orphaned volume found
 		orphanedVolume := vpcv1.Volume{
 			ID:   &[]string{"vol-67890"}[0],
@@ -224,13 +224,13 @@ func TestCleanupOrphanedResources(t *testing.T) {
 		}
 		mockVPCSDKClient.On("ListVolumesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVolumesOptions")).
 			Return(volumeCollection, &core.DetailedResponse{}, nil)
-		
+
 		// Mock volume deletion
 		mockVPCSDKClient.On("DeleteVolumeWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.DeleteVolumeOptions")).
 			Return(&core.DetailedResponse{}, nil)
-		
+
 		err := provider.cleanupOrphanedResources(ctx, mockVPCClient, instanceName, vpcID, logger)
-		
+
 		// Should not error when cleanup succeeds
 		assert.NoError(t, err)
 		mockVPCSDKClient.AssertExpectations(t)
@@ -240,33 +240,33 @@ func TestCleanupOrphanedResources(t *testing.T) {
 func TestCleanupOrphanedVNI(t *testing.T) {
 	provider := &VPCInstanceProvider{}
 	ctx := context.Background()
-	
+
 	vniName := "test-instance-vni"
 	vpcID := "test-vpc-id"
 	logger := logr.Discard()
-	
+
 	t.Run("no orphaned VNI found", func(t *testing.T) {
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockVPCClient := ibm.NewVPCClientWithMock(mockVPCSDKClient)
-		
+
 		// Mock VNI listing - no matching VNI found
 		emptyVNICollection := &vpcv1.VirtualNetworkInterfaceCollection{
 			VirtualNetworkInterfaces: []vpcv1.VirtualNetworkInterface{},
 		}
 		mockVPCSDKClient.On("ListVirtualNetworkInterfacesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVirtualNetworkInterfacesOptions")).
 			Return(emptyVNICollection, &core.DetailedResponse{}, nil)
-		
+
 		err := provider.cleanupOrphanedVNI(ctx, mockVPCClient, vniName, vpcID, logger)
-		
+
 		// Should not error when no matching VNI is found
 		assert.NoError(t, err)
 		mockVPCSDKClient.AssertExpectations(t)
 	})
-	
+
 	t.Run("orphaned VNI found and deleted", func(t *testing.T) {
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockVPCClient := ibm.NewVPCClientWithMock(mockVPCSDKClient)
-		
+
 		// Mock VNI listing - matching VNI found
 		orphanedVNI := vpcv1.VirtualNetworkInterface{
 			ID:   &[]string{"vni-12345"}[0],
@@ -277,13 +277,13 @@ func TestCleanupOrphanedVNI(t *testing.T) {
 		}
 		mockVPCSDKClient.On("ListVirtualNetworkInterfacesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVirtualNetworkInterfacesOptions")).
 			Return(vniCollection, &core.DetailedResponse{}, nil)
-		
+
 		// Mock VNI deletion
 		mockVPCSDKClient.On("DeleteVirtualNetworkInterfacesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.DeleteVirtualNetworkInterfacesOptions")).
 			Return(&vpcv1.VirtualNetworkInterface{}, &core.DetailedResponse{}, nil)
-		
+
 		err := provider.cleanupOrphanedVNI(ctx, mockVPCClient, vniName, vpcID, logger)
-		
+
 		// Should not error when VNI is successfully deleted
 		assert.NoError(t, err)
 		mockVPCSDKClient.AssertExpectations(t)
@@ -293,32 +293,32 @@ func TestCleanupOrphanedVNI(t *testing.T) {
 func TestCleanupOrphanedVolume(t *testing.T) {
 	provider := &VPCInstanceProvider{}
 	ctx := context.Background()
-	
+
 	volumeName := "test-instance-boot"
 	logger := logr.Discard()
-	
+
 	t.Run("no orphaned volume found", func(t *testing.T) {
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockVPCClient := ibm.NewVPCClientWithMock(mockVPCSDKClient)
-		
+
 		// Mock volume listing - no matching volume found
 		emptyVolumeCollection := &vpcv1.VolumeCollection{
 			Volumes: []vpcv1.Volume{},
 		}
 		mockVPCSDKClient.On("ListVolumesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVolumesOptions")).
 			Return(emptyVolumeCollection, &core.DetailedResponse{}, nil)
-		
+
 		err := provider.cleanupOrphanedVolume(ctx, mockVPCClient, volumeName, logger)
-		
+
 		// Should not error when no matching volume is found
 		assert.NoError(t, err)
 		mockVPCSDKClient.AssertExpectations(t)
 	})
-	
+
 	t.Run("orphaned volume found and deleted", func(t *testing.T) {
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockVPCClient := ibm.NewVPCClientWithMock(mockVPCSDKClient)
-		
+
 		// Mock volume listing - matching volume found
 		orphanedVolume := vpcv1.Volume{
 			ID:   &[]string{"vol-67890"}[0],
@@ -329,13 +329,13 @@ func TestCleanupOrphanedVolume(t *testing.T) {
 		}
 		mockVPCSDKClient.On("ListVolumesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListVolumesOptions")).
 			Return(volumeCollection, &core.DetailedResponse{}, nil)
-		
+
 		// Mock volume deletion
 		mockVPCSDKClient.On("DeleteVolumeWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.DeleteVolumeOptions")).
 			Return(&core.DetailedResponse{}, nil)
-		
+
 		err := provider.cleanupOrphanedVolume(ctx, mockVPCClient, volumeName, logger)
-		
+
 		// Should not error when volume is successfully deleted
 		assert.NoError(t, err)
 		mockVPCSDKClient.AssertExpectations(t)
@@ -344,13 +344,13 @@ func TestCleanupOrphanedVolume(t *testing.T) {
 
 func TestResourceCleanupIntegration(t *testing.T) {
 	t.Skip("Integration test - requires actual VPC client with resource management methods")
-	
+
 	// This test would verify the complete resource cleanup flow:
 	// 1. Create a VPC instance with intentional failure after partial resource creation
 	// 2. Verify that cleanup is triggered
 	// 3. Verify that orphaned resources are properly removed
 	// 4. Verify that the error propagation works correctly
-	
+
 	// Implementation would require:
 	// - Mock VPC client with resource creation/deletion methods
 	// - Simulated partial failures at different stages
@@ -360,11 +360,11 @@ func TestResourceCleanupIntegration(t *testing.T) {
 // TestResourceCleanupPatterns tests the overall error handling and cleanup patterns
 func TestResourceCleanupPatterns(t *testing.T) {
 	tests := []struct {
-		name           string
-		errorCode      string
-		statusCode     int
-		shouldCleanup  bool
-		description    string
+		name          string
+		errorCode     string
+		statusCode    int
+		shouldCleanup bool
+		description   string
 	}{
 		{
 			name:          "quota exceeded after VNI creation",
@@ -402,9 +402,9 @@ func TestResourceCleanupPatterns(t *testing.T) {
 			description:   "Parameter validation error - no resources created",
 		},
 	}
-	
+
 	provider := &VPCInstanceProvider{}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ibmErr := &ibm.IBMError{
@@ -412,9 +412,9 @@ func TestResourceCleanupPatterns(t *testing.T) {
 				Code:       tt.errorCode,
 				Message:    tt.description,
 			}
-			
+
 			shouldCleanup := provider.isPartialFailure(ibmErr)
-			assert.Equal(t, tt.shouldCleanup, shouldCleanup, 
+			assert.Equal(t, tt.shouldCleanup, shouldCleanup,
 				"Error %s (status %d) cleanup decision should be %v",
 				tt.errorCode, tt.statusCode, tt.shouldCleanup)
 		})

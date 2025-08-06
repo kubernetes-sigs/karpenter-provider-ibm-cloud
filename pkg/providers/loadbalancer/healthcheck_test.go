@@ -36,11 +36,11 @@ func TestHealthCheck(t *testing.T) {
 
 var _ = Describe("HealthCheckManager", func() {
 	var (
-		ctx         context.Context
-		manager     *HealthCheckManager
-		mockClient  *MockLoadBalancerVPCClient
-		target      v1alpha1.LoadBalancerTarget
-		poolID      string
+		ctx        context.Context
+		manager    *HealthCheckManager
+		mockClient *MockLoadBalancerVPCClient
+		target     v1alpha1.LoadBalancerTarget
+		poolID     string
 	)
 
 	BeforeEach(func() {

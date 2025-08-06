@@ -51,10 +51,10 @@ type LoadBalancerProviderInterface interface {
 const (
 	// LoadBalancerFinalizer is added to NodeClaims to ensure proper load balancer cleanup
 	LoadBalancerFinalizer = "loadbalancer.nodeclaim.ibm.sh/finalizer"
-	
+
 	// LoadBalancerRegisteredAnnotation indicates the node has been registered with load balancers
 	LoadBalancerRegisteredAnnotation = "loadbalancer.ibm.sh/registered"
-	
+
 	// LoadBalancerLastRegistrationTimeAnnotation tracks the last registration time
 	LoadBalancerLastRegistrationTimeAnnotation = "loadbalancer.ibm.sh/last-registration"
 )
@@ -62,15 +62,15 @@ const (
 // Controller reconciles NodeClaim load balancer registration
 type Controller struct {
 	client.Client
-	vpcClient              *ibm.VPCClient
-	loadBalancerProvider   LoadBalancerProviderInterface
-	logger                 logr.Logger
+	vpcClient            *ibm.VPCClient
+	loadBalancerProvider LoadBalancerProviderInterface
+	logger               logr.Logger
 }
 
 // NewController creates a new load balancer controller
 func NewController(client client.Client, vpcClient *ibm.VPCClient) *Controller {
 	logger := log.Log.WithName("loadbalancer-controller")
-	
+
 	return &Controller{
 		Client:               client,
 		vpcClient:            vpcClient,
@@ -181,7 +181,7 @@ func (c *Controller) handleRegistration(ctx context.Context, nodeClaim *karpv1.N
 
 	// Register with load balancers
 	logger.Info("Registering NodeClaim with load balancers", "instanceID", instanceID, "instanceIP", instanceIP)
-	
+
 	if err := c.loadBalancerProvider.RegisterInstance(ctx, nodeClass, instanceID, instanceIP); err != nil {
 		logger.Error(err, "Failed to register with load balancers")
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
@@ -211,7 +211,7 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 		} else {
 			// Deregister from load balancers
 			logger.Info("Deregistering NodeClaim from load balancers", "instanceID", instanceID)
-			
+
 			if err := c.loadBalancerProvider.DeregisterInstance(ctx, nodeClass, instanceID); err != nil {
 				logger.Error(err, "Failed to deregister from load balancers, continuing with cleanup")
 				// Don't return error to avoid blocking deletion
@@ -243,7 +243,7 @@ func (c *Controller) getNodeClass(ctx context.Context, nodeClaim *karpv1.NodeCla
 
 	var nodeClass v1alpha1.IBMNodeClass
 	key := types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}
-	
+
 	if err := c.Get(ctx, key, &nodeClass); err != nil {
 		return nil, fmt.Errorf("getting nodeclass %s: %w", key.Name, err)
 	}
@@ -258,7 +258,7 @@ func (c *Controller) getNode(ctx context.Context, nodeClaim *karpv1.NodeClaim) (
 
 	var node corev1.Node
 	key := types.NamespacedName{Name: nodeClaim.Status.NodeName}
-	
+
 	if err := c.Get(ctx, key, &node); err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
@@ -300,13 +300,12 @@ func (c *Controller) markAsRegistered(ctx context.Context, nodeClaim *karpv1.Nod
 	if nodeClaim.Annotations == nil {
 		nodeClaim.Annotations = make(map[string]string)
 	}
-	
+
 	nodeClaim.Annotations[LoadBalancerRegisteredAnnotation] = "true"
 	nodeClaim.Annotations[LoadBalancerLastRegistrationTimeAnnotation] = time.Now().Format(time.RFC3339)
-	
+
 	return c.Update(ctx, nodeClaim)
 }
-
 
 func (c *Controller) nodeToNodeClaim(ctx context.Context, obj client.Object) []reconcile.Request {
 	node, ok := obj.(*corev1.Node)

@@ -105,8 +105,8 @@ func TestFindOrCreateBootstrapToken(t *testing.T) {
 		expectError    bool
 	}{
 		{
-			name: "no existing tokens - create new",
-			ttl:  24 * time.Hour,
+			name:           "no existing tokens - create new",
+			ttl:            24 * time.Hour,
 			expectNewToken: true,
 		},
 		{
@@ -348,7 +348,7 @@ networking:
 			name: "kubeadm config with spaces",
 			clusterConfig: `apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
-controlPlaneEndpoint:   api-with-spaces.com:6443   
+controlPlaneEndpoint:   api-with-spaces.com:6443
 networking:
   serviceSubnet: 10.96.0.0/12`,
 			expectedEndpoint: "https://api-with-spaces.com:6443",
@@ -363,9 +363,9 @@ networking:
 			expectedEndpoint: "https://192.168.1.100:6443",
 		},
 		{
-			name:             "empty config",
-			clusterConfig:    "",
-			expectError:      true,
+			name:          "empty config",
+			clusterConfig: "",
+			expectError:   true,
 		},
 		{
 			name: "config without controlPlaneEndpoint",
@@ -422,7 +422,7 @@ clusters:
 			kubeconfig: `apiVersion: v1
 clusters:
 - cluster:
-    server:   https://api-spaces.com:6443   
+    server:   https://api-spaces.com:6443
   name: cluster`,
 			expectedEndpoint: "https://api-spaces.com:6443",
 		},
@@ -436,9 +436,9 @@ clusters:
 			expectedEndpoint: "https://10.0.0.1:6443",
 		},
 		{
-			name:             "empty kubeconfig",
-			kubeconfig:       "",
-			expectError:      true,
+			name:        "empty kubeconfig",
+			kubeconfig:  "",
+			expectError: true,
 		},
 		{
 			name: "kubeconfig without server",

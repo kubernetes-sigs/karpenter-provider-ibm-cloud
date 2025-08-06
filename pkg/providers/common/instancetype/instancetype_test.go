@@ -320,7 +320,7 @@ func TestIBMInstanceTypeProvider_GetWithMocks(t *testing.T) {
 			if err != nil && tt.errContains != "" && !contains(err.Error(), tt.errContains) {
 				t.Errorf("Get() error = %v, want error containing %v", err, tt.errContains)
 			}
-			
+
 			// Most importantly: verify we don't get the old nil pointer error
 			if err != nil && contains(err.Error(), "listInstanceProfilesOptions cannot be nil") {
 				t.Errorf("Get() should not return nil pointer error, got: %v", err)
@@ -337,11 +337,11 @@ func contains(s, substr string) bool {
 // Test Create method (no-op)
 func TestIBMInstanceTypeProvider_Create(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{}
-	
+
 	instanceType := &cloudprovider.InstanceType{
 		Name: "bx2-4x16",
 	}
-	
+
 	err := provider.Create(context.Background(), instanceType)
 	assert.NoError(t, err) // Create should be a no-op for IBM Cloud
 }
@@ -349,11 +349,11 @@ func TestIBMInstanceTypeProvider_Create(t *testing.T) {
 // Test Delete method (no-op)
 func TestIBMInstanceTypeProvider_Delete(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{}
-	
+
 	instanceType := &cloudprovider.InstanceType{
 		Name: "bx2-4x16",
 	}
-	
+
 	err := provider.Delete(context.Background(), instanceType)
 	assert.NoError(t, err) // Delete should be a no-op for IBM Cloud
 }
@@ -363,12 +363,12 @@ func TestIBMInstanceTypeProvider_FilterInstanceTypes_NilClient(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{
 		client: nil,
 	}
-	
+
 	requirements := &v1alpha1.InstanceTypeRequirements{
 		MinimumCPU:    2,
 		MinimumMemory: 8,
 	}
-	
+
 	result, err := provider.FilterInstanceTypes(context.Background(), requirements)
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -403,7 +403,7 @@ func TestIBMInstanceTypeProvider_Get_Extended(t *testing.T) {
 			errContains:  "IBM client not initialized", // Will hit client check first
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := tt.provider.Get(context.Background(), tt.instanceName)
@@ -424,9 +424,9 @@ func TestIBMInstanceTypeProvider_Get_Extended(t *testing.T) {
 // Test List method with more coverage
 func TestIBMInstanceTypeProvider_List_Extended(t *testing.T) {
 	tests := []struct {
-		name     string
-		provider *IBMInstanceTypeProvider
-		wantErr  bool
+		name        string
+		provider    *IBMInstanceTypeProvider
+		wantErr     bool
 		errContains string
 	}{
 		{
@@ -438,7 +438,7 @@ func TestIBMInstanceTypeProvider_List_Extended(t *testing.T) {
 			errContains: "IBM client not initialized",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := tt.provider.List(context.Background())
@@ -469,23 +469,23 @@ func NewEnhancedMockVPCClient() *EnhancedMockVPCClient {
 	profileName1 := "bx2-2x8"
 	profileName2 := "bx2-4x16"
 	profileName3 := "cx2-2x4"
-	
+
 	var cpu1 int64 = 2
 	var memory1 int64 = 8
 	var cpu2 int64 = 4
 	var memory2 int64 = 16
 	var cpu3 int64 = 2
 	var memory3 int64 = 4
-	
+
 	arch := "amd64"
-	
+
 	regionName := "us-south"
 	status := "available"
-	
+
 	zone1 := "us-south-1"
 	zone2 := "us-south-2"
 	zone3 := "us-south-3"
-	
+
 	return &EnhancedMockVPCClient{
 		profiles: []vpcv1.InstanceProfile{
 			{
@@ -546,7 +546,7 @@ func (m *EnhancedMockVPCClient) ListInstanceProfiles(options *vpcv1.ListInstance
 	if err, exists := m.errors["ListInstanceProfiles"]; exists {
 		return nil, &core.DetailedResponse{}, err
 	}
-	
+
 	return &vpcv1.InstanceProfileCollection{
 		Profiles: m.profiles,
 	}, &core.DetailedResponse{}, nil
@@ -556,7 +556,7 @@ func (m *EnhancedMockVPCClient) ListRegions(options *vpcv1.ListRegionsOptions) (
 	if err, exists := m.errors["ListRegions"]; exists {
 		return nil, &core.DetailedResponse{}, err
 	}
-	
+
 	return &vpcv1.RegionCollection{
 		Regions: m.regions,
 	}, &core.DetailedResponse{}, nil
@@ -566,15 +566,15 @@ func (m *EnhancedMockVPCClient) ListRegionZonesWithContext(ctx context.Context, 
 	if err, exists := m.errors["ListRegionZones"]; exists {
 		return nil, &core.DetailedResponse{}, err
 	}
-	
+
 	if options.RegionName == nil {
 		return nil, &core.DetailedResponse{}, fmt.Errorf("region name required")
 	}
-	
+
 	if zones, exists := m.zones[*options.RegionName]; exists {
 		return &vpcv1.ZoneCollection{Zones: zones}, &core.DetailedResponse{}, nil
 	}
-	
+
 	return &vpcv1.ZoneCollection{}, &core.DetailedResponse{}, nil
 }
 
@@ -601,7 +601,7 @@ func (m *EnhancedMockIBMClient) GetVPCClient() (*ibm.VPCClient, error) {
 	if err, exists := m.errors["GetVPCClient"]; exists {
 		return nil, err
 	}
-	
+
 	// Return a real VPCClient but with our mock SDK client
 	// This is tricky - we need to create a way to inject our mock
 	// For now, return an error to indicate the limitations
@@ -653,7 +653,7 @@ func TestGetInstanceFamily(t *testing.T) {
 			expected:     "balanced",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := getInstanceFamily(tt.instanceType)
@@ -695,7 +695,7 @@ func TestGetInstanceSize(t *testing.T) {
 			expected:     "small", // Current behavior: returns "small" when dash exists but no chars after it
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := getInstanceSize(tt.instanceType)
@@ -709,14 +709,14 @@ func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
 	// Create a mock provider with a client
 	var mockClient *ibm.Client = nil // Use nil for error testing
 	mockPricing := &MockPricingProvider{}
-	
+
 	provider := &IBMInstanceTypeProvider{
 		client:          mockClient,
 		pricingProvider: mockPricing,
 		zonesCache:      make(map[string][]string),
 		zonesCacheTime:  time.Now().Add(-2 * time.Hour), // Expired cache
 	}
-	
+
 	tests := []struct {
 		name         string
 		requirements *v1alpha1.InstanceTypeRequirements
@@ -732,11 +732,11 @@ func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
 			errContains: "IBM client not initialized",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := provider.FilterInstanceTypes(context.Background(), tt.requirements)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -754,12 +754,12 @@ func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
 func TestRankInstanceTypes_Comprehensive(t *testing.T) {
 	var mockClient *ibm.Client = nil
 	mockPricing := &MockPricingProvider{}
-	
+
 	provider := &IBMInstanceTypeProvider{
 		client:          mockClient,
 		pricingProvider: mockPricing,
 	}
-	
+
 	// Create test instance types
 	instanceTypes := []*cloudprovider.InstanceType{
 		{
@@ -783,9 +783,9 @@ func TestRankInstanceTypes_Comprehensive(t *testing.T) {
 			),
 		},
 	}
-	
+
 	result := provider.RankInstanceTypes(instanceTypes)
-	
+
 	assert.Equal(t, len(instanceTypes), len(result))
 	assert.NotNil(t, result)
 }
@@ -796,7 +796,7 @@ func TestRankInstanceTypes_NilPricing(t *testing.T) {
 		client:          nil,
 		pricingProvider: nil, // nil pricing provider
 	}
-	
+
 	instanceTypes := []*cloudprovider.InstanceType{
 		{
 			Name: "bx2-2x8",
@@ -806,7 +806,7 @@ func TestRankInstanceTypes_NilPricing(t *testing.T) {
 			},
 		},
 	}
-	
+
 	result := provider.RankInstanceTypes(instanceTypes)
 	assert.Equal(t, 1, len(result))
 }
@@ -817,7 +817,7 @@ func TestRankInstanceTypes_NilClient(t *testing.T) {
 		client:          nil,
 		pricingProvider: &MockPricingProvider{},
 	}
-	
+
 	instanceTypes := []*cloudprovider.InstanceType{
 		{
 			Name: "bx2-2x8",
@@ -827,7 +827,7 @@ func TestRankInstanceTypes_NilClient(t *testing.T) {
 			},
 		},
 	}
-	
+
 	result := provider.RankInstanceTypes(instanceTypes)
 	assert.Equal(t, 1, len(result))
 }
@@ -837,7 +837,7 @@ func TestConvertVPCProfileToInstanceType_EdgeCases(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{
 		client: nil,
 	}
-	
+
 	tests := []struct {
 		name        string
 		profile     vpcv1.InstanceProfile
@@ -874,11 +874,11 @@ func TestConvertVPCProfileToInstanceType_EdgeCases(t *testing.T) {
 			errContains: "has no memory",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := provider.convertVPCProfileToInstanceType(context.Background(), tt.profile)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, result)
@@ -898,7 +898,7 @@ func TestConvertVPCProfileToInstanceType_WithGPU(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{
 		client: nil, // nil client will cause error
 	}
-	
+
 	profile := vpcv1.InstanceProfile{
 		Name: core.StringPtr("gx2-8x64x1v100"),
 		VcpuCount: &vpcv1.InstanceProfileVcpu{
@@ -914,9 +914,9 @@ func TestConvertVPCProfileToInstanceType_WithGPU(t *testing.T) {
 			Value: core.Int64Ptr(1),
 		},
 	}
-	
+
 	result, err := provider.convertVPCProfileToInstanceType(context.Background(), profile)
-	
+
 	// Should error due to nil client
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -928,7 +928,7 @@ func TestConvertVPCProfileToInstanceType_PodCapacity(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{
 		client: nil, // nil client will cause error
 	}
-	
+
 	profile := vpcv1.InstanceProfile{
 		Name: core.StringPtr("test-profile"),
 		VcpuCount: &vpcv1.InstanceProfileVcpu{
@@ -938,12 +938,11 @@ func TestConvertVPCProfileToInstanceType_PodCapacity(t *testing.T) {
 			Value: core.Int64Ptr(16),
 		},
 	}
-	
+
 	result, err := provider.convertVPCProfileToInstanceType(context.Background(), profile)
-	
+
 	// Should error due to nil client trying to get zones
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "IBM client not initialized")
 }
-

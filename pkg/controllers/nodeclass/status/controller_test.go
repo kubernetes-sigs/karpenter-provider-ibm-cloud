@@ -1300,7 +1300,7 @@ func TestControllerPerformance(t *testing.T) {
 }
 
 // =============================================================================
-// CONSTRUCTOR TESTS  
+// CONSTRUCTOR TESTS
 // =============================================================================
 
 func TestNewController(t *testing.T) {
@@ -1308,19 +1308,19 @@ func TestNewController(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
 
 	tests := []struct {
-		name      string
-		client    client.Client
-		wantErr   bool
+		name        string
+		client      client.Client
+		wantErr     bool
 		errContains string
-		setupEnv  func()
-		cleanupEnv func()
+		setupEnv    func()
+		cleanupEnv  func()
 	}{
 		{
 			name:   "valid client with credentials",
 			client: kubeClient,
 			setupEnv: func() {
 				_ = os.Setenv("IBMCLOUD_API_KEY", "test-key")
-				_ = os.Setenv("VPC_API_KEY", "test-vpc-key") 
+				_ = os.Setenv("VPC_API_KEY", "test-vpc-key")
 				_ = os.Setenv("IBMCLOUD_REGION", "us-south")
 			},
 			cleanupEnv: func() {
@@ -1337,7 +1337,7 @@ func TestNewController(t *testing.T) {
 			errContains: "kubeClient cannot be nil",
 		},
 		{
-			name:   "missing credentials", 
+			name:   "missing credentials",
 			client: kubeClient,
 			setupEnv: func() {
 				_ = os.Unsetenv("IBMCLOUD_API_KEY")
@@ -1385,7 +1385,7 @@ func TestNewTestController(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
 
 	controller := NewTestController(kubeClient)
-	
+
 	assert.NotNil(t, controller)
 	assert.Equal(t, kubeClient, controller.kubeClient)
 	assert.Nil(t, controller.ibmClient)
@@ -1419,8 +1419,8 @@ func TestValidateRegion(t *testing.T) {
 		errContains string
 	}{
 		{
-			name:   "valid region",
-			region: "us-south",
+			name:    "valid region",
+			region:  "us-south",
 			wantErr: false,
 		},
 		{
@@ -1446,7 +1446,7 @@ func TestValidateRegion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := controller.validateRegion(ctx, tt.region)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -1485,9 +1485,9 @@ func TestValidateVPC(t *testing.T) {
 			errContains: "not found or not accessible",
 		},
 		{
-			name:        "empty VPC ID",
-			vpcID:       "",
-			wantErr:     true,
+			name:    "empty VPC ID",
+			vpcID:   "",
+			wantErr: true,
 		},
 	}
 
@@ -1508,7 +1508,7 @@ func TestValidateVPC(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := controller.validateVPC(ctx, tt.vpcID)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -1567,7 +1567,7 @@ func TestValidateSubnet(t *testing.T) {
 		{
 			name:     "subnet not available",
 			subnetID: "subnet-pending",
-			vpcID:    "vpc-12345", 
+			vpcID:    "vpc-12345",
 			setupMock: func() {
 				mockSubnet.On("GetSubnet", ctx, "subnet-pending").Return(&subnet.SubnetInfo{
 					ID:           "subnet-pending",
@@ -1585,7 +1585,7 @@ func TestValidateSubnet(t *testing.T) {
 			vpcID:    "vpc-12345",
 			setupMock: func() {
 				mockSubnet.On("GetSubnet", ctx, "subnet-low-ips").Return(&subnet.SubnetInfo{
-					ID:           "subnet-low-ips", 
+					ID:           "subnet-low-ips",
 					State:        "available",
 					AvailableIPs: 5,
 					Zone:         "us-south-1",
@@ -1605,7 +1605,7 @@ func TestValidateSubnet(t *testing.T) {
 			}
 
 			err := controller.validateSubnet(ctx, tt.subnetID, tt.vpcID)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -1614,7 +1614,7 @@ func TestValidateSubnet(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
-			
+
 			mockSubnet.AssertExpectations(t)
 		})
 	}
@@ -1652,7 +1652,7 @@ func TestValidateSubnetsAvailable(t *testing.T) {
 						Zone:         "us-south-1",
 					},
 					{
-						ID:           "subnet-2", 
+						ID:           "subnet-2",
 						State:        "available",
 						AvailableIPs: 100,
 						Zone:         "us-south-2",
@@ -1663,7 +1663,7 @@ func TestValidateSubnetsAvailable(t *testing.T) {
 		},
 		{
 			name:  "subnets available in specific zone",
-			vpcID: "vpc-12345", 
+			vpcID: "vpc-12345",
 			zone:  "us-south-1",
 			setupMock: func() {
 				mockSubnet.On("ListSubnets", ctx, "vpc-12345").Return([]subnet.SubnetInfo{
@@ -1675,7 +1675,7 @@ func TestValidateSubnetsAvailable(t *testing.T) {
 					},
 					{
 						ID:           "subnet-2",
-						State:        "available", 
+						State:        "available",
 						AvailableIPs: 100,
 						Zone:         "us-south-2",
 					},
@@ -1699,7 +1699,7 @@ func TestValidateSubnetsAvailable(t *testing.T) {
 						ID:           "subnet-low-ips",
 						State:        "available",
 						AvailableIPs: 5,
-						Zone:         "us-south-2", 
+						Zone:         "us-south-2",
 					},
 				}, nil)
 			},
@@ -1744,7 +1744,7 @@ func TestValidateSubnetsAvailable(t *testing.T) {
 			}
 
 			err := controller.validateSubnetsAvailable(ctx, tt.vpcID, tt.zone)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -1753,7 +1753,7 @@ func TestValidateSubnetsAvailable(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
-			
+
 			mockSubnet.AssertExpectations(t)
 		})
 	}
@@ -1787,10 +1787,10 @@ func TestValidateImage(t *testing.T) {
 			errContains: "not found or not accessible",
 		},
 		{
-			name:        "empty image ID",
-			imageID:     "",
-			region:      "us-south",
-			wantErr:     true,
+			name:    "empty image ID",
+			imageID: "",
+			region:  "us-south",
+			wantErr: true,
 		},
 	}
 
@@ -1827,7 +1827,7 @@ func TestValidateImage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := controller.validateImage(ctx, tt.imageID, tt.region)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -1843,7 +1843,7 @@ func TestValidateImage(t *testing.T) {
 func TestRegister(t *testing.T) {
 	s := getTestScheme()
 	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
-	
+
 	controller := &Controller{
 		kubeClient: kubeClient,
 	}
@@ -1851,7 +1851,7 @@ func TestRegister(t *testing.T) {
 	// Create a fake manager - we'll just test that Register doesn't panic
 	// since controller-runtime's fake manager is complex to set up
 	ctx := context.Background()
-	
+
 	// Test should not panic
 	assert.NotPanics(t, func() {
 		// We can't easily test the full Register functionality without a real manager

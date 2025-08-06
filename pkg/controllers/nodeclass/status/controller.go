@@ -246,14 +246,14 @@ func validateRegionFormat(region string) error {
 	if !strings.Contains(region, "-") || len(region) < 5 || len(region) > 10 {
 		return fmt.Errorf("invalid region format: %s, expected format like 'us-south' or 'eu-de'", region)
 	}
-	
+
 	// Check for valid characters (lowercase letters and hyphen only)
 	for _, char := range region {
 		if (char < 'a' || char > 'z') && char != '-' {
 			return fmt.Errorf("invalid region format: %s, regions must contain only lowercase letters and hyphens", region)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -446,7 +446,7 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 	cacheKey := fmt.Sprintf("subnet-zone-%s", subnetID)
 	if cachedZone, found := c.cache.Get(cacheKey); found {
 		if cachedZone.(string) != zone {
-			return fmt.Errorf("subnet %s is in zone %s, but requested zone is %s", 
+			return fmt.Errorf("subnet %s is in zone %s, but requested zone is %s",
 				subnetID, cachedZone.(string), zone)
 		}
 		return nil
@@ -463,13 +463,13 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 
 	// Check if the subnet is in the requested zone
 	if subnetInfo.Zone != zone {
-		return fmt.Errorf("subnet %s is in zone %s, but requested zone is %s. Subnets cannot span multiple zones in IBM Cloud VPC", 
+		return fmt.Errorf("subnet %s is in zone %s, but requested zone is %s. Subnets cannot span multiple zones in IBM Cloud VPC",
 			subnetID, subnetInfo.Zone, zone)
 	}
 
 	// Additional validation: ensure subnet is in available state
 	if subnetInfo.State != "available" {
-		return fmt.Errorf("subnet %s in zone %s is not in available state (current state: %s)", 
+		return fmt.Errorf("subnet %s in zone %s is not in available state (current state: %s)",
 			subnetID, zone, subnetInfo.State)
 	}
 

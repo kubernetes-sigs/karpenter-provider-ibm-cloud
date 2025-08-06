@@ -31,7 +31,7 @@ const (
 	// Internal labels that are propagated to the node
 	IbmLabelKey          = "ibm.x-k8s.io/node"
 	IbmLabelValue        = "fake"
-	NodeViewerLabelKey    = "eks-node-viewer/instance-price"
+	NodeViewerLabelKey   = "eks-node-viewer/instance-price"
 	IbmPartitionLabelKey = "ibm-partition"
 )
 

@@ -30,10 +30,10 @@ jobs:
             const retentionDays = parseInt('${{ github.event.inputs.retention_days || 7 }}');
             const dryRun = ${{ github.event.inputs.dry_run || false }};
             const packageName = 'karpenter-provider-ibm-cloud/controller';
-            
+
             console.log(`Retention period: ${retentionDays} days`);
             console.log(`Dry run: ${dryRun}`);
-            
+
             // Get all package versions
             let versions = [];
             try {
@@ -52,36 +52,36 @@ jobs:
               }
               throw error;
             }
-            
+
             const now = new Date();
             const cutoffDate = new Date(now.getTime() - (retentionDays * 24 * 60 * 60 * 1000));
-            
+
             console.log(`Cutoff date: ${cutoffDate.toISOString()}`);
             console.log(`Total versions found: ${versions.length}`);
-            
+
             const nightlyVersions = versions.filter(v => {
               // Check if this is a nightly build by examining tags
               const tags = v.metadata?.container?.tags || [];
-              return tags.some(tag => 
-                tag.includes('nightly') || 
+              return tags.some(tag =>
+                tag.includes('nightly') ||
                 tag.match(/v\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}-[a-f0-9]+-/)
               );
             });
-            
+
             console.log(`Nightly versions found: ${nightlyVersions.length}`);
-            
+
             const versionsToDelete = nightlyVersions.filter(v => {
               const createdAt = new Date(v.created_at);
               return createdAt < cutoffDate;
             });
-            
+
             console.log(`Versions to delete: ${versionsToDelete.length}`);
-            
+
             if (versionsToDelete.length === 0) {
               console.log('No old nightly builds to clean up');
               return;
             }
-            
+
             // Create summary
             let summary = '# Nightly Build Cleanup Summary\n\n';
             summary += `- **Retention Period**: ${retentionDays} days\n`;
@@ -89,15 +89,15 @@ jobs:
             summary += `- **Total Nightly Versions**: ${nightlyVersions.length}\n`;
             summary += `- **Versions to Delete**: ${versionsToDelete.length}\n`;
             summary += `- **Dry Run**: ${dryRun}\n\n`;
-            
+
             summary += '## Versions to be deleted:\n\n';
             summary += '| Version | Created At | Tags |\n';
             summary += '|---------|------------|------|\n';
-            
+
             for (const version of versionsToDelete) {
               const tags = version.metadata?.container?.tags || [];
               summary += `| ${version.name} | ${version.created_at} | ${tags.join(', ')} |\n`;
-              
+
               if (!dryRun) {
                 try {
                   // First, try to get the version to confirm it exists
@@ -115,7 +115,7 @@ jobs:
                     }
                     throw getError;
                   }
-                  
+
                   // Version exists, proceed with deletion
                   await github.rest.packages.deletePackageVersionForUser({
                     package_type: 'container',
@@ -133,11 +133,11 @@ jobs:
                 }
               }
             }
-            
+
             // Write summary
             const fs = require('fs');
             fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-            
+
             if (dryRun) {
               console.log('Dry run completed - no versions were actually deleted');
             } else {

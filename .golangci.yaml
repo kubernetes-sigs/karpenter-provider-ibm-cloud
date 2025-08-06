@@ -12,14 +12,14 @@ linters:
     - staticcheck
     - unused
     - misspell
-    
+
   settings:
     govet:
       enable:
         - shadow
     misspell:
       locale: US
-      
+
   exclusions:
     paths:
       - vendor/
@@ -29,7 +29,7 @@ linters:
       - path: _test\.go
         linters:
           - gocyclo
-          
+
 formatters:
   settings:
     gofmt:

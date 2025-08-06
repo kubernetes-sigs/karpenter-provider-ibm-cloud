@@ -96,7 +96,7 @@ markdown_extensions:
   - toc:
       permalink: true
       title: On this page
-  
+
   # Python Markdown Extensions
   - pymdownx.arithmatex:
       generic: true

@@ -61,16 +61,16 @@ spec:
   region: us-south                      # Your IBM Cloud region
   vpc: vpc-iks-12345678                 # Your IKS cluster VPC
   image: r006-12345678                  # Ubuntu 20.04 or cluster-compatible image
-  
+
   # IKS-SPECIFIC CONFIGURATION
   bootstrapMode: iks-api                # Use IKS API for node bootstrapping
   iksClusterID: "cluster-12345678"      # Your IKS cluster ID (required for iks-api mode)
   iksWorkerPoolID: "pool-default"       # Optional: specific worker pool
-  
+
   # Security and networking
   securityGroups:
   - sg-iks-workers                      # IKS worker security group
-  
+
   # Optional: SSH access for troubleshooting
   sshKeys:
   - key-iks-access
@@ -93,7 +93,7 @@ spec:
         apiVersion: karpenter.ibm.sh/v1alpha1
         kind: IBMNodeClass
         name: iks-nodeclass
-      
+
       # Instance requirements (limited by worker pool configuration)
       requirements:
       - key: node.kubernetes.io/instance-type
@@ -102,11 +102,11 @@ spec:
       - key: kubernetes.io/arch
         operator: In
         values: ["amd64"]
-  
+
   limits:
     cpu: 1000
     memory: 1000Gi
-  
+
   disruption:
     consolidationPolicy: WhenEmpty
     consolidateAfter: 30s

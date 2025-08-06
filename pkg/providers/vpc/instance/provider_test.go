@@ -563,7 +563,7 @@ func TestVPCInstanceProvider_CreateReal(t *testing.T) {
 				// Mock security group lookup for default SG
 				vpc := &vpcv1.VPC{ID: &[]string{"test-vpc-id"}[0]}
 				vpcSDKClient.On("GetVPCWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetVPCOptions")).Return(vpc, &core.DetailedResponse{}, nil)
-				
+
 				securityGroups := &vpcv1.SecurityGroupCollection{
 					SecurityGroups: []vpcv1.SecurityGroup{
 						{ID: &[]string{"sg-default"}[0], Name: &[]string{"default"}[0]},
@@ -638,7 +638,7 @@ func TestVPCInstanceProvider_CreateReal(t *testing.T) {
 				// Mock security group lookup success
 				vpc := &vpcv1.VPC{ID: &[]string{"test-vpc-id"}[0]}
 				vpcSDKClient.On("GetVPCWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetVPCOptions")).Return(vpc, &core.DetailedResponse{}, nil)
-				
+
 				securityGroups := &vpcv1.SecurityGroupCollection{
 					SecurityGroups: []vpcv1.SecurityGroup{
 						{ID: &[]string{"sg-default"}[0], Name: &[]string{"default"}[0]},
@@ -664,7 +664,7 @@ func TestVPCInstanceProvider_CreateReal(t *testing.T) {
 				// Mock security group lookup
 				vpc := &vpcv1.VPC{ID: &[]string{"test-vpc-id"}[0]}
 				vpcSDKClient.On("GetVPCWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetVPCOptions")).Return(vpc, &core.DetailedResponse{}, nil)
-				
+
 				securityGroups := &vpcv1.SecurityGroupCollection{
 					SecurityGroups: []vpcv1.SecurityGroup{
 						{ID: &[]string{"sg-default"}[0], Name: &[]string{"default"}[0]},
@@ -686,7 +686,7 @@ func TestVPCInstanceProvider_CreateReal(t *testing.T) {
 					if options.InstancePrototype == nil {
 						return false
 					}
-					
+
 					// Cast to the specific type to access ResourceGroup field
 					if prototypeByImage, ok := options.InstancePrototype.(*vpcv1.InstancePrototypeInstanceByImage); ok {
 						if prototypeByImage.ResourceGroup == nil {
@@ -714,7 +714,7 @@ func TestVPCInstanceProvider_CreateReal(t *testing.T) {
 			scheme := getTestScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = corev1.AddToScheme(scheme)
-			
+
 			var fakeClient client.Client
 			if tt.nodeClass != nil {
 				fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.nodeClass).Build()
@@ -901,7 +901,7 @@ func TestVPCInstanceProvider_Create(t *testing.T) {
 			errorContains: "creating VPC instance",
 		},
 		{
-			name:      "resource group configuration",
+			name: "resource group configuration",
 			nodeClass: func() *v1alpha1.IBMNodeClass {
 				nc := getTestNodeClass()
 				nc.Spec.ResourceGroup = "test-resource-group-id"
@@ -1387,12 +1387,12 @@ func TestNewVPCInstanceProviderWithKubernetesClient(t *testing.T) {
 
 func TestVPCInstanceProvider_List(t *testing.T) {
 	// Test the List method which exists on the real provider
-	
+
 	// Create mock clients
 	mockIBMClient := &MockIBMClient{}
 	mockVPCSDKClient := &MockVPCSDKClient{}
 	mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-	
+
 	// Mock instance list response
 	instances := &vpcv1.InstanceCollection{
 		Instances: []vpcv1.Instance{
@@ -1408,12 +1408,12 @@ func TestVPCInstanceProvider_List(t *testing.T) {
 	}
 	testResponse := &core.DetailedResponse{StatusCode: 200}
 	mockVPCSDKClient.On("ListInstancesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListInstancesOptions")).Return(instances, testResponse, nil)
-	
+
 	// Create test provider interface
 	provider := &testVPCInstanceProvider{
 		client: mockIBMClient,
 	}
-	
+
 	// Note: The real provider doesn't have a List method that matches the common interface
 	// This test validates the expected behavior if such a method existed
 	t.Run("list instances test structure", func(t *testing.T) {
@@ -1425,10 +1425,10 @@ func TestVPCInstanceProvider_List(t *testing.T) {
 
 func TestVPCInstanceProvider_BootstrapUserData(t *testing.T) {
 	tests := []struct {
-		name          string
-		nodeClass     *v1alpha1.IBMNodeClass
-		expectedData  string
-		containsData  string
+		name         string
+		nodeClass    *v1alpha1.IBMNodeClass
+		expectedData string
+		containsData string
 	}{
 		{
 			name: "manual userData provided",
@@ -1451,7 +1451,7 @@ func TestVPCInstanceProvider_BootstrapUserData(t *testing.T) {
 			containsData: "Basic bootstrap for region us-south",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test the basic bootstrap script generation logic
@@ -1503,7 +1503,7 @@ func TestVPCInstanceProvider_ValidationErrors(t *testing.T) {
 			},
 			nodeClaim: &karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclaim",
+					Name:   "test-nodeclaim",
 					Labels: map[string]string{
 						// Missing node.kubernetes.io/instance-type label
 					},
@@ -1541,38 +1541,38 @@ func TestVPCInstanceProvider_ValidationErrors(t *testing.T) {
 			expectedError: "", // Should succeed with label fallback
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fake client with nodeclass
 			scheme := getTestScheme()
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.nodeClass).Build()
-			
+
 			// Create mock clients
 			mockIBMClient := &MockIBMClient{}
 			mockVPCSDKClient := &MockVPCSDKClient{}
 			mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-			
+
 			if tt.expectedError == "" {
 				// Setup mocks for successful case
 				testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
 				testResponse := &core.DetailedResponse{StatusCode: 200}
 				mockVPCSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-				
+
 				expectedInstance := getTestVPCInstance()
 				mockVPCSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
 			}
-			
+
 			// Create provider
 			provider := &testVPCInstanceProvider{
 				client:     mockIBMClient,
 				kubeClient: fakeClient,
 			}
-			
+
 			// Test create
 			ctx := context.Background()
 			result, err := provider.Create(ctx, tt.nodeClaim)
-			
+
 			if tt.expectedError != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.expectedError)
@@ -1587,24 +1587,24 @@ func TestVPCInstanceProvider_ValidationErrors(t *testing.T) {
 
 func TestVPCInstanceProvider_SecurityGroupHandling(t *testing.T) {
 	tests := []struct {
-		name           string
-		nodeClass      *v1alpha1.IBMNodeClass
-		setupMocks     func(*MockVPCSDKClient)
-		expectError    bool
-		errorContains  string
+		name          string
+		nodeClass     *v1alpha1.IBMNodeClass
+		setupMocks    func(*MockVPCSDKClient)
+		expectError   bool
+		errorContains string
 	}{
 		{
 			name: "explicit security groups provided",
 			nodeClass: &v1alpha1.IBMNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
 				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:         "us-south",
-					Zone:           "us-south-1", 
+					Region:          "us-south",
+					Zone:            "us-south-1",
 					InstanceProfile: "bx2-4x16",
-					Image:          "test-image-id",
-					VPC:            "test-vpc-id",
-					Subnet:         "test-subnet-id",
-					SecurityGroups: []string{"sg-1", "sg-2"},
+					Image:           "test-image-id",
+					VPC:             "test-vpc-id",
+					Subnet:          "test-subnet-id",
+					SecurityGroups:  []string{"sg-1", "sg-2"},
 				},
 			},
 			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
@@ -1612,7 +1612,7 @@ func TestVPCInstanceProvider_SecurityGroupHandling(t *testing.T) {
 				testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
 				testResponse := &core.DetailedResponse{StatusCode: 200}
 				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-				
+
 				// Mock instance creation
 				expectedInstance := getTestVPCInstance()
 				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
@@ -1624,12 +1624,12 @@ func TestVPCInstanceProvider_SecurityGroupHandling(t *testing.T) {
 			nodeClass: &v1alpha1.IBMNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
 				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:         "us-south",
-					Zone:           "us-south-1",
+					Region:          "us-south",
+					Zone:            "us-south-1",
 					InstanceProfile: "bx2-4x16",
-					Image:          "test-image-id",
-					VPC:            "test-vpc-id",
-					Subnet:         "test-subnet-id",
+					Image:           "test-image-id",
+					VPC:             "test-vpc-id",
+					Subnet:          "test-subnet-id",
 					// No SecurityGroups specified
 				},
 			},
@@ -1639,14 +1639,14 @@ func TestVPCInstanceProvider_SecurityGroupHandling(t *testing.T) {
 				testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
 				testResponse := &core.DetailedResponse{StatusCode: 200}
 				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-				
+
 				expectedInstance := getTestVPCInstance()
 				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
 			},
 			expectError: false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Validate NodeClass configuration structure
@@ -1656,7 +1656,7 @@ func TestVPCInstanceProvider_SecurityGroupHandling(t *testing.T) {
 			} else {
 				assert.Empty(t, tt.nodeClass.Spec.SecurityGroups)
 			}
-			
+
 			// Test that we can create test nodeclaim
 			nodeClaim := &karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclaim"},
@@ -1681,22 +1681,22 @@ func TestVPCInstanceProvider_HelperFunctions(t *testing.T) {
 		// We just verify it returns a boolean value
 		assert.IsType(t, false, result)
 	})
-	
+
 	t.Run("getDefaultSecurityGroup placeholder", func(t *testing.T) {
 		// Test validates the placeholder implementation structure
 		// The real implementation returns a placeholder security group
 		mockIBMClient := &MockIBMClient{}
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-		
+
 		provider := &testVPCInstanceProvider{
 			client: mockIBMClient,
 		}
-		
+
 		// Validate provider structure
 		assert.NotNil(t, provider)
 		assert.NotNil(t, provider.client)
-		
+
 		// The actual getDefaultSecurityGroup is not exposed, but we can validate
 		// that the provider has the necessary structure for security group handling
 		vpcClient, err := provider.client.GetVPCClient()
@@ -1714,7 +1714,7 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, provider)
 		assert.Contains(t, err.Error(), "IBM client cannot be nil")
-		
+
 		// Test with valid client
 		client := &ibm.Client{}
 		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
@@ -1722,14 +1722,14 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
-	
+
 	t.Run("NewVPCInstanceProviderWithKubernetesClient", func(t *testing.T) {
 		// Test with nil client
 		provider, err := NewVPCInstanceProviderWithKubernetesClient(nil, nil, nil)
 		assert.Error(t, err)
 		assert.Nil(t, provider)
 		assert.Contains(t, err.Error(), "IBM client cannot be nil")
-		
+
 		// Test with valid client
 		client := &ibm.Client{}
 		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
@@ -1737,7 +1737,7 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
-	
+
 	t.Run("extractInstanceIDFromProviderID", func(t *testing.T) {
 		tests := []struct {
 			name       string
@@ -1770,7 +1770,7 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 				expected:   "",
 			},
 		}
-		
+
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				result := extractInstanceIDFromProviderID(tt.providerID)
@@ -1778,15 +1778,15 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 			})
 		}
 	})
-	
+
 	t.Run("getBasicBootstrapScript", func(t *testing.T) {
 		provider := &VPCInstanceProvider{
 			client: &ibm.Client{},
 		}
 		nodeClass := getTestNodeClass()
-		
+
 		script := provider.getBasicBootstrapScript(nodeClass)
-		
+
 		assert.Contains(t, script, "#!/bin/bash")
 		assert.Contains(t, script, "Basic bootstrap for region us-south")
 		assert.Contains(t, script, "net.ipv4.ip_forward = 1")
@@ -1802,29 +1802,29 @@ func TestVPCInstanceProvider_ErrorHandling(t *testing.T) {
 			client:     &ibm.Client{},
 			kubeClient: nil, // This will cause an error
 		}
-		
+
 		ctx := context.Background()
 		nodeClaim := getTestNodeClaim()
-		
+
 		result, err := provider.Create(ctx, nodeClaim)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "kubernetes client not set")
 	})
-	
+
 	t.Run("Create with missing NodeClass", func(t *testing.T) {
 		// Create empty fake client (no NodeClass objects)
 		scheme := getTestScheme()
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		
+
 		provider := &VPCInstanceProvider{
 			client:     &ibm.Client{},
 			kubeClient: fakeClient,
 		}
-		
+
 		ctx := context.Background()
 		nodeClaim := getTestNodeClaim()
-		
+
 		result, err := provider.Create(ctx, nodeClaim)
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -1841,53 +1841,53 @@ func TestVPCInstanceProvider_CRUDOperations(t *testing.T) {
 		provider, err := NewVPCInstanceProvider(client, fakeKubeClient)
 		assert.NoError(t, err)
 		assert.NotNil(t, provider)
-		
+
 		// Convert to concrete type to access all methods
 		realProvider := provider.(*VPCInstanceProvider)
 		assert.NotNil(t, realProvider.client)
 		assert.NotNil(t, realProvider.kubeClient)
 	})
-	
+
 	t.Run("Get method error handling", func(t *testing.T) {
 		// Test with invalid provider ID
 		provider := &VPCInstanceProvider{
 			client: &ibm.Client{},
 		}
-		
+
 		ctx := context.Background()
 		result, err := provider.Get(ctx, "invalid-provider-id")
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "could not extract instance ID")
 	})
-	
+
 	t.Run("Delete method error handling", func(t *testing.T) {
 		// Test with invalid provider ID
 		provider := &VPCInstanceProvider{
 			client: &ibm.Client{},
 		}
-		
+
 		ctx := context.Background()
 		node := &corev1.Node{
 			Spec: corev1.NodeSpec{
 				ProviderID: "invalid-provider-id",
 			},
 		}
-		
+
 		err := provider.Delete(ctx, node)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "could not extract instance ID")
 	})
-	
+
 	t.Run("UpdateTags method error handling", func(t *testing.T) {
 		// Test with invalid provider ID
 		provider := &VPCInstanceProvider{
 			client: &ibm.Client{},
 		}
-		
+
 		ctx := context.Background()
 		tags := map[string]string{"test": "value"}
-		
+
 		err := provider.UpdateTags(ctx, "invalid-provider-id", tags)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "could not extract instance ID")
@@ -1900,7 +1900,7 @@ func TestVPCInstanceProvider_CreateKubernetesClient(t *testing.T) {
 		provider := &VPCInstanceProvider{
 			client: &ibm.Client{},
 		}
-		
+
 		// This function creates a kubernetes client from in-cluster config
 		// In a test environment, this will likely fail, but we can test the function exists
 		ctx := context.Background()
@@ -1952,7 +1952,7 @@ func TestVPCInstanceProvider_SecurityGroups(t *testing.T) {
 		// Mock VPC SDK client
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockIBMClient := &MockIBMClient{mockVPCSDKClient: mockVPCSDKClient}
-		
+
 		// Mock image resolution
 		testImage := &vpcv1.Image{
 			ID: &[]string{"test-image-id"}[0],
@@ -2057,7 +2057,7 @@ func TestVPCInstanceProvider_SecurityGroups(t *testing.T) {
 		// Mock VPC SDK client
 		mockVPCSDKClient := &MockVPCSDKClient{}
 		mockIBMClient := &MockIBMClient{mockVPCSDKClient: mockVPCSDKClient}
-		
+
 		// Mock image resolution
 		testImage := &vpcv1.Image{
 			ID: &[]string{"test-image-id"}[0],
@@ -2196,9 +2196,9 @@ func TestVPCInstanceProvider_SecurityGroups(t *testing.T) {
 // TestVPCInstanceProvider_VNIConfiguration tests Virtual Network Interface configuration
 func TestVPCInstanceProvider_VNIConfiguration(t *testing.T) {
 	t.Skip("VNI test requires mock interface refactoring - VNI implementation tested via integration")
-	
+
 	// Note: VNI functionality is validated through:
-	// 1. Compilation tests (ensuring VNI types work correctly)  
+	// 1. Compilation tests (ensuring VNI types work correctly)
 	// 2. Integration tests with real IBM Cloud API
 	// 3. All existing tests pass with VNI implementation
 }

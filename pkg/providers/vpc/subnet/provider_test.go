@@ -34,7 +34,7 @@ func TestProvider_Creation(t *testing.T) {
 	client := &ibm.Client{}
 	provider := NewProvider(client)
 	require.NotNil(t, provider)
-	
+
 	// Test with nil client
 	provider2 := NewProvider(nil)
 	require.NotNil(t, provider2)
@@ -88,20 +88,20 @@ func TestConvertVPCSubnetToSubnetInfo_EdgeCases(t *testing.T) {
 		vpcSubnet := vpcv1.Subnet{
 			// All fields are nil pointers
 		}
-		
+
 		// This will panic because the implementation doesn't handle nil values
 		// Let's test that it panics as expected
 		assert.Panics(t, func() {
 			convertVPCSubnetToSubnetInfo(vpcSubnet)
 		})
 	})
-	
+
 	t.Run("subnet with partial data", func(t *testing.T) {
 		subnetID := "subnet-partial"
 		zoneName := "us-south-2"
 		cidr := "10.0.0.0/24"
 		status := "available"
-		
+
 		vpcSubnet := vpcv1.Subnet{
 			ID:            &subnetID,
 			Zone:          &vpcv1.ZoneReference{Name: &zoneName},
@@ -109,9 +109,9 @@ func TestConvertVPCSubnetToSubnetInfo_EdgeCases(t *testing.T) {
 			Status:        &status,
 			// Missing IP count fields
 		}
-		
+
 		result := convertVPCSubnetToSubnetInfo(vpcSubnet)
-		
+
 		assert.Equal(t, subnetID, result.ID)
 		assert.Equal(t, zoneName, result.Zone)
 		assert.Equal(t, cidr, result.CIDR)
@@ -119,7 +119,7 @@ func TestConvertVPCSubnetToSubnetInfo_EdgeCases(t *testing.T) {
 		assert.Equal(t, int32(0), result.TotalIPCount)
 		assert.Equal(t, int32(0), result.AvailableIPs)
 	})
-	
+
 	t.Run("subnet with zero available IPs", func(t *testing.T) {
 		subnetID := "subnet-full"
 		zoneName := "us-south-3"
@@ -127,7 +127,7 @@ func TestConvertVPCSubnetToSubnetInfo_EdgeCases(t *testing.T) {
 		status := "available"
 		totalIPs := int64(256)
 		availableIPs := int64(0)
-		
+
 		vpcSubnet := vpcv1.Subnet{
 			ID:                        &subnetID,
 			Zone:                      &vpcv1.ZoneReference{Name: &zoneName},
@@ -136,9 +136,9 @@ func TestConvertVPCSubnetToSubnetInfo_EdgeCases(t *testing.T) {
 			TotalIpv4AddressCount:     &totalIPs,
 			AvailableIpv4AddressCount: &availableIPs,
 		}
-		
+
 		result := convertVPCSubnetToSubnetInfo(vpcSubnet)
-		
+
 		assert.Equal(t, int32(0), result.AvailableIPs)
 		assert.Equal(t, int32(256), result.UsedIPCount) // All IPs are used
 	})
@@ -201,46 +201,46 @@ func TestVPCSubnetProvider_Interface(t *testing.T) {
 		client := &ibm.Client{}
 		provider := NewProvider(client)
 		assert.NotNil(t, provider)
-		
+
 		// The provider is created through an interface
 		assert.NotNil(t, provider)
 	})
-	
+
 	t.Run("SelectSubnets with nil client", func(t *testing.T) {
 		provider := NewProvider(nil)
-		
+
 		ctx := context.Background()
 		vpcID := "test-vpc"
 		strategy := &v1alpha1.PlacementStrategy{
 			SubnetSelection: &v1alpha1.SubnetSelectionCriteria{},
 		}
-		
+
 		// Test that the method exists and can be called (will error due to nil client)
 		result, err := provider.SelectSubnets(ctx, vpcID, strategy)
 		assert.Error(t, err) // Expected to fail
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "failed to list subnets")
 	})
-	
+
 	t.Run("ListSubnets with nil client", func(t *testing.T) {
 		provider := NewProvider(nil)
-		
+
 		ctx := context.Background()
 		vpcID := "test-vpc"
-		
+
 		// Test that the method exists and can be called (will error due to nil client)
 		result, err := provider.ListSubnets(ctx, vpcID)
 		assert.Error(t, err) // Expected to fail
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "IBM client is not initialized")
 	})
-	
+
 	t.Run("GetSubnet with nil client", func(t *testing.T) {
 		provider := NewProvider(nil)
-		
+
 		ctx := context.Background()
 		subnetID := "test-subnet"
-		
+
 		// Test that the method exists and can be called (will error due to nil client)
 		result, err := provider.GetSubnet(ctx, subnetID)
 		assert.Error(t, err) // Expected to fail
@@ -252,7 +252,7 @@ func TestVPCSubnetProvider_Interface(t *testing.T) {
 // TestSubnetSelection_NetworkConnectivity tests subnet selection network isolation scenarios
 func TestSubnetSelection_NetworkConnectivity(t *testing.T) {
 	t.Run("cluster nodes in first-second subnet scenario", func(t *testing.T) {
-		
+
 		clusterSubnet := SubnetInfo{
 			ID:           "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", // first-second
 			Zone:         "eu-de-2",
@@ -263,7 +263,7 @@ func TestSubnetSelection_NetworkConnectivity(t *testing.T) {
 			UsedIPCount:  56,
 			Tags:         map[string]string{"Name": "first-second"},
 		}
-		
+
 		wrongAutoSelectedSubnet := SubnetInfo{
 			ID:           "02c7-dc97437a-1b67-41c9-9db9-a6b92a46963d", // eu-de-2-default-subnet
 			Zone:         "eu-de-2",
@@ -274,26 +274,26 @@ func TestSubnetSelection_NetworkConnectivity(t *testing.T) {
 			UsedIPCount:  6,
 			Tags:         map[string]string{"Name": "eu-de-2-default-subnet"},
 		}
-		
+
 		// Test that these subnets are in different networks
 		assert.NotEqual(t, clusterSubnet.CIDR, wrongAutoSelectedSubnet.CIDR,
 			"Cluster subnet and auto-selected subnet should be in different networks")
-		
+
 		// Test that nodes in wrongAutoSelectedSubnet cannot reach cluster API server
 		// API server is at 10.243.65.4 (in clusterSubnet CIDR)
 		apiServerIP := "10.243.65.4"
-		
+
 		// Helper function to check if IP is in CIDR range
 		isInClusterNetwork := isIPInCIDR(apiServerIP, clusterSubnet.CIDR)
 		isInWrongNetwork := isIPInCIDR(apiServerIP, wrongAutoSelectedSubnet.CIDR)
-		
+
 		assert.True(t, isInClusterNetwork, "API server should be reachable from cluster subnet")
 		assert.False(t, isInWrongNetwork, "API server should NOT be reachable from wrong subnet")
-		
+
 		// Test scoring preference for cluster subnet
 		clusterScore := calculateSubnetScore(clusterSubnet, nil)
 		wrongScore := calculateSubnetScore(wrongAutoSelectedSubnet, nil)
-		
+
 		// Current scoring algorithm might prefer wrongAutoSelectedSubnet due to more available IPs
 		// This demonstrates the bug: availability-based scoring doesn't consider cluster topology
 		if wrongScore > clusterScore {
@@ -302,15 +302,15 @@ func TestSubnetSelection_NetworkConnectivity(t *testing.T) {
 			t.Logf("This is why new nodes cannot join the cluster - they're placed in isolated network")
 		}
 	})
-	
+
 	t.Run("subnet selection should prioritize cluster connectivity", func(t *testing.T) {
 		// Test case for the enhanced subnet selection that should be implemented
-		
+
 		// Mock existing cluster nodes in specific subnets
 		existingClusterSubnets := map[string]int{
 			"02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c": 2, // first-second: 2 nodes (control-plane + worker)
 		}
-		
+
 		availableSubnets := []SubnetInfo{
 			{
 				ID:           "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", // first-second (cluster subnet)
@@ -333,25 +333,25 @@ func TestSubnetSelection_NetworkConnectivity(t *testing.T) {
 				Tags:         map[string]string{"Name": "eu-de-2-default-subnet"},
 			},
 		}
-		
+
 		// Enhanced selection algorithm should prioritize cluster connectivity over availability
 		selectedSubnet := selectClusterAwareSubnet(availableSubnets, existingClusterSubnets)
-		
+
 		// Should select the cluster subnet despite fewer available IPs
 		assert.Equal(t, "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", selectedSubnet.ID,
 			"Enhanced algorithm should prefer subnet with existing cluster nodes")
 		assert.Equal(t, "10.243.65.0/24", selectedSubnet.CIDR,
 			"Selected subnet should be in same network as existing cluster nodes")
 	})
-	
+
 	t.Run("multi-zone cluster subnet distribution", func(t *testing.T) {
 		// Test for future enhancement: multi-zone cluster awareness
-		
+
 		existingClusterSubnets := map[string]int{
 			"zone1-cluster-subnet": 3, // 3 nodes in zone 1
 			"zone2-cluster-subnet": 2, // 2 nodes in zone 2
 		}
-		
+
 		availableSubnets := []SubnetInfo{
 			{
 				ID:           "zone1-cluster-subnet",
@@ -372,12 +372,12 @@ func TestSubnetSelection_NetworkConnectivity(t *testing.T) {
 				AvailableIPs: 150,
 			},
 		}
-		
+
 		// For zone 1, should prefer zone1-cluster-subnet despite fewer IPs
 		zone1Selection := selectClusterAwareSubnetForZone(availableSubnets, existingClusterSubnets, "eu-de-1")
 		assert.Equal(t, "zone1-cluster-subnet", zone1Selection.ID,
 			"Should prefer subnet with existing cluster nodes in same zone")
-		
+
 		// For zone 2, should prefer zone2-cluster-subnet
 		zone2Selection := selectClusterAwareSubnetForZone(availableSubnets, existingClusterSubnets, "eu-de-2")
 		assert.Equal(t, "zone2-cluster-subnet", zone2Selection.ID,
@@ -407,7 +407,7 @@ func selectClusterAwareSubnet(availableSubnets []SubnetInfo, existingClusterSubn
 			return subnet
 		}
 	}
-	
+
 	// Priority 2: Fall back to availability-based selection
 	var bestSubnet SubnetInfo
 	var maxScore float64 = -1
@@ -430,7 +430,7 @@ func selectClusterAwareSubnetForZone(availableSubnets []SubnetInfo, existingClus
 			zoneSubnets = append(zoneSubnets, subnet)
 		}
 	}
-	
+
 	// Apply cluster-aware selection within zone
 	return selectClusterAwareSubnet(zoneSubnets, existingClusterSubnets)
 }
@@ -641,10 +641,10 @@ func TestCalculateSubnetScore_Enhanced(t *testing.T) {
 func TestProviderWithCache(t *testing.T) {
 	client := &ibm.Client{}
 	provider := NewProvider(client)
-	
+
 	// Verify provider is not nil
 	assert.NotNil(t, provider)
-	
+
 	// Verify interface compliance - provider implements Provider interface
 	_ = provider
 }
@@ -669,7 +669,7 @@ func TestProvider_NewProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := NewProvider(tt.client)
 			assert.NotNil(t, provider)
-			
+
 			// Verify provider implements the interface
 			_ = provider
 		})
@@ -681,7 +681,7 @@ func TestProvider_Interface(t *testing.T) {
 	// Test that provider implements Provider interface
 	client := &ibm.Client{}
 	provider := NewProvider(client)
-	
+
 	// Verify interface compliance
 	assert.NotNil(t, provider)
 	_ = provider
@@ -692,10 +692,10 @@ func TestProvider_MethodSignatures(t *testing.T) {
 	// Test method signatures without calling them to avoid crashes
 	client := &ibm.Client{}
 	provider := NewProvider(client)
-	
+
 	// Verify provider is created
 	assert.NotNil(t, provider)
-	
+
 	// Verify strategy struct can be created
 	strategy := &v1alpha1.PlacementStrategy{
 		ZoneBalance: "Balanced",

@@ -11,7 +11,7 @@ metadata:
 data:
   # Mode configuration
   mode: {{ .Values.customResources.mode | quote }}
-  
+
   {{- if eq .Values.customResources.mode "iks" }}
   # IKS-specific configuration
   iks-cluster-id: {{ .Values.iksClusterID | quote }}
@@ -21,15 +21,15 @@ data:
   vpc-id: {{ .Values.customResources.nodeClass.vpc.vpcId | quote }}
   bootstrap-mode: {{ .Values.bootstrapMode | default "cloud-init" | quote }}
   {{- end }}
-  
+
   # Global defaults
   default-instance-types: {{ .Values.customResources.global.instanceTypes | join "," | quote }}
   default-capacity-type: {{ .Values.customResources.global.capacityType | quote }}
   default-architecture: {{ .Values.customResources.global.architecture | quote }}
-  
+
   # Discovery configuration
   discovery-name: {{ include "karpenter.fullname" . | quote }}
-  
+
   # NodePool configuration summary
   enabled-pools: |
     {{- range $pool := .Values.customResources.nodePools }}

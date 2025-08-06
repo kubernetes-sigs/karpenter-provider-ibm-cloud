@@ -76,7 +76,7 @@ The provider supports two deployment modes with different IAM requirements:
       ]
     },
     {
-      "role": "Viewer", 
+      "role": "Viewer",
       "resources": [
         {
           "service": "is",
@@ -100,7 +100,7 @@ The provider supports two deployment modes with different IAM requirements:
           "resourceType": "instance"
         },
         {
-          "service": "is", 
+          "service": "is",
           "resourceType": "subnet"
         },
         {

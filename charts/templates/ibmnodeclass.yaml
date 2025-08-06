@@ -16,7 +16,7 @@ spec:
   {{- if .vpcId }}
   vpcId: {{ .vpcId | quote }}
   {{- end }}
-  
+
   {{- if .subnetSelection }}
   subnetSelectorTerms:
     - tags:
@@ -28,7 +28,7 @@ spec:
       zones: {{ .subnetSelection.zones | toYaml | nindent 8 }}
       {{- end }}
   {{- end }}
-  
+
   {{- if .securityGroups }}
   securityGroupSelectorTerms:
     {{- if eq .securityGroups.strategy "auto" }}
@@ -40,7 +40,7 @@ spec:
     {{- end }}
     {{- end }}
   {{- end }}
-  
+
   {{- if .bootVolume }}
   blockDeviceMappings:
     - deviceName: /dev/vda
@@ -52,7 +52,7 @@ spec:
         iops: {{ .bootVolume.iops }}
         {{- end }}
   {{- end }}
-  
+
   {{- if .networkInterface }}
   instanceStorePolicy: RAID0
   {{- if .networkInterface.allowIpSpoofing }}
@@ -64,7 +64,7 @@ spec:
   {{- end }}
   {{- end }}
   {{- end }}
-  
+
   {{- else if eq .Values.customResources.mode "iks" }}
   # IKS-specific configuration
   {{- with .Values.customResources.nodeClass.iks }}
@@ -76,7 +76,7 @@ spec:
   {{- end }}
   {{- end }}
   {{- end }}
-  
+
   # Common configuration for both VPC and IKS
   {{- with .Values.customResources.nodeClass.common }}
   {{- if .image }}
@@ -105,12 +105,12 @@ spec:
         Architecture: {{ .image.architecture | default "amd64" | quote }}
   {{- end }}
   {{- end }}
-  
+
   {{- if .userData }}
   userData: |
 {{ .userData | indent 4 }}
   {{- end }}
-  
+
   {{- if .tags }}
   tags:
     {{- range $key, $value := .tags }}
@@ -125,7 +125,7 @@ spec:
     ManagedBy: "karpenter"
   {{- end }}
   {{- end }}
-  
+
   # Role configuration
   role: {{ printf "%s-node-instance-profile" (include "karpenter.fullname" .) | quote }}
 {{- end }}

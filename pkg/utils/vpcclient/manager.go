@@ -71,11 +71,11 @@ func (m *Manager) GetVPCClient(ctx context.Context) (*ibm.VPCClient, error) {
 	}
 
 	logger.V(3).Info("Creating new VPC client", "reason", m.getCacheInvalidationReason())
-	
+
 	if m.client == nil {
 		return nil, fmt.Errorf("getting VPC client: IBM client is nil")
 	}
-	
+
 	client, err := m.client.GetVPCClient()
 	if err != nil {
 		return nil, fmt.Errorf("getting VPC client: %w", err)
@@ -83,7 +83,7 @@ func (m *Manager) GetVPCClient(ctx context.Context) (*ibm.VPCClient, error) {
 
 	m.cachedClient = client
 	m.cacheTime = time.Now()
-	
+
 	logger.V(3).Info("VPC client created and cached", "ttl", m.cacheTTL)
 	return client, nil
 }
@@ -92,7 +92,7 @@ func (m *Manager) GetVPCClient(ctx context.Context) (*ibm.VPCClient, error) {
 func (m *Manager) InvalidateCache() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.cachedClient = nil
 	m.cacheTime = time.Time{}
 }
@@ -124,7 +124,7 @@ func HandleVPCError(err error, logger logr.Logger, operation string, extraFields
 	}
 
 	ibmErr := ibm.ParseError(err)
-	
+
 	// Build log fields
 	fields := []interface{}{
 		"operation", operation,

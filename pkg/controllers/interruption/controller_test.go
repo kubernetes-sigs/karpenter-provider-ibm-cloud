@@ -841,13 +841,13 @@ func TestInferModeFromNode(t *testing.T) {
 
 func TestHandleVPCInterruption(t *testing.T) {
 	tests := []struct {
-		name                    string
-		node                    *v1.Node
-		reason                  InterruptionReason
-		expectCapacityMarking   bool
-		expectNodeCordoning     bool
-		expectNodeDeletion      bool
-		expectError             bool
+		name                  string
+		node                  *v1.Node
+		reason                InterruptionReason
+		expectCapacityMarking bool
+		expectNodeCordoning   bool
+		expectNodeDeletion    bool
+		expectError           bool
 	}{
 		{
 			name: "capacity-related interruption should mark unavailable and delete node",
@@ -1105,12 +1105,12 @@ func TestHandleIKSInterruption(t *testing.T) {
 
 func TestHandleInterruption(t *testing.T) {
 	tests := []struct {
-		name            string
-		node            *v1.Node
-		nodeClasses     []client.Object
-		reason          InterruptionReason
-		expectedMode    string
-		expectError     bool
+		name         string
+		node         *v1.Node
+		nodeClasses  []client.Object
+		reason       InterruptionReason
+		expectedMode string
+		expectError  bool
 	}{
 		{
 			name: "VPC mode handling with nodeclass",
@@ -1216,11 +1216,11 @@ func TestHandleInterruption(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				
+
 				// Verify that some action was taken (node should be modified or deleted)
 				var updatedNode v1.Node
 				err = kubeClient.Get(ctx, client.ObjectKey{Name: tt.node.Name}, &updatedNode)
-				
+
 				// Either node is deleted (error) or cordoned (unschedulable = true)
 				if err != nil {
 					assert.True(t, client.IgnoreNotFound(err) == nil, "Expected node to be deleted or not found")

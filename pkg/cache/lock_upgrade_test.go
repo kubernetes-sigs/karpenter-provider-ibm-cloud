@@ -207,7 +207,7 @@ func TestLockUpgradeDoesNotDeadlock(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				key := fmt.Sprintf("key-%d", j%20)
-				
+
 				// Mix of operations that could trigger lock upgrades
 				cache.Get(key)
 				cache.Set(key, fmt.Sprintf("new-value-%d-%d", id, j))

@@ -75,13 +75,13 @@ func (p *LoadBalancerProvider) RegisterInstance(ctx context.Context, nodeClass *
 
 	for i, target := range nodeClass.Spec.LoadBalancerIntegration.TargetGroups {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName, "port", target.Port)
-		
+
 		if err := p.registerInstanceInTarget(ctx, target, instanceID, instanceIP, targetLogger); err != nil {
 			targetLogger.Error(err, "Failed to register instance in target group")
 			// Continue with other targets even if one fails
 			continue
 		}
-		
+
 		targetLogger.Info("Successfully registered instance in target group", "targetIndex", i)
 	}
 
@@ -109,13 +109,13 @@ func (p *LoadBalancerProvider) DeregisterInstance(ctx context.Context, nodeClass
 
 	for i, target := range nodeClass.Spec.LoadBalancerIntegration.TargetGroups {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName)
-		
+
 		if err := p.deregisterInstanceFromTarget(ctx, target, instanceID, targetLogger); err != nil {
 			targetLogger.Error(err, "Failed to deregister instance from target group")
 			// Continue with other targets even if one fails
 			continue
 		}
-		
+
 		targetLogger.Info("Successfully deregistered instance from target group", "targetIndex", i)
 	}
 

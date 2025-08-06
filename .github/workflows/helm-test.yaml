@@ -51,4 +51,4 @@ jobs:
 
         # Validate template rendering
         helm template . -f ci-values.yaml
-        
+

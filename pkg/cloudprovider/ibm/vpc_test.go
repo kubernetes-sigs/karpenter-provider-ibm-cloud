@@ -31,12 +31,12 @@ import (
 // =================
 
 type mockVPCClient struct {
-	err                       error
-	createInstanceResponse    *vpcv1.Instance
-	getInstanceResponse       *vpcv1.Instance
-	listInstancesResponse     *vpcv1.InstanceCollection
-	listSubnetsResponse       *vpcv1.SubnetCollection
-	getSubnetResponse         *vpcv1.Subnet
+	err                        error
+	createInstanceResponse     *vpcv1.Instance
+	getInstanceResponse        *vpcv1.Instance
+	listInstancesResponse      *vpcv1.InstanceCollection
+	listSubnetsResponse        *vpcv1.SubnetCollection
+	getSubnetResponse          *vpcv1.Subnet
 	getInstanceProfileResponse *vpcv1.InstanceProfile
 }
 
@@ -1079,7 +1079,7 @@ func TestListInstanceProfiles(t *testing.T) {
 
 func TestGetInstanceProfile(t *testing.T) {
 	profileName := "bx2-2x8"
-	
+
 	tests := []struct {
 		name        string
 		mockVPC     vpcClientInterface
@@ -1232,4 +1232,3 @@ func TestVPCClientErrorHandling(t *testing.T) {
 		})
 	}
 }
-

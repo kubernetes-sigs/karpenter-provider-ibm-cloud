@@ -219,7 +219,7 @@ func TestIBMNodeClass_SSHKeys_Validation(t *testing.T) {
 
 			// Validate SSH key format using the pattern from CRD
 			sshKeyPattern := `^r[0-9]{3}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$`
-			
+
 			if tt.expectValid {
 				for _, key := range tt.sshKeys {
 					if key != "" {
@@ -301,7 +301,7 @@ func TestIBMNodeClass_SubnetConfiguration_Cases(t *testing.T) {
 			if tt.subnet != "" {
 				subnetPattern := `^[0-9a-z]{4}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$`
 				matched, _ := regexp.MatchString(subnetPattern, tt.subnet)
-				
+
 				if tt.expectValid {
 					assert.True(t, matched, "Expected subnet %s to match validation pattern for test: %s", tt.subnet, tt.description)
 				} else {
@@ -365,10 +365,10 @@ func TestIBMNodeClass_NetworkConnectivity_Scenarios(t *testing.T) {
 					Name: "auto-select-nodeclass",
 				},
 				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:            "eu-de",
-					Zone:              "eu-de-2",
-					VPC:               "r010-2b1c3cdc-a678-4eda-86af-731130de1c0a",
-					Image:             "r010-dd3c20fa-71d3-4dc0-913f-2f097bf3e500",
+					Region: "eu-de",
+					Zone:   "eu-de-2",
+					VPC:    "r010-2b1c3cdc-a678-4eda-86af-731130de1c0a",
+					Image:  "r010-dd3c20fa-71d3-4dc0-913f-2f097bf3e500",
 					// Subnet not specified - triggers auto-selection
 					SecurityGroups:    []string{"r010-36f045e2-86a1-4af8-917e-b17a41f8abe3"},
 					APIServerEndpoint: "https://10.243.65.4:6443",
@@ -385,7 +385,7 @@ func TestIBMNodeClass_NetworkConnectivity_Scenarios(t *testing.T) {
 			assert.NotEmpty(t, tt.nodeClass.Spec.Region)
 			assert.NotEmpty(t, tt.nodeClass.Spec.VPC)
 			assert.NotEmpty(t, tt.nodeClass.Spec.SecurityGroups)
-			
+
 			// Document the expected behavior based on subnet configuration
 			if tt.nodeClass.Spec.Subnet == "" {
 				// When no subnet is specified, the operator should auto-discover
@@ -396,7 +396,7 @@ func TestIBMNodeClass_NetworkConnectivity_Scenarios(t *testing.T) {
 				matched, _ := regexp.MatchString(subnetPattern, tt.nodeClass.Spec.Subnet)
 				assert.True(t, matched, "Specified subnet should have valid format")
 			}
-			
+
 			// Verify API server endpoint is properly configured
 			if tt.nodeClass.Spec.APIServerEndpoint != "" {
 				endpointPattern := `^https://[a-zA-Z0-9.-]+:[0-9]+$`
@@ -436,19 +436,19 @@ func TestIBMNodeClass_ValidConfigurationExamples(t *testing.T) {
 	assert.Equal(t, "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", validNodeClass.Spec.Subnet)
 	assert.Equal(t, "https://10.243.65.4:6443", validNodeClass.Spec.APIServerEndpoint)
 	assert.Equal(t, "cloud-init", *validNodeClass.Spec.BootstrapMode)
-	
+
 	// Validate SSH key ID format
 	for _, sshKey := range validNodeClass.Spec.SSHKeys {
 		sshKeyPattern := `^r[0-9]{3}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$`
 		matched, _ := regexp.MatchString(sshKeyPattern, sshKey)
 		assert.True(t, matched, "SSH key %s should match valid ID format", sshKey)
 	}
-	
+
 	// Validate subnet ID format
 	subnetPattern := `^[0-9a-z]{4}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$`
 	matched, _ := regexp.MatchString(subnetPattern, validNodeClass.Spec.Subnet)
 	assert.True(t, matched, "Subnet should match valid ID format")
-	
+
 	// Validate VPC ID format
 	vpcPattern := `^r[0-9]{3}-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`
 	matched, _ = regexp.MatchString(vpcPattern, validNodeClass.Spec.VPC)

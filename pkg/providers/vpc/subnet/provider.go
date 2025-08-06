@@ -24,13 +24,13 @@ import (
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	v1alpha1 "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // SubnetInfo contains information about a VPC subnet
@@ -72,7 +72,7 @@ type provider struct {
 func NewProvider(client *ibm.Client) Provider {
 	return &provider{
 		client:           client,
-		kubeClient:       nil, // Will be set when needed via SetKubernetesClient
+		kubeClient:       nil,                        // Will be set when needed via SetKubernetesClient
 		subnetCache:      cache.New(5 * time.Minute), // Cache subnets for 5 minutes
 		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
 	}

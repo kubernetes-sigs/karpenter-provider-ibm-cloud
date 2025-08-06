@@ -57,7 +57,7 @@ Validate configuration based on mode
   {{- if not .Values.customResources.mode }}
     {{- fail "customResources.mode is required when customResources.enabled is true" }}
   {{- end }}
-  
+
   {{- if eq .Values.customResources.mode "iks" }}
     {{- if not .Values.iksClusterID }}
       {{- fail "iksClusterID is required when customResources.mode is 'iks'" }}
@@ -69,7 +69,7 @@ Validate configuration based on mode
   {{- else }}
     {{- fail "customResources.mode must be either 'iks' or 'vpc'" }}
   {{- end }}
-  
+
   {{- range $pool := .Values.customResources.nodePools }}
     {{- if $pool.enabled }}
       {{- if not $pool.name }}

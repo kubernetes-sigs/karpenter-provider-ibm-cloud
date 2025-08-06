@@ -70,10 +70,10 @@ type Controller struct {
 
 // InstanceMetadata represents IBM Cloud instance metadata response
 type InstanceMetadata struct {
-	ID            string `json:"id"`
+	ID             string `json:"id"`
 	LifecycleState string `json:"lifecycle_state"`
-	HealthState   string `json:"health_state"`
-	Status        string `json:"status"`
+	HealthState    string `json:"health_state"`
+	Status         string `json:"status"`
 }
 
 // InterruptionReason represents the cause of an interruption

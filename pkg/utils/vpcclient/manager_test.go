@@ -45,14 +45,14 @@ func TestNewManager(t *testing.T) {
 
 func TestManager_InvalidateCache(t *testing.T) {
 	manager := NewManager(nil, 1*time.Hour)
-	
+
 	// Set up some cached state
 	manager.cachedClient = &ibm.VPCClient{}
 	manager.cacheTime = time.Now()
-	
+
 	// Invalidate cache
 	manager.InvalidateCache()
-	
+
 	// Verify cache is cleared
 	assert.Nil(t, manager.cachedClient)
 	assert.True(t, manager.cacheTime.IsZero())
@@ -60,16 +60,16 @@ func TestManager_InvalidateCache(t *testing.T) {
 
 func TestManager_getCacheInvalidationReason(t *testing.T) {
 	manager := NewManager(nil, 5*time.Minute)
-	
+
 	t.Run("no cached client", func(t *testing.T) {
 		reason := manager.getCacheInvalidationReason()
 		assert.Equal(t, "no_cached_client", reason)
 	})
-	
+
 	t.Run("cache expired", func(t *testing.T) {
 		manager.cachedClient = &ibm.VPCClient{}
 		manager.cacheTime = time.Now().Add(-10 * time.Minute) // Expired
-		
+
 		reason := manager.getCacheInvalidationReason()
 		assert.Equal(t, "cache_expired", reason)
 	})
@@ -77,7 +77,7 @@ func TestManager_getCacheInvalidationReason(t *testing.T) {
 
 func TestHandleVPCError(t *testing.T) {
 	logger := logr.Discard()
-	
+
 	tests := []struct {
 		name        string
 		err         error
@@ -113,11 +113,11 @@ func TestHandleVPCError(t *testing.T) {
 			wantErr:     "deleting instance:",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := HandleVPCError(tt.err, logger, tt.operation, tt.extraFields...)
-			
+
 			if tt.wantErr == "" {
 				assert.NoError(t, err)
 			} else {
@@ -132,7 +132,7 @@ func TestManager_GetVPCClient_ErrorHandling(t *testing.T) {
 	// Test that GetVPCClient properly handles nil client
 	ctx := context.Background()
 	manager := NewManager(nil, 1*time.Hour)
-	
+
 	// This should fail gracefully with nil client
 	client, err := manager.GetVPCClient(ctx)
 	assert.Error(t, err)
@@ -143,14 +143,14 @@ func TestManager_GetVPCClient_ErrorHandling(t *testing.T) {
 func TestManager_WithVPCClient_ErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	manager := NewManager(nil, 1*time.Hour)
-	
+
 	// Should propagate client creation error
 	executed := false
 	err := manager.WithVPCClient(ctx, func(client *ibm.VPCClient) error {
 		executed = true
 		return nil
 	})
-	
+
 	assert.Error(t, err)
 	assert.False(t, executed)
 }
@@ -159,16 +159,16 @@ func TestManager_WithVPCClient_FunctionError(t *testing.T) {
 	// Test that function errors are properly propagated
 	// This test validates the error propagation logic without requiring actual client
 	expectedErr := fmt.Errorf("operation failed")
-	
+
 	ctx := context.Background()
-	
+
 	// Create a manager that will fail client creation
 	manager := NewManager(nil, 1*time.Hour)
-	
+
 	err := manager.WithVPCClient(ctx, func(client *ibm.VPCClient) error {
 		return expectedErr
 	})
-	
+
 	// Should get client creation error, not function error
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "getting VPC client")

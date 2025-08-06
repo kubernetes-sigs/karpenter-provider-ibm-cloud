@@ -101,7 +101,7 @@ var IBMInstanceProfiles = []vpcv1.InstanceProfile{
 			Values: []string{"amd64"},
 		},
 	},
-	
+
 	// Compute Optimized profiles
 	{
 		Name: core.StringPtr("cx2-2x4"),
@@ -153,7 +153,7 @@ var IBMInstanceProfiles = []vpcv1.InstanceProfile{
 			Values: []string{"amd64"},
 		},
 	},
-	
+
 	// Memory Optimized profiles
 	{
 		Name: core.StringPtr("mx2-2x16"),
@@ -205,7 +205,7 @@ var IBMInstanceProfiles = []vpcv1.InstanceProfile{
 			Values: []string{"amd64"},
 		},
 	},
-	
+
 	// GPU profiles
 	{
 		Name: core.StringPtr("gx2-8x64x1v100"),
@@ -427,33 +427,33 @@ var IBMSSHKeys = []vpcv1.Key{
 // IBMInstancePricing provides test pricing data for instance types (per hour in USD)
 var IBMInstancePricing = map[string]map[string]float64{
 	"us-south": {
-		"bx2-2x8":         0.096,
-		"bx2-4x16":        0.192,
-		"bx2-8x32":        0.384,
-		"cx2-2x4":         0.084,
-		"cx2-4x8":         0.168,
-		"mx2-2x16":        0.144,
-		"mx2-4x32":        0.288,
-		"gx2-8x64x1v100":  2.155,
+		"bx2-2x8":        0.096,
+		"bx2-4x16":       0.192,
+		"bx2-8x32":       0.384,
+		"cx2-2x4":        0.084,
+		"cx2-4x8":        0.168,
+		"mx2-2x16":       0.144,
+		"mx2-4x32":       0.288,
+		"gx2-8x64x1v100": 2.155,
 	},
 	"us-east": {
-		"bx2-2x8":         0.096,
-		"bx2-4x16":        0.192,
-		"bx2-8x32":        0.384,
-		"cx2-2x4":         0.084,
-		"cx2-4x8":         0.168,
-		"mx2-2x16":        0.144,
-		"mx2-4x32":        0.288,
-		"gx2-8x64x1v100":  2.155,
+		"bx2-2x8":        0.096,
+		"bx2-4x16":       0.192,
+		"bx2-8x32":       0.384,
+		"cx2-2x4":        0.084,
+		"cx2-4x8":        0.168,
+		"mx2-2x16":       0.144,
+		"mx2-4x32":       0.288,
+		"gx2-8x64x1v100": 2.155,
 	},
 	"eu-de": {
-		"bx2-2x8":         0.104,
-		"bx2-4x16":        0.208,
-		"bx2-8x32":        0.416,
-		"cx2-2x4":         0.091,
-		"cx2-4x8":         0.182,
-		"mx2-2x16":        0.156,
-		"mx2-4x32":        0.312,
-		"gx2-8x64x1v100":  2.336,
+		"bx2-2x8":        0.104,
+		"bx2-4x16":       0.208,
+		"bx2-8x32":       0.416,
+		"cx2-2x4":        0.091,
+		"cx2-4x8":        0.182,
+		"mx2-2x16":       0.156,
+		"mx2-4x32":       0.312,
+		"gx2-8x64x1v100": 2.336,
 	},
 }

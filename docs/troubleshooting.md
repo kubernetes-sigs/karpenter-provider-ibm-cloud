@@ -27,7 +27,7 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
     ```
 
     **Solution:**
-    
+
     1. Verify API keys are correctly set
     2. Check Service ID permissions
     3. Update Kubernetes secret:
@@ -45,13 +45,13 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
     ```bash
     # Check available subnets
     ibmcloud is subnets --output json
-    
+
     # Check subnet capacity
     ibmcloud is subnet SUBNET_ID --output json
     ```
-    
+
     **Solutions:**
-    
+
     - Verify subnet exists in specified zone
     - Ensure subnet has available IP addresses
     - Consider using auto-subnet selection
@@ -63,33 +63,33 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
     ```bash
     # Symptoms: kubelet timeouts, nodes never register
     # Error: "dial tcp 10.243.65.4:6443: i/o timeout"
-    
+
     # 1. Check what endpoint kubelet is trying to reach
     ssh ubuntu@INSTANCE_IP "cat /var/lib/kubelet/bootstrap-kubeconfig | grep server"
-    
-    # 2. Find correct internal API endpoint  
+
+    # 2. Find correct internal API endpoint
     kubectl get endpointslice -n default -l kubernetes.io/service-name=kubernetes
-    
+
     # 3. Update NodeClass with correct INTERNAL endpoint
     kubectl patch ibmnodeclass YOUR-NODECLASS --type='merge' \
       -p='{"spec":{"apiServerEndpoint":"https://INTERNAL-IP:6443"}}'
     ```
-    
+
     **Other Common Causes:**
-    
+
     - VNI (Virtual Network Interface) not configured properly (v0.3.53+ required)
     - Bootstrap token expiration
     - Network connectivity problems
-    
+
     **Debug steps:**
     ```bash
     # Check bootstrap logs on instance
     ssh ubuntu@INSTANCE_IP "sudo journalctl -u cloud-final"
-    
+
     # Check kubelet status and errors
     ssh ubuntu@INSTANCE_IP "sudo systemctl status kubelet"
     ssh ubuntu@INSTANCE_IP "sudo journalctl -u kubelet --no-pager -n 50"
-    
+
     # Test API server connectivity from node
     ssh ubuntu@INSTANCE_IP "curl -k -m 10 https://API-SERVER-IP:6443/healthz"
     ```
@@ -98,29 +98,29 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
 
 !!! warning "Kubernetes API Server Access"
     **Common Issue:** Security groups blocking API server communication (TCP 6443)
-    
+
     **Symptoms:**
     ```bash
     # From worker node:
     ping API_SERVER_IP              # ✅ SUCCESS
     curl https://API_SERVER_IP:6443 # ❌ TIMEOUT
     ```
-    
+
     **Required Security Group Rules:**
-    
+
     **Worker Node Security Group:**
     ```bash
     # Allow outbound to API server
     ibmcloud is security-group-rule-add WORKER_SG_ID \
       outbound tcp --port-min 6443 --port-max 6443 \
       --remote CONTROL_PLANE_SUBNET_CIDR
-    
+
     # Allow inbound for return traffic
     ibmcloud is security-group-rule-add WORKER_SG_ID \
       inbound tcp --port-min 6443 --port-max 6443 \
       --remote CONTROL_PLANE_SUBNET_CIDR
     ```
-    
+
     **Control Plane Security Group:**
     ```bash
     # Allow inbound from workers
@@ -128,7 +128,7 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
       inbound tcp --port-min 6443 --port-max 6443 \
       --remote WORKER_SUBNET_CIDR
     ```
-    
+
     **Debug connectivity:**
     ```bash
     # Test layer by layer

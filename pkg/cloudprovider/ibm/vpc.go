@@ -296,12 +296,12 @@ func (c *VPCClient) ListVolumes(ctx context.Context, options *vpcv1.ListVolumesO
 	if c.client == nil {
 		return nil, fmt.Errorf("VPC client not initialized")
 	}
-	
+
 	volumes, _, err := c.client.ListVolumesWithContext(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("listing volumes: %w", err)
 	}
-	
+
 	return volumes, nil
 }
 
@@ -310,16 +310,16 @@ func (c *VPCClient) DeleteVolume(ctx context.Context, volumeID string) error {
 	if c.client == nil {
 		return fmt.Errorf("VPC client not initialized")
 	}
-	
+
 	options := &vpcv1.DeleteVolumeOptions{
 		ID: &volumeID,
 	}
-	
+
 	_, err := c.client.DeleteVolumeWithContext(ctx, options)
 	if err != nil {
 		return fmt.Errorf("deleting volume %s: %w", volumeID, err)
 	}
-	
+
 	return nil
 }
 
@@ -328,12 +328,12 @@ func (c *VPCClient) ListVirtualNetworkInterfaces(ctx context.Context, options *v
 	if c.client == nil {
 		return nil, fmt.Errorf("VPC client not initialized")
 	}
-	
+
 	vnis, _, err := c.client.ListVirtualNetworkInterfacesWithContext(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("listing virtual network interfaces: %w", err)
 	}
-	
+
 	return vnis, nil
 }
 
@@ -342,16 +342,16 @@ func (c *VPCClient) DeleteVirtualNetworkInterface(ctx context.Context, vniID str
 	if c.client == nil {
 		return fmt.Errorf("VPC client not initialized")
 	}
-	
+
 	options := &vpcv1.DeleteVirtualNetworkInterfacesOptions{
 		ID: &vniID,
 	}
-	
+
 	_, _, err := c.client.DeleteVirtualNetworkInterfacesWithContext(ctx, options)
 	if err != nil {
 		return fmt.Errorf("deleting virtual network interface %s: %w", vniID, err)
 	}
-	
+
 	return nil
 }
 

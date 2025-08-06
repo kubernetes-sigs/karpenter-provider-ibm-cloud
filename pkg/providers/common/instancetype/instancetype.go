@@ -106,7 +106,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudp
 		return nil, fmt.Errorf("IBM client not initialized")
 	}
 
-	// Get VPC client 
+	// Get VPC client
 	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VPC client: %w", err)
@@ -186,7 +186,7 @@ func (p *IBMInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requi
 		if p.client == nil {
 			return nil, fmt.Errorf("IBM client not initialized - cannot determine region for pricing")
 		}
-		
+
 		region := p.client.GetRegion()
 		zones, err := p.getZonesForRegion(ctx, region)
 		if err != nil {
@@ -195,7 +195,7 @@ func (p *IBMInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requi
 		if len(zones) == 0 {
 			return nil, fmt.Errorf("no zones found for region %s", region)
 		}
-		
+
 		zone := zones[0] // Use first available zone for pricing
 
 		price, err := p.pricingProvider.GetPrice(ctx, it.Name, zone)
@@ -385,13 +385,13 @@ func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region 
 	listOptions := &vpcv1.ListRegionZonesOptions{
 		RegionName: &region,
 	}
-	
+
 	// Use the SDK client directly as VPCClient wrapper doesn't have this method
 	sdkClient := vpcClient.GetSDKClient()
 	if sdkClient == nil {
 		return nil, fmt.Errorf("VPC SDK client not available")
 	}
-	
+
 	result, _, err := sdkClient.ListRegionZonesWithContext(ctx, listOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list zones for region %s: %w", region, err)
@@ -489,7 +489,7 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client not initialized - cannot determine zones for instance offerings")
 	}
-	
+
 	region := p.client.GetRegion()
 	zones, err := p.getZonesForRegion(ctx, region)
 	if err != nil {
@@ -554,4 +554,3 @@ func getInstanceSize(instanceType string) string {
 	}
 	return "small"
 }
-

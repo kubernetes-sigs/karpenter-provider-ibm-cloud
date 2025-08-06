@@ -78,7 +78,7 @@ func (p *IKSWorkerPoolProvider) Create(ctx context.Context, nodeClaim *v1.NodeCl
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client is not initialized")
 	}
-	
+
 	// Get IKS client
 	iksClient := p.client.GetIKSClient()
 	if iksClient == nil {
@@ -172,7 +172,7 @@ func (p *IKSWorkerPoolProvider) Delete(ctx context.Context, node *corev1.Node) e
 	if p.client == nil {
 		return fmt.Errorf("IBM client is not initialized")
 	}
-	
+
 	// Get IKS client
 	iksClient := p.client.GetIKSClient()
 	if iksClient == nil {
@@ -221,7 +221,7 @@ func (p *IKSWorkerPoolProvider) ResizePool(ctx context.Context, clusterID, poolI
 	if p.client == nil {
 		return fmt.Errorf("IBM client is not initialized")
 	}
-	
+
 	iksClient := p.client.GetIKSClient()
 	if iksClient == nil {
 		return fmt.Errorf("IKS client not available")
@@ -235,7 +235,7 @@ func (p *IKSWorkerPoolProvider) GetPool(ctx context.Context, clusterID, poolID s
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client is not initialized")
 	}
-	
+
 	iksClient := p.client.GetIKSClient()
 	if iksClient == nil {
 		return nil, fmt.Errorf("IKS client not available")
@@ -264,7 +264,7 @@ func (p *IKSWorkerPoolProvider) ListPools(ctx context.Context, clusterID string)
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client is not initialized")
 	}
-	
+
 	iksClient := p.client.GetIKSClient()
 	if iksClient == nil {
 		return nil, fmt.Errorf("IKS client not available")

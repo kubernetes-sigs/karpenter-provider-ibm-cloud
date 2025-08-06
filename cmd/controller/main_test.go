@@ -182,10 +182,10 @@ func TestCloudProviderCreation(t *testing.T) {
 
 	// Test cloud provider is created successfully
 	assert.NotNil(t, cloudProvider)
-	
+
 	// Test that the cloud provider implements the expected interface
 	assert.Implements(t, (*cloudprovider.CloudProvider)(nil), cloudProvider)
-	
+
 	// Test that the providers can be created without panicking
 	assert.NotPanics(t, func() {
 		_ = ibmcloud.New(
@@ -201,60 +201,60 @@ func TestCloudProviderCreation(t *testing.T) {
 
 func TestMockProviders(t *testing.T) {
 	ctx := context.Background()
-	
+
 	t.Run("MockInstanceTypeProvider", func(t *testing.T) {
 		provider := &mockInstanceTypeProvider{}
-		
+
 		// Test Get
 		instanceType, err := provider.Get(ctx, "test-instance-type")
 		assert.NoError(t, err)
 		assert.NotNil(t, instanceType)
 		assert.Equal(t, "test-instance-type", instanceType.Name)
-		
+
 		// Test List
 		instanceTypes, err := provider.List(ctx)
 		assert.NoError(t, err)
 		assert.Len(t, instanceTypes, 1)
-		
+
 		// Test Create/Delete (no-ops)
 		assert.NoError(t, provider.Create(ctx, instanceType))
 		assert.NoError(t, provider.Delete(ctx, instanceType))
-		
+
 		// Test FilterInstanceTypes
 		filtered, err := provider.FilterInstanceTypes(ctx, &v1alpha1.InstanceTypeRequirements{})
 		assert.NoError(t, err)
 		assert.Len(t, filtered, 1)
-		
+
 		// Test RankInstanceTypes
 		ranked := provider.RankInstanceTypes(instanceTypes)
 		assert.Equal(t, instanceTypes, ranked)
 	})
-	
+
 	t.Run("MockSubnetProvider", func(t *testing.T) {
 		provider := &mockSubnetProvider{}
-		
+
 		// Test ListSubnets
 		subnets, err := provider.ListSubnets(ctx, "test-vpc")
 		assert.NoError(t, err)
 		assert.Len(t, subnets, 1)
 		assert.Equal(t, "test-subnet-1", subnets[0].ID)
 		assert.Equal(t, "us-south-1", subnets[0].Zone)
-		
+
 		// Test GetSubnet
 		subnet, err := provider.GetSubnet(ctx, "test-subnet-1")
 		assert.NoError(t, err)
 		assert.NotNil(t, subnet)
 		assert.Equal(t, "test-subnet-1", subnet.ID)
-		
+
 		// Test SelectSubnets
 		selected, err := provider.SelectSubnets(ctx, "test-vpc", nil)
 		assert.NoError(t, err)
 		assert.Len(t, selected, 1)
 	})
-	
+
 	t.Run("MockEventRecorder", func(t *testing.T) {
 		recorder := &mockEventRecorder{}
-		
+
 		// Test Publish doesn't panic
 		assert.NotPanics(t, func() {
 			recorder.Publish()
@@ -344,7 +344,7 @@ func TestNodeClassAndNodeClaimCreation(t *testing.T) {
 
 	// Verify objects can be retrieved
 	ctx := context.Background()
-	
+
 	// Test NodeClass retrieval
 	retrievedNodeClass := &v1alpha1.IBMNodeClass{}
 	err := client.Get(ctx, types.NamespacedName{Name: "test-nodeclass"}, retrievedNodeClass)
@@ -352,14 +352,14 @@ func TestNodeClassAndNodeClaimCreation(t *testing.T) {
 	assert.Equal(t, "test-nodeclass", retrievedNodeClass.Name)
 	assert.Equal(t, "us-south", retrievedNodeClass.Spec.Region)
 	assert.Equal(t, "bx2-4x16", retrievedNodeClass.Spec.InstanceProfile)
-	
+
 	// Test NodeClaim retrieval
 	retrievedNodeClaim := &v1.NodeClaim{}
 	err = client.Get(ctx, types.NamespacedName{Name: "test-node", Namespace: "default"}, retrievedNodeClaim)
 	assert.NoError(t, err)
 	assert.Equal(t, "test-node", retrievedNodeClaim.Name)
 	assert.Equal(t, "test-nodeclass", retrievedNodeClaim.Spec.NodeClassRef.Name)
-	
+
 	// Test requirements
 	assert.Len(t, retrievedNodeClaim.Spec.Requirements, 1)
 	assert.Equal(t, corev1.LabelInstanceTypeStable, retrievedNodeClaim.Spec.Requirements[0].Key)

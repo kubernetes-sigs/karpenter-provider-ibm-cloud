@@ -56,13 +56,13 @@ jobs:
       - name: Package Helm charts
         run: |
           mkdir -p _helm-repo
-          
+
           # Package the chart from charts/ directory
           if [ -f "charts/Chart.yaml" ]; then
             echo "Packaging chart: charts/"
             helm package charts/ --destination _helm-repo
           fi
-          
+
           # Generate index
           helm repo index _helm-repo --url https://karpenter-ibm.sh
 
@@ -70,13 +70,13 @@ jobs:
         run: |
           # Put docs at root (since we build with root URL)
           cp -r site/* .
-          
+
           # Keep charts at root (existing customer configs)
           cp -r _helm-repo/* .
-          
+
           # Preserve custom domain configuration
           cp docs/CNAME .
-          
+
           # Clean up build directories
           rm -rf site _helm-repo
 

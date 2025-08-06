@@ -52,11 +52,11 @@ func NewIKSBootstrapProvider(client *ibm.Client, k8sClient kubernetes.Interface)
 		client:    client,
 		k8sClient: k8sClient,
 	}
-	
+
 	// Initialize HTTP client for IKS API calls
 	baseURL := "https://containers.cloud.ibm.com/global/v1"
 	provider.httpClient = httpclient.NewIBMCloudHTTPClient(baseURL, provider.setIKSHeaders)
-	
+
 	return provider
 }
 

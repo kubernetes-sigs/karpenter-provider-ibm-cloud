@@ -37,7 +37,7 @@ spec:
 - **Configuration**: Automatically configures IPPool and network policies
 - **Features**: Full support for network policies and BGP routing
 
-#### Cilium Configuration  
+#### Cilium Configuration
 - **Detection**: Looks for `cilium` DaemonSet and ConfigMap
 - **Configuration**: Configures eBPF datapath and cluster mesh
 - **Features**: Advanced security policies and observability
@@ -86,7 +86,7 @@ spec:
     # Custom CNI configuration
     curl -L -o /opt/cni/bin/my-cni https://releases.example.com/cni
     chmod +x /opt/cni/bin/my-cni
-    
+
     # Custom CNI config
     cat > /etc/cni/net.d/10-mycni.conf <<EOF
     {
@@ -104,7 +104,7 @@ spec:
     #!/bin/bash
     # Force specific container runtime
     export CONTAINER_RUNTIME=cri-o
-    
+
     # Install CRI-O
     curl -L -o /tmp/crio.tar.gz https://releases.cri-o.io/...
     tar -xzf /tmp/crio.tar.gz -C /

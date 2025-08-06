@@ -7,7 +7,7 @@ The Karpenter IBM Cloud Provider provides automatic node bootstrap capabilities 
 The provider supports three bootstrap approaches:
 
 1. **Auto Bootstrap** (Default) - Intelligent automatic method selection (Experimental)
-2. **VPC Bootstrap** - Direct cloud-init integration for self-managed clusters  
+2. **VPC Bootstrap** - Direct cloud-init integration for self-managed clusters
 3. **IKS Bootstrap** - Native IBM Kubernetes Service integration (Experimental)
 
 The provider aims to automatically detect your cluster configuration and generates appropriate bootstrap scripts with no manual userData needed.
@@ -34,11 +34,11 @@ spec:
   zone: us-south-1
   vpc: vpc-12345678
   image: r006-ubuntu-20-04
-  
+
   # Auto bootstrap (default - no bootstrapMode needed)
   # Optionally provide IKS cluster ID for IKS preference
   iksClusterID: "cluster-12345678"  # Optional
-  
+
   # No userData required - fully automatic!
 ```
 
@@ -82,10 +82,10 @@ spec:
   zone: us-south-1
   vpc: vpc-12345678
   image: r006-ubuntu-20-04
-  
+
   # Explicit VPC bootstrap mode (optional - auto-detected)
   bootstrapMode: vpc
-  
+
   # Optional custom pre-bootstrap setup
   userData: |
     #!/bin/bash
@@ -108,7 +108,7 @@ spec:
 
 #### **CNI Plugin Integration**
 -  **Calico**: Full support with automatic configuration
--  **Cilium**: Advanced networking with eBPF support  
+-  **Cilium**: Advanced networking with eBPF support
 -  **Flannel**: Lightweight overlay networking
 -  **Auto-Detection**: Matches CNI plugin used by existing cluster nodes
 
@@ -129,10 +129,10 @@ spec:
     # Your custom pre-bootstrap configuration
     echo "Installing custom packages..."
     apt-get update && apt-get install -y htop vim
-    
+
     # Custom environment variables
     echo "CUSTOM_VAR=value" >> /etc/environment
-    
+
     # Custom service configuration
     systemctl enable my-custom-service
 ```
@@ -166,11 +166,11 @@ spec:
   zone: us-south-1
   vpc: vpc-iks-12345
   image: r006-ubuntu-20-04
-  
+
   # IKS-specific configuration
   iksClusterID: "cluster-12345678"        # Required: Your IKS cluster ID
   iksWorkerPoolID: "pool-default"         # Optional: specific worker pool
-  
+
   # Optional: Custom post-registration setup
   userData: |
     #!/bin/bash
@@ -208,7 +208,7 @@ kind: IBMNodeClass
 metadata:
   name: iks-large-instances
 spec:
-  iksClusterID: "cluster-12345678"  
+  iksClusterID: "cluster-12345678"
   iksWorkerPoolID: "pool-large"     # Pre-configured with bx2-8x32
 ```
 
@@ -233,7 +233,7 @@ export BOOTSTRAP_TIMEOUT=600             # Bootstrap timeout in seconds
 export CONTAINER_RUNTIME=containerd      # or crio
 export CONTAINERD_VERSION=1.7.22         # Specific version
 
-# CNI plugin preferences  
+# CNI plugin preferences
 export CNI_PLUGIN=calico                 # or cilium, flannel
 export CNI_VERSION=v3.29.0               # Specific CNI version
 

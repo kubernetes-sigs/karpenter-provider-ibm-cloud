@@ -51,8 +51,8 @@ func NewVPCBootstrapProvider(client *ibm.Client, k8sClient kubernetes.Interface,
 	return &VPCBootstrapProvider{
 		client:           client,
 		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
-		k8sClient:  k8sClient,
-		kubeClient: kubeClient,
+		k8sClient:        k8sClient,
+		kubeClient:       kubeClient,
 	}
 }
 
@@ -547,7 +547,7 @@ func (p *VPCBootstrapProvider) detectArchitectureFromInstanceProfile(instancePro
 // ReportBootstrapStatus stores bootstrap progress in a ConfigMap (since IBM Cloud VPC doesn't support instance tags)
 func (p *VPCBootstrapProvider) ReportBootstrapStatus(ctx context.Context, instanceID, nodeClaimName, status, phase string) error {
 	logger := log.FromContext(ctx)
-	
+
 	if instanceID == "" {
 		return fmt.Errorf("instance ID is required for status reporting")
 	}
@@ -590,7 +590,7 @@ func (p *VPCBootstrapProvider) ReportBootstrapStatus(ctx context.Context, instan
 		}
 	}
 
-	logger.Info("Updated instance bootstrap status in ConfigMap", 
+	logger.Info("Updated instance bootstrap status in ConfigMap",
 		"instanceID", instanceID,
 		"status", status,
 		"phase", phase,
@@ -624,7 +624,7 @@ func (p *VPCBootstrapProvider) GetBootstrapStatus(ctx context.Context, instanceI
 // PollInstanceBootstrapStatus polls the instance console output for bootstrap status
 func (p *VPCBootstrapProvider) PollInstanceBootstrapStatus(ctx context.Context, instanceID string) (map[string]string, error) {
 	logger := log.FromContext(ctx)
-	
+
 	if instanceID == "" {
 		return nil, fmt.Errorf("instance ID is required for status polling")
 	}
@@ -641,9 +641,9 @@ func (p *VPCBootstrapProvider) PollInstanceBootstrapStatus(ctx context.Context, 
 	// Get instance console output (this would require IBM Cloud API support for console output)
 	// IBM Cloud VPC doesn't currently support console output API
 	// The status will be available in the instance logs via SSH or through other monitoring
-	
+
 	logger.Info("Checking instance bootstrap status", "instanceID", instanceID)
-	
+
 	// Try to get instance details to check if it's running
 	instance, err := vpcClient.GetInstance(ctx, instanceID)
 	if err != nil {
@@ -672,15 +672,15 @@ func (p *VPCBootstrapProvider) PollInstanceBootstrapStatus(ctx context.Context, 
 // Real implementation would require SSH access or log forwarding
 func (p *VPCBootstrapProvider) GetInstanceBootstrapLogs(ctx context.Context, instanceID string) (string, error) {
 	logger := log.FromContext(ctx)
-	
-	logger.Info("Bootstrap logs would be available via SSH or log forwarding", 
+
+	logger.Info("Bootstrap logs would be available via SSH or log forwarding",
 		"instanceID", instanceID,
 		"logFiles", []string{
 			"/var/log/karpenter-bootstrap.log",
-			"/var/log/karpenter-bootstrap-status.log", 
+			"/var/log/karpenter-bootstrap-status.log",
 			"/var/log/karpenter-bootstrap-status.json",
 		})
-	
+
 	return "Bootstrap logs available on instance at:\n" +
 		"- /var/log/karpenter-bootstrap.log (detailed log)\n" +
 		"- /var/log/karpenter-bootstrap-status.log (status timeline)\n" +

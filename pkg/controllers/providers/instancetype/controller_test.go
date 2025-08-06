@@ -140,21 +140,21 @@ func (m *MockInstanceTypeProvider) Delete(ctx context.Context, instanceType *clo
 
 func (m *MockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements) ([]*cloudprovider.InstanceType, error) {
 	var filtered []*cloudprovider.InstanceType
-	
+
 	for _, it := range m.instanceTypes {
 		// Simple filtering logic for testing
 		cpuQuantity := it.Capacity[corev1.ResourceCPU]
 		cpu, _ := cpuQuantity.AsInt64()
-		
+
 		memoryQuantity := it.Capacity[corev1.ResourceMemory]
 		memory, _ := memoryQuantity.AsInt64()
 		memoryGB := memory / (1024 * 1024 * 1024)
-		
+
 		if int(cpu) >= int(requirements.MinimumCPU) && int(memoryGB) >= int(requirements.MinimumMemory) {
 			filtered = append(filtered, it)
 		}
 	}
-	
+
 	return filtered, nil
 }
 
@@ -200,7 +200,7 @@ func TestController_NewController_Actual(t *testing.T) {
 	// This will fail because it tries to create real IBM client
 	// but we include it to test the actual function path
 	controller, err := NewController()
-	
+
 	// We expect an error due to missing IBM Cloud credentials in test environment
 	assert.Error(t, err)
 	assert.Nil(t, controller)
@@ -218,7 +218,7 @@ func TestController_Register(t *testing.T) {
 	// We can't test the full registration without a real manager
 	// but we can verify the method signature
 	assert.NotNil(t, controller)
-	
+
 	// The Register method should not panic when called with nil
 	// This tests the method exists and has the right signature
 	defer func() {
@@ -227,7 +227,7 @@ func TestController_Register(t *testing.T) {
 			t.Logf("Register panicked as expected with nil manager: %v", r)
 		}
 	}()
-	
+
 	// This will likely panic or error, but tests the method path
 	_ = controller.Register(context.Background(), nil)
 }
@@ -503,7 +503,7 @@ func TestController_Reconcile_NilProvider(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	
+
 	// This should panic or error gracefully
 	assert.Panics(t, func() {
 		_, _ = controller.Reconcile(ctx) // Ignore result for panic test

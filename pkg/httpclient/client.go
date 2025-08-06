@@ -109,44 +109,44 @@ func NewIBMCloudHTTPClientWithClient(httpClient *http.Client, baseURL string, se
 // Do executes an HTTP request and returns the response
 func (c *IBMCloudHTTPClient) Do(ctx context.Context, config RequestConfig) (*Response, error) {
 	url := c.baseURL + config.Endpoint
-	
+
 	req, err := http.NewRequestWithContext(ctx, config.Method, url, config.Body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	
+
 	// Set IBM Cloud specific headers
 	if c.setHeaders != nil {
 		c.setHeaders(req, config.Token)
 	}
-	
+
 	// Set additional headers
 	for k, v := range config.Headers {
 		req.Header.Set(k, v)
 	}
-	
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
-	
+
 	response := &Response{
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
 		Body:       body,
 	}
-	
+
 	// Check for errors and parse IBM Cloud error format
 	if resp.StatusCode >= 400 {
 		return response, c.parseIBMCloudError(resp.StatusCode, body, config.Endpoint)
 	}
-	
+
 	return response, nil
 }
 
@@ -194,7 +194,7 @@ func (c *IBMCloudHTTPClient) parseIBMCloudError(statusCode int, body []byte, end
 		StatusCode: statusCode,
 		Endpoint:   endpoint,
 	}
-	
+
 	// Try to parse IBM Cloud error format
 	var errorResp struct {
 		Code        string `json:"code"`
@@ -202,7 +202,7 @@ func (c *IBMCloudHTTPClient) parseIBMCloudError(statusCode int, body []byte, end
 		Message     string `json:"message"`
 		Type        string `json:"type"`
 	}
-	
+
 	if err := json.Unmarshal(body, &errorResp); err == nil {
 		cloudErr.Code = errorResp.Code
 		cloudErr.Description = errorResp.Description
@@ -212,7 +212,7 @@ func (c *IBMCloudHTTPClient) parseIBMCloudError(statusCode int, body []byte, end
 		// Fallback to raw response
 		cloudErr.Message = string(body)
 	}
-	
+
 	return cloudErr
 }
 
@@ -222,11 +222,11 @@ func (c *IBMCloudHTTPClient) GetJSON(ctx context.Context, endpoint, token string
 	if err != nil {
 		return err
 	}
-	
+
 	if err := json.Unmarshal(resp.Body, result); err != nil {
 		return fmt.Errorf("unmarshaling JSON response: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -240,17 +240,17 @@ func (c *IBMCloudHTTPClient) PostJSON(ctx context.Context, endpoint, token strin
 		}
 		body = strings.NewReader(string(jsonData))
 	}
-	
+
 	resp, err := c.Post(ctx, endpoint, token, body)
 	if err != nil {
 		return err
 	}
-	
+
 	if result != nil && len(resp.Body) > 0 {
 		if err := json.Unmarshal(resp.Body, result); err != nil {
 			return fmt.Errorf("unmarshaling JSON response: %w", err)
 		}
 	}
-	
+
 	return nil
 }

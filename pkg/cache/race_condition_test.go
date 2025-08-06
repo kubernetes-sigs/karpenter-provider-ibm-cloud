@@ -39,13 +39,13 @@ func TestCacheRaceCondition(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < numOperations; j++ {
 				key := "test-key"
-				
+
 				// Set a value
 				cache.Set(key, id)
-				
+
 				// Get the value (this might trigger expiration cleanup)
 				cache.Get(key)
-				
+
 				// Delete the value
 				cache.Delete(key)
 			}
@@ -71,13 +71,13 @@ func TestUnavailableOfferingsRaceCondition(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < numOperations; j++ {
 				offeringID := "offering-test"
-				
+
 				// Add offering with short expiry
 				unavailable.Add(offeringID, time.Now().Add(10*time.Millisecond))
-				
+
 				// Check if unavailable (this might trigger expiration cleanup)
 				unavailable.IsUnavailable(offeringID)
-				
+
 				// Remove offering
 				unavailable.Remove(offeringID)
 			}

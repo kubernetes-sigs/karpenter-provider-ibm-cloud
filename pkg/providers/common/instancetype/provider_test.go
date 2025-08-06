@@ -374,7 +374,6 @@ func TestRankInstanceTypes(t *testing.T) {
 	assert.Contains(t, names, "large-cheap")
 }
 
-
 func TestNewProvider_ErrorHandling(t *testing.T) {
 	// Test that NewProvider handles nil arguments gracefully
 	provider := NewProvider(nil, nil)

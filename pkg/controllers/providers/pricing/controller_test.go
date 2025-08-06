@@ -94,7 +94,6 @@ func (m *MockPricingProvider) GetRefreshCount() int {
 	return m.refreshCount
 }
 
-
 func TestNewController(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -233,11 +232,11 @@ func TestNoOpPricingProvider(t *testing.T) {
 func TestControllerRegister(t *testing.T) {
 	// This test verifies that the controller can be created successfully
 	// The actual registration with manager is tested via integration tests
-	
+
 	controller, err := NewController(NewMockPricingProvider())
 	require.NoError(t, err)
 	assert.NotNil(t, controller)
-	
+
 	// Verify the controller has the required methods
 	assert.NotNil(t, controller.Reconcile)
 	assert.NotNil(t, controller.Register)
@@ -296,7 +295,7 @@ func TestControllerConcurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	
+
 	// Run multiple reconciles concurrently
 	done := make(chan bool, 3)
 	for i := 0; i < 3; i++ {

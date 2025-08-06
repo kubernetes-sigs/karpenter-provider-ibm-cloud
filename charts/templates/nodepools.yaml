@@ -36,7 +36,7 @@ spec:
         {{ $key }}: {{ $value | quote }}
         {{- end }}
         {{- end }}
-      
+
       {{- if or $pool.taints $.Values.customResources.global.taints }}
       # Taints for this nodepool
       taints:
@@ -55,7 +55,7 @@ spec:
         {{- end }}
         {{- end }}
       {{- end }}
-    
+
     spec:
       # Node requirements (constraints and preferences)
       requirements:
@@ -72,19 +72,19 @@ spec:
             - {{ $instanceType | quote }}
             {{- end }}
             {{- end }}
-        
+
         # Capacity type (on-demand vs spot)
         - key: "karpenter.sh/capacity-type"
           operator: In
           values:
             - {{ $pool.requirements.capacityType | default $.Values.customResources.global.capacityType | quote }}
-        
+
         # Architecture
         - key: "kubernetes.io/arch"
           operator: In
           values:
             - {{ $pool.requirements.architecture | default $.Values.customResources.global.architecture | quote }}
-        
+
         {{- if $pool.requirements.zones }}
         # Availability zones
         - key: "topology.kubernetes.io/zone"
@@ -94,13 +94,13 @@ spec:
             - {{ $zone | quote }}
             {{- end }}
         {{- end }}
-      
+
       # Node class reference
       nodeClassRef:
         group: karpenter.ibm.sh
         kind: IBMNodeClass
         name: {{ $pool.nodeClassRef | default $.Values.customResources.nodeClass.name | default "default" }}
-  
+
   # Disruption settings
   disruption:
     {{- if $pool.disruption }}
@@ -112,7 +112,7 @@ spec:
     consolidateAfter: {{ $.Values.customResources.global.disruption.consolidateAfter }}
     expireAfter: {{ $.Values.customResources.global.disruption.expireAfter }}
     {{- end }}
-  
+
   # Resource limits
   limits:
     {{- if $pool.limits }}

@@ -165,7 +165,7 @@ func (m *MockVPCSDKClient) ListRegionZonesWithContext(context.Context, *vpcv1.Li
 func (m *MockVPCSDKClient) ListRegions(*vpcv1.ListRegionsOptions) (*vpcv1.RegionCollection, *core.DetailedResponse, error) {
 	// Return default regions for testing
 	region1 := "us-south"
-	region2 := "us-east" 
+	region2 := "us-east"
 	region3 := "eu-de"
 	status := "available"
 	return &vpcv1.RegionCollection{
@@ -177,15 +177,14 @@ func (m *MockVPCSDKClient) ListRegions(*vpcv1.ListRegionsOptions) (*vpcv1.Region
 	}, &core.DetailedResponse{}, nil
 }
 
-
 func TestNewResolver(t *testing.T) {
 	// Create a mock SDK client that implements the interface
 	mockSDKClient := &MockVPCSDKClient{}
 	vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
 	region := "us-south"
-	
+
 	resolver := NewResolver(vpcClient, region)
-	
+
 	assert.NotNil(t, resolver)
 	assert.Equal(t, region, resolver.region)
 	assert.Equal(t, vpcClient, resolver.vpcClient)
@@ -333,11 +332,11 @@ func TestResolveImage_WithImageName(t *testing.T) {
 
 func TestListAvailableImages(t *testing.T) {
 	tests := []struct {
-		name         string
-		nameFilter   string
-		mockFunc     func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error)
-		expectedLen  int
-		expectError  bool
+		name        string
+		nameFilter  string
+		mockFunc    func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error)
+		expectedLen int
+		expectError bool
 	}{
 		{
 			name:       "successful listing",
@@ -534,7 +533,7 @@ func TestMatchesImageName(t *testing.T) {
 
 func TestImageSorting(t *testing.T) {
 	now := time.Now()
-	
+
 	mockSDKClient := &MockVPCSDKClient{
 		listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
 			return &vpcv1.ImageCollection{
@@ -609,8 +608,8 @@ func TestEdgeCases(t *testing.T) {
 			imageName string
 			expected  bool
 		}{
-			{"*", "ubuntu-20-04", true},        // Single wildcard
-			{"", "ubuntu-20-04", true},         // Empty pattern matches everything via contains check
+			{"*", "ubuntu-20-04", true}, // Single wildcard
+			{"", "ubuntu-20-04", true},  // Empty pattern matches everything via contains check
 		}
 
 		for _, tt := range tests {

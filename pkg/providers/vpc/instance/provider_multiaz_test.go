@@ -24,8 +24,8 @@ import (
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/client-go/kubernetes"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
@@ -34,11 +34,11 @@ import (
 
 func TestMultiAZNodeProvisioning(t *testing.T) {
 	tests := []struct {
-		name            string
-		nodeClass       *v1alpha1.IBMNodeClass
-		subnets         map[string]*vpcv1.Subnet
-		expectedZones   []string
-		expectedError   string
+		name               string
+		nodeClass          *v1alpha1.IBMNodeClass
+		subnets            map[string]*vpcv1.Subnet
+		expectedZones      []string
+		expectedError      string
 		shouldUsePlacement bool
 	}{
 		{
@@ -48,7 +48,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					Name: "multi-az-nodeclass",
 				},
 				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:          "us-south",
+					Region: "us-south",
 					// Zone is NOT specified - should use subnet provider
 					VPC:             "r042-12345678-1234-1234-1234-123456789012",
 					Image:           "ubuntu-24-04-amd64",
@@ -59,8 +59,8 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					},
 				},
 			},
-			subnets: createMockSubnetsForZones([]string{"subnet-us-south-1", "subnet-us-south-2", "subnet-us-south-3"}),
-			expectedZones: []string{"us-south-1", "us-south-2", "us-south-3"},
+			subnets:            createMockSubnetsForZones([]string{"subnet-us-south-1", "subnet-us-south-2", "subnet-us-south-3"}),
+			expectedZones:      []string{"us-south-1", "us-south-2", "us-south-3"},
 			shouldUsePlacement: true,
 		},
 		{
@@ -71,7 +71,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 				},
 				Spec: v1alpha1.IBMNodeClassSpec{
 					Region:          "us-south",
-					Zone:            "us-south-2", // Specific zone requested
+					Zone:            "us-south-2",        // Specific zone requested
 					Subnet:          "subnet-us-south-2", // Must match zone
 					VPC:             "r042-12345678-1234-1234-1234-123456789012",
 					Image:           "ubuntu-24-04-amd64",
@@ -79,8 +79,8 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					SecurityGroups:  []string{"sg-1"},
 				},
 			},
-			subnets: createMockSubnetsForZones([]string{"subnet-us-south-2"}),
-			expectedZones: []string{"us-south-2"}, // Only the specified zone
+			subnets:            createMockSubnetsForZones([]string{"subnet-us-south-2"}),
+			expectedZones:      []string{"us-south-2"}, // Only the specified zone
 			shouldUsePlacement: false,
 		},
 		{
@@ -90,7 +90,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					Name: "invalid-nodeclass",
 				},
 				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:          "us-south",
+					Region: "us-south",
 					// No zone AND no placement strategy - should fail
 					VPC:             "r042-12345678-1234-1234-1234-123456789012",
 					Image:           "ubuntu-24-04-amd64",
@@ -98,7 +98,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					SecurityGroups:  []string{"sg-1"},
 				},
 			},
-			subnets: createMockSubnetsForZones([]string{"subnet-us-south-1"}),
+			subnets:       createMockSubnetsForZones([]string{"subnet-us-south-1"}),
 			expectedError: "zone selection requires either explicit zone or placement strategy",
 		},
 	}
@@ -106,7 +106,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			
+
 			// Create mock clients
 			mockClient := &mockIBMClient{
 				vpcClient: &mockVPCClient{
@@ -114,43 +114,43 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					instances: make(map[string]*vpcv1.Instance),
 				},
 			}
-			
+
 			mockSubnetProvider := &mockSubnetProvider{
 				subnets: tt.subnets,
 			}
-			
+
 			// Create a mock instance provider that uses subnet provider for zone selection
 			provider := &testMultiAZInstanceProvider{
 				client:         mockClient,
 				subnetProvider: mockSubnetProvider,
 			}
-			
+
 			// Note: nodeClaim not needed for zone selection test
-			
+
 			// Test zone selection logic
 			selectedZone, selectedSubnet, err := provider.selectZoneAndSubnet(ctx, tt.nodeClass)
-			
+
 			if tt.expectedError != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.expectedError)
 				return
 			}
-			
+
 			require.NoError(t, err)
 			assert.Contains(t, tt.expectedZones, selectedZone, "Selected zone should be in expected zones")
 			assert.NotEmpty(t, selectedSubnet, "Should select a subnet")
-			
+
 			// Verify subnet matches zone
 			subnetInfo, exists := tt.subnets[selectedSubnet]
 			require.True(t, exists, "Selected subnet should exist")
 			assert.Equal(t, selectedZone, *subnetInfo.Zone.Name, "Selected subnet should match selected zone")
-			
+
 			// For multi-AZ tests, verify multiple zone selections distribute properly
 			if len(tt.expectedZones) > 1 && !tt.shouldUsePlacement {
 				// Skip this test for placement strategy cases as they have more complex logic
 				return
 			}
-			
+
 			if len(tt.expectedZones) > 1 {
 				// Test that multiple selections distribute across zones
 				zoneDistribution := make(map[string]int)
@@ -161,7 +161,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 					assert.NotEmpty(t, subnet)
 					zoneDistribution[zone]++
 				}
-				
+
 				// Verify we got nodes in multiple zones
 				assert.Greater(t, len(zoneDistribution), 1, "Should distribute nodes across multiple zones")
 			}
@@ -186,12 +186,12 @@ func (p *testMultiAZInstanceProvider) selectZoneAndSubnet(ctx context.Context, n
 				return "", "", fmt.Errorf("subnet %s not found", nodeClass.Spec.Subnet)
 			}
 			if *subnet.Zone.Name != nodeClass.Spec.Zone {
-				return "", "", fmt.Errorf("subnet %s is in zone %s, but nodeClass specifies zone %s", 
+				return "", "", fmt.Errorf("subnet %s is in zone %s, but nodeClass specifies zone %s",
 					nodeClass.Spec.Subnet, *subnet.Zone.Name, nodeClass.Spec.Zone)
 			}
 			return nodeClass.Spec.Zone, nodeClass.Spec.Subnet, nil
 		}
-		
+
 		// Find a subnet in the specified zone
 		for subnetID, subnet := range p.subnetProvider.subnets {
 			if *subnet.Zone.Name == nodeClass.Spec.Zone {
@@ -200,22 +200,22 @@ func (p *testMultiAZInstanceProvider) selectZoneAndSubnet(ctx context.Context, n
 		}
 		return "", "", fmt.Errorf("no subnet found in zone %s", nodeClass.Spec.Zone)
 	}
-	
+
 	// Case 2: No zone specified - need placement strategy for multi-AZ
 	if nodeClass.Spec.PlacementStrategy == nil {
 		return "", "", fmt.Errorf("zone selection requires either explicit zone or placement strategy")
 	}
-	
+
 	// Use subnet provider to select subnets based on placement strategy
 	selectedSubnets, err := p.subnetProvider.ListSubnets(ctx, nodeClass.Spec.VPC)
 	if err != nil {
 		return "", "", fmt.Errorf("listing subnets: %w", err)
 	}
-	
+
 	if len(selectedSubnets) == 0 {
 		return "", "", fmt.Errorf("no eligible subnets found")
 	}
-	
+
 	// For balanced placement, rotate through zones
 	// In a real implementation, this would use more sophisticated logic
 	zoneSubnets := make(map[string][]string)
@@ -223,14 +223,14 @@ func (p *testMultiAZInstanceProvider) selectZoneAndSubnet(ctx context.Context, n
 		zone := subnetInfo.Zone
 		zoneSubnets[zone] = append(zoneSubnets[zone], subnetInfo.ID)
 	}
-	
+
 	// Select first available zone and subnet (in real implementation, this would be smarter)
 	for zone, subnets := range zoneSubnets {
 		if len(subnets) > 0 {
 			return zone, subnets[0], nil
 		}
 	}
-	
+
 	return "", "", fmt.Errorf("no suitable zone/subnet combination found")
 }
 
@@ -253,7 +253,7 @@ type mockVPCClient struct {
 // Helper to create mock subnets for testing
 func createMockSubnetsForZones(subnetNames []string) map[string]*vpcv1.Subnet {
 	subnets := make(map[string]*vpcv1.Subnet)
-	
+
 	zoneMapping := map[string]string{
 		"subnet-us-south-1": "us-south-1",
 		"subnet-us-south-2": "us-south-2",
@@ -265,7 +265,7 @@ func createMockSubnetsForZones(subnetNames []string) map[string]*vpcv1.Subnet {
 		"subnet-jp-tok-2":   "jp-tok-2",
 		"subnet-jp-tok-3":   "jp-tok-3",
 	}
-	
+
 	for i, name := range subnetNames {
 		zone := zoneMapping[name]
 		id := name
@@ -273,19 +273,19 @@ func createMockSubnetsForZones(subnetNames []string) map[string]*vpcv1.Subnet {
 		availableIPs := int64(100)
 		totalIPs := int64(256)
 		cidr := fmt.Sprintf("10.%d.0.0/24", i+1)
-		
+
 		subnets[name] = &vpcv1.Subnet{
-			ID:   &id,
+			ID: &id,
 			Zone: &vpcv1.ZoneReference{
 				Name: &zone,
 			},
 			Status:                    &status,
 			AvailableIpv4AddressCount: &availableIPs,
 			TotalIpv4AddressCount:     &totalIPs,
-			Ipv4CIDRBlock:            &cidr,
+			Ipv4CIDRBlock:             &cidr,
 		}
 	}
-	
+
 	return subnets
 }
 
@@ -299,7 +299,7 @@ func (m *mockSubnetProvider) GetSubnetInfo(ctx context.Context, subnetID string)
 	if !ok {
 		return nil, fmt.Errorf("subnet not found: %s", subnetID)
 	}
-	
+
 	return &subnet.SubnetInfo{
 		ID:           *sub.ID,
 		Zone:         *sub.Zone.Name,
@@ -327,7 +327,7 @@ func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, st
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Apply placement strategy logic
 	if strategy != nil && strategy.ZoneBalance == "Balanced" {
 		// Group by zone and select one per zone
@@ -337,14 +337,14 @@ func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, st
 				zoneSubnets[s.Zone] = s
 			}
 		}
-		
+
 		var result []subnet.SubnetInfo
 		for _, s := range zoneSubnets {
 			result = append(result, s)
 		}
 		return result, nil
 	}
-	
+
 	return subnets, nil
 }
 

@@ -311,7 +311,7 @@ func TestNodeLabelGeneration(t *testing.T) {
 func TestIKSWorkerPoolProvider_CreateMethodSignature(t *testing.T) {
 	// Test that Create method exists and has the right signature
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	// Verify that Create method can be called (will error due to nil client but that's expected)
 	_, err := provider.Create(context.Background(), &karpv1.NodeClaim{})
 	assert.Error(t, err) // Expected due to nil client
@@ -321,14 +321,14 @@ func TestIKSWorkerPoolProvider_CreateMethodSignature(t *testing.T) {
 func TestIKSWorkerPoolProvider_DeleteMethodSignature(t *testing.T) {
 	// Test that Delete method exists and has the right signature
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	// Test with node missing required labels
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
 		},
 	}
-	
+
 	err := provider.Delete(context.Background(), node)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster ID or pool ID not found")
@@ -336,7 +336,7 @@ func TestIKSWorkerPoolProvider_DeleteMethodSignature(t *testing.T) {
 
 func TestIKSWorkerPoolProvider_GetMethodNotImplemented(t *testing.T) {
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	result, err := provider.Get(context.Background(), "test-provider-id")
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -345,7 +345,7 @@ func TestIKSWorkerPoolProvider_GetMethodNotImplemented(t *testing.T) {
 
 func TestIKSWorkerPoolProvider_ListMethodNotImplemented(t *testing.T) {
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	result, err := provider.List(context.Background())
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -354,17 +354,17 @@ func TestIKSWorkerPoolProvider_ListMethodNotImplemented(t *testing.T) {
 
 func TestIKSWorkerPoolProvider_ResizePoolNilClient(t *testing.T) {
 	// Test that calling ResizePool with a nil client panics or errors correctly
-	// Since the method calls p.client.GetIKSClient() and p.client is nil, 
+	// Since the method calls p.client.GetIKSClient() and p.client is nil,
 	// this should panic. We capture the panic to verify the method exists.
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	defer func() {
 		if r := recover(); r != nil {
 			// Expected panic due to nil client
 			assert.NotNil(t, r, "Expected panic due to nil client")
 		}
 	}()
-	
+
 	// This will panic due to nil client, but that's expected behavior for now
 	err := provider.ResizePool(context.Background(), "cluster", "pool", 5)
 	// If we reach here without panic, it means the method returned an error instead
@@ -374,14 +374,14 @@ func TestIKSWorkerPoolProvider_ResizePoolNilClient(t *testing.T) {
 func TestIKSWorkerPoolProvider_GetPoolNilClient(t *testing.T) {
 	// Test that calling GetPool with a nil client panics or errors correctly
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	defer func() {
 		if r := recover(); r != nil {
 			// Expected panic due to nil client
 			assert.NotNil(t, r, "Expected panic due to nil client")
 		}
 	}()
-	
+
 	// This will panic due to nil client
 	result, err := provider.GetPool(context.Background(), "cluster", "pool")
 	// If we reach here without panic, it means the method returned an error instead
@@ -392,16 +392,16 @@ func TestIKSWorkerPoolProvider_GetPoolNilClient(t *testing.T) {
 }
 
 func TestIKSWorkerPoolProvider_ListPoolsNilClient(t *testing.T) {
-	// Test that calling ListPools with a nil client panics or errors correctly  
+	// Test that calling ListPools with a nil client panics or errors correctly
 	provider := &IKSWorkerPoolProvider{}
-	
+
 	defer func() {
 		if r := recover(); r != nil {
 			// Expected panic due to nil client
 			assert.NotNil(t, r, "Expected panic due to nil client")
 		}
 	}()
-	
+
 	// This will panic due to nil client
 	result, err := provider.ListPools(context.Background(), "cluster")
 	// If we reach here without panic, it means the method returned an error instead
@@ -413,22 +413,22 @@ func TestIKSWorkerPoolProvider_ListPoolsNilClient(t *testing.T) {
 
 func TestProviderIDGeneration(t *testing.T) {
 	tests := []struct {
-		name        string
-		region      string
+		name          string
+		region        string
 		nodeClaimName string
-		expected    string
+		expected      string
 	}{
 		{
-			name:        "standard provider ID",
-			region:      "us-south",
+			name:          "standard provider ID",
+			region:        "us-south",
 			nodeClaimName: "test-nodeclaim",
-			expected:    "ibm:///us-south/test-nodeclaim",
+			expected:      "ibm:///us-south/test-nodeclaim",
 		},
 		{
-			name:        "different region",
-			region:      "eu-gb",
+			name:          "different region",
+			region:        "eu-gb",
 			nodeClaimName: "my-node",
-			expected:    "ibm:///eu-gb/my-node",
+			expected:      "ibm:///eu-gb/my-node",
 		},
 	}
 

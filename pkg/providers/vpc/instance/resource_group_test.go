@@ -29,19 +29,19 @@ import (
 
 func TestResourceGroupConfiguration(t *testing.T) {
 	tests := []struct {
-		name                    string
+		name                   string
 		nodeClassResourceGroup string
-		expectedResourceGroup   *string
+		expectedResourceGroup  *string
 	}{
 		{
-			name:                    "resource group specified",
+			name:                   "resource group specified",
 			nodeClassResourceGroup: "test-resource-group-id",
-			expectedResourceGroup:   &[]string{"test-resource-group-id"}[0],
+			expectedResourceGroup:  &[]string{"test-resource-group-id"}[0],
 		},
 		{
-			name:                    "resource group empty",
+			name:                   "resource group empty",
 			nodeClassResourceGroup: "",
-			expectedResourceGroup:   nil,
+			expectedResourceGroup:  nil,
 		},
 	}
 

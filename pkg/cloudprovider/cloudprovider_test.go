@@ -92,7 +92,6 @@ func (m *mockInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovi
 	return instanceTypes
 }
 
-
 // Mock Instance Provider
 type mockInstanceProvider struct {
 	createNode  *corev1.Node
@@ -127,7 +126,6 @@ func (m *mockInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Nod
 func (m *mockInstanceProvider) Delete(ctx context.Context, node *corev1.Node) error {
 	return m.deleteError
 }
-
 
 // TagInstance method removed - not part of interface
 
@@ -531,24 +529,24 @@ func TestCloudProvider_Create_NodeClaimLabelPopulation(t *testing.T) {
 func TestCloudProvider_Create_CircuitBreakerEventPublishing(t *testing.T) {
 	// Simply test that when circuit breaker blocks provisioning, the correct event is published
 	// This is a focused unit test for the event publishing logic only
-	
+
 	// Setup
 	ctx := context.Background()
 	nodeClaim := getTestNodeClaim("test-nodeclass")
 	nodeClass := getTestNodeClass()
-	
+
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 	_ = v1alpha1.SchemeBuilder.AddToScheme(scheme)
-	
+
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(nodeClass).
 		Build()
-	
+
 	// Create mock event recorder to capture events
 	eventRecorder := &mockEventRecorder{events: []events.Event{}}
-	
+
 	// Create a circuit breaker in OPEN state
 	cbConfig := &CircuitBreakerConfig{
 		FailureThreshold:       1,
@@ -559,11 +557,11 @@ func TestCloudProvider_Create_CircuitBreakerEventPublishing(t *testing.T) {
 		MaxConcurrentInstances: 5,
 	}
 	cb := NewCircuitBreaker(cbConfig, logr.Discard())
-	
+
 	// Force circuit breaker to OPEN state
 	cb.state = CircuitBreakerOpen
 	cb.lastStateChange = time.Now()
-	
+
 	// Create cloud provider with circuit breaker
 	// providerFactory will be nil, but that's OK because we'll fail at circuit breaker
 	cp := &CloudProvider{
@@ -572,14 +570,14 @@ func TestCloudProvider_Create_CircuitBreakerEventPublishing(t *testing.T) {
 		recorder:             eventRecorder,
 		circuitBreaker:       cb,
 	}
-	
+
 	// Execute
 	_, err := cp.Create(ctx, nodeClaim)
-	
+
 	// Verify error
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "circuit breaker blocked provisioning")
-	
+
 	// Verify the correct event was published
 	assert.Len(t, eventRecorder.events, 1)
 	event := eventRecorder.events[0]
@@ -587,7 +585,6 @@ func TestCloudProvider_Create_CircuitBreakerEventPublishing(t *testing.T) {
 	assert.Contains(t, event.Message, "Circuit breaker blocked provisioning for NodeClaim test-nodeclaim")
 	assert.Equal(t, corev1.EventTypeWarning, event.Type)
 }
-
 
 func TestCloudProvider_Delete(t *testing.T) {
 	tests := []struct {

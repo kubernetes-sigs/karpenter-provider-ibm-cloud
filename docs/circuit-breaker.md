@@ -57,10 +57,10 @@ Configure the circuit breaker in your `values.yaml`:
 ```yaml
 circuitBreaker:
   enabled: true
-  
+
   # Use a preset configuration
   preset: "balanced"  # Options: conservative, balanced, aggressive, demo, custom
-  
+
   # Custom configuration (when preset: "custom")
   config:
     failureThreshold: 3
@@ -92,7 +92,7 @@ export CIRCUIT_BREAKER_MAX_CONCURRENT_INSTANCES=5
 circuitBreaker:
   preset: "conservative"
 ```
-- Failure Threshold: 2 
+- Failure Threshold: 2
 - Rate Limit: 2/minute
 - Recovery: 20 minutes
 - Best for production with strict SLAs
@@ -103,7 +103,7 @@ circuitBreaker:
   preset: "balanced"
 ```
 - Failure Threshold: 3
-- Rate Limit: 5/minute  
+- Rate Limit: 5/minute
 - Recovery: 15 minutes
 - Good balance for most workloads
 

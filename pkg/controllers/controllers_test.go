@@ -435,51 +435,51 @@ func TestLoadBalancerControllerIntegration(t *testing.T) {
 	t.Run("load balancer controller registration with IBM client", func(t *testing.T) {
 		// This test verifies that the load balancer controller is properly registered
 		// when an IBM client is available (lines 167-179 in controllers.go)
-		
+
 		// Test that the load balancer controller registration logic would work
 		// We can't easily test the actual registration without a full manager setup,
 		// but we can test the conditions and setup
-		
+
 		// Simulate having an IBM client (line 167: if ibmClient != nil)
 		hasIBMClient := true
 		assert.True(t, hasIBMClient, "Should have IBM client for load balancer controller")
-		
+
 		// Simulate getting VPC client (line 168: vpcClient, err := ibmClient.GetVPCClient())
 		// In a real scenario, this would be called and should not error
 		canGetVPCClient := true // In real test, this would be: err == nil
 		assert.True(t, canGetVPCClient, "Should be able to get VPC client")
-		
+
 		// Test that the NewController would be called (line 172)
 		// and Register would be called (line 173)
 		controllerCanBeCreated := true
 		assert.True(t, controllerCanBeCreated, "Load balancer controller should be creatable")
-		
+
 		// Verify the log message would be printed (line 176: "registered load balancer controller")
 		expectedLogMessage := "registered load balancer controller"
 		assert.Equal(t, "registered load balancer controller", expectedLogMessage)
 	})
-	
+
 	t.Run("load balancer controller skipped without IBM client", func(t *testing.T) {
 		// Test the case where IBM client is nil (line 167: if ibmClient != nil)
-		
+
 		hasIBMClient := false // ibmClient == nil
 		assert.False(t, hasIBMClient, "Should not have IBM client")
-		
+
 		// In this case, the load balancer controller should not be registered
 		// The if block (lines 167-179) should be skipped entirely
 		loadBalancerControllerRegistered := false
 		assert.False(t, loadBalancerControllerRegistered, "Load balancer controller should not be registered without IBM client")
 	})
-	
+
 	t.Run("load balancer controller error handling", func(t *testing.T) {
 		// Test error handling when VPC client creation fails (line 169: if err != nil)
-		
+
 		vpcClientError := true // Simulate: err != nil
 		if vpcClientError {
 			// Should log error and continue (line 170: logger.Error(err, "failed to get VPC client for load balancer controller"))
 			expectedErrorLog := "failed to get VPC client for load balancer controller"
 			assert.Equal(t, "failed to get VPC client for load balancer controller", expectedErrorLog)
-			
+
 			// Controller should not be registered in this case
 			controllerRegistered := false
 			assert.False(t, controllerRegistered, "Controller should not be registered when VPC client creation fails")
