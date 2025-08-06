@@ -75,7 +75,7 @@ test: vendor unit
 ci: vendor unit lint ## Run all CI checks (tests + linting)
 
 .PHONY: unit
-unit: 
+unit:
 	go test $(GTEST_ARGS) ./...
 
 .PHONY: e2e
@@ -91,10 +91,6 @@ e2e: ## Run e2e tests against real cluster (requires env vars)
 e2e-benchmark: ## Run e2e performance benchmarks
 	@echo "Running E2E benchmarks..."
 	RUN_E2E_BENCHMARKS=true go test -v -timeout 30m ./test/e2e/... -run=^$$ -bench=.
-
-.PHONY: lint
-lint: ## Run golangci-lint
-	golangci-lint run --timeout=5m
 
 .PHONY: vendor
 vendor: ## update modules and populate local vendor directory
@@ -125,3 +121,9 @@ verify-license: ## Verify all Go files have license headers
 .PHONY: pre-commit
 pre-commit: ## Run pre-commit checks (license headers + linting)
 	hack/pre-commit.sh
+
+.PHONY: lint
+lint:
+	@echo "Executing pre-commit for all files"
+	pre-commit run --all-files
+	@echo "pre-commit executed."

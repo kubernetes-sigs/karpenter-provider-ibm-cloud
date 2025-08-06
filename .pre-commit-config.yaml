@@ -2,7 +2,6 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-added-large-files
@@ -15,7 +14,6 @@ repos:
         entry: gofmt -l -w .
         language: system
         types: [go]
-
       - id: go-test
         name: go test
         entry: go test ./...
@@ -25,4 +23,14 @@ repos:
     rev: v2.3.1
     hooks:
       - id: golangci-lint
-        args: ["--fix"]
+        entry: golangci-lint run
+        args: [--timeout=5m]
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+        args: [--disable, MD013, MD002]
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
