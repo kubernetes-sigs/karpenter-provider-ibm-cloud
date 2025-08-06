@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -1296,4 +1297,566 @@ func TestControllerPerformance(t *testing.T) {
 
 	// Reconciliation should be fast (under 10ms per call)
 	assert.Less(t, avgDuration, 10*time.Millisecond, "Reconciliation should be fast")
+}
+
+// =============================================================================
+// CONSTRUCTOR TESTS  
+// =============================================================================
+
+func TestNewController(t *testing.T) {
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	tests := []struct {
+		name      string
+		client    client.Client
+		wantErr   bool
+		errContains string
+		setupEnv  func()
+		cleanupEnv func()
+	}{
+		{
+			name:   "valid client with credentials",
+			client: kubeClient,
+			setupEnv: func() {
+				_ = os.Setenv("IBMCLOUD_API_KEY", "test-key")
+				_ = os.Setenv("VPC_API_KEY", "test-vpc-key") 
+				_ = os.Setenv("IBMCLOUD_REGION", "us-south")
+			},
+			cleanupEnv: func() {
+				_ = os.Unsetenv("IBMCLOUD_API_KEY")
+				_ = os.Unsetenv("VPC_API_KEY")
+				_ = os.Unsetenv("IBMCLOUD_REGION")
+			},
+			wantErr: false,
+		},
+		{
+			name:        "nil client",
+			client:      nil,
+			wantErr:     true,
+			errContains: "kubeClient cannot be nil",
+		},
+		{
+			name:   "missing credentials", 
+			client: kubeClient,
+			setupEnv: func() {
+				_ = os.Unsetenv("IBMCLOUD_API_KEY")
+				_ = os.Unsetenv("VPC_API_KEY")
+				_ = os.Unsetenv("IBMCLOUD_REGION")
+			},
+			wantErr:     true,
+			errContains: "creating IBM client",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupEnv != nil {
+				tt.setupEnv()
+			}
+			if tt.cleanupEnv != nil {
+				defer tt.cleanupEnv()
+			}
+
+			controller, err := NewController(tt.client)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, controller)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				if controller != nil {
+					assert.Equal(t, tt.client, controller.kubeClient)
+					assert.NotNil(t, controller.ibmClient)
+					assert.NotNil(t, controller.subnetProvider)
+					assert.NotNil(t, controller.cache)
+					assert.NotNil(t, controller.vpcClientManager)
+				}
+			}
+		})
+	}
+}
+
+func TestNewTestController(t *testing.T) {
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	controller := NewTestController(kubeClient)
+	
+	assert.NotNil(t, controller)
+	assert.Equal(t, kubeClient, controller.kubeClient)
+	assert.Nil(t, controller.ibmClient)
+	assert.Nil(t, controller.subnetProvider)
+	assert.Nil(t, controller.cache)
+	assert.Nil(t, controller.vpcClientManager)
+}
+
+// =============================================================================
+// VALIDATION METHOD TESTS
+// =============================================================================
+
+func TestValidateRegion(t *testing.T) {
+	// Skip this test if no credentials available
+	if os.Getenv("IBM_API_KEY") == "" || os.Getenv("VPC_API_KEY") == "" {
+		t.Skip("Skipping validateRegion test - requires IBM Cloud credentials")
+	}
+
+	ctx := context.Background()
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	// Create controller with real credentials for VPC API access
+	controller, err := NewController(kubeClient)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		region      string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "valid region",
+			region: "us-south",
+			wantErr: false,
+		},
+		{
+			name:        "empty region",
+			region:      "",
+			wantErr:     true,
+			errContains: "region is required",
+		},
+		{
+			name:        "invalid format region",
+			region:      "invalid-region-name",
+			wantErr:     true,
+			errContains: "invalid region format",
+		},
+		{
+			name:        "non-existent region",
+			region:      "xx-north",
+			wantErr:     true,
+			errContains: "not found in VPC API",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := controller.validateRegion(ctx, tt.region)
+			
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateVPC(t *testing.T) {
+	// Skip this test if no credentials available
+	if os.Getenv("IBM_API_KEY") == "" || os.Getenv("VPC_API_KEY") == "" {
+		t.Skip("Skipping validateVPC test - requires IBM Cloud credentials")
+	}
+
+	ctx := context.Background()
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	controller, err := NewController(kubeClient)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		vpcID       string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "non-existent VPC",
+			vpcID:       "vpc-nonexistent",
+			wantErr:     true,
+			errContains: "not found or not accessible",
+		},
+		{
+			name:        "empty VPC ID",
+			vpcID:       "",
+			wantErr:     true,
+		},
+	}
+
+	// Add real VPC test if available
+	if vpcID := os.Getenv("VPC_ID"); vpcID != "" {
+		tests = append(tests, struct {
+			name        string
+			vpcID       string
+			wantErr     bool
+			errContains string
+		}{
+			name:    "valid VPC",
+			vpcID:   vpcID,
+			wantErr: false,
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := controller.validateVPC(ctx, tt.vpcID)
+			
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateSubnet(t *testing.T) {
+	ctx := context.Background()
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	mockSubnet := &MockSubnetProvider{}
+	controller := &Controller{
+		kubeClient:     kubeClient,
+		subnetProvider: mockSubnet,
+	}
+
+	tests := []struct {
+		name        string
+		subnetID    string
+		vpcID       string
+		setupMock   func()
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:     "valid subnet",
+			subnetID: "subnet-valid",
+			vpcID:    "vpc-12345",
+			setupMock: func() {
+				mockSubnet.On("GetSubnet", ctx, "subnet-valid").Return(&subnet.SubnetInfo{
+					ID:           "subnet-valid",
+					State:        "available",
+					AvailableIPs: 250,
+					Zone:         "us-south-1",
+				}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:     "subnet not found",
+			subnetID: "subnet-nonexistent",
+			vpcID:    "vpc-12345",
+			setupMock: func() {
+				mockSubnet.On("GetSubnet", ctx, "subnet-nonexistent").Return(nil, fmt.Errorf("not found"))
+			},
+			wantErr:     true,
+			errContains: "not found or not accessible",
+		},
+		{
+			name:     "subnet not available",
+			subnetID: "subnet-pending",
+			vpcID:    "vpc-12345", 
+			setupMock: func() {
+				mockSubnet.On("GetSubnet", ctx, "subnet-pending").Return(&subnet.SubnetInfo{
+					ID:           "subnet-pending",
+					State:        "pending",
+					AvailableIPs: 250,
+					Zone:         "us-south-1",
+				}, nil)
+			},
+			wantErr:     true,
+			errContains: "is not in available state",
+		},
+		{
+			name:     "insufficient IPs",
+			subnetID: "subnet-low-ips",
+			vpcID:    "vpc-12345",
+			setupMock: func() {
+				mockSubnet.On("GetSubnet", ctx, "subnet-low-ips").Return(&subnet.SubnetInfo{
+					ID:           "subnet-low-ips", 
+					State:        "available",
+					AvailableIPs: 5,
+					Zone:         "us-south-1",
+				}, nil)
+			},
+			wantErr:     true,
+			errContains: "has insufficient available IPs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock
+			mockSubnet.ExpectedCalls = nil
+			if tt.setupMock != nil {
+				tt.setupMock()
+			}
+
+			err := controller.validateSubnet(ctx, tt.subnetID, tt.vpcID)
+			
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+			
+			mockSubnet.AssertExpectations(t)
+		})
+	}
+}
+
+func TestValidateSubnetsAvailable(t *testing.T) {
+	ctx := context.Background()
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	mockSubnet := &MockSubnetProvider{}
+	controller := &Controller{
+		kubeClient:     kubeClient,
+		subnetProvider: mockSubnet,
+	}
+
+	tests := []struct {
+		name        string
+		vpcID       string
+		zone        string
+		setupMock   func()
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:  "subnets available",
+			vpcID: "vpc-12345",
+			zone:  "",
+			setupMock: func() {
+				mockSubnet.On("ListSubnets", ctx, "vpc-12345").Return([]subnet.SubnetInfo{
+					{
+						ID:           "subnet-1",
+						State:        "available",
+						AvailableIPs: 250,
+						Zone:         "us-south-1",
+					},
+					{
+						ID:           "subnet-2", 
+						State:        "available",
+						AvailableIPs: 100,
+						Zone:         "us-south-2",
+					},
+				}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:  "subnets available in specific zone",
+			vpcID: "vpc-12345", 
+			zone:  "us-south-1",
+			setupMock: func() {
+				mockSubnet.On("ListSubnets", ctx, "vpc-12345").Return([]subnet.SubnetInfo{
+					{
+						ID:           "subnet-1",
+						State:        "available",
+						AvailableIPs: 250,
+						Zone:         "us-south-1",
+					},
+					{
+						ID:           "subnet-2",
+						State:        "available", 
+						AvailableIPs: 100,
+						Zone:         "us-south-2",
+					},
+				}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:  "no available subnets",
+			vpcID: "vpc-empty",
+			zone:  "",
+			setupMock: func() {
+				mockSubnet.On("ListSubnets", ctx, "vpc-empty").Return([]subnet.SubnetInfo{
+					{
+						ID:           "subnet-pending",
+						State:        "pending",
+						AvailableIPs: 250,
+						Zone:         "us-south-1",
+					},
+					{
+						ID:           "subnet-low-ips",
+						State:        "available",
+						AvailableIPs: 5,
+						Zone:         "us-south-2", 
+					},
+				}, nil)
+			},
+			wantErr:     true,
+			errContains: "no available subnets found in VPC",
+		},
+		{
+			name:  "no subnets in zone",
+			vpcID: "vpc-12345",
+			zone:  "us-west-1",
+			setupMock: func() {
+				mockSubnet.On("ListSubnets", ctx, "vpc-12345").Return([]subnet.SubnetInfo{
+					{
+						ID:           "subnet-1",
+						State:        "available",
+						AvailableIPs: 250,
+						Zone:         "us-south-1",
+					},
+				}, nil)
+			},
+			wantErr:     true,
+			errContains: "no available subnets found in VPC vpc-12345 for zone us-west-1",
+		},
+		{
+			name:  "list subnets fails",
+			vpcID: "vpc-error",
+			zone:  "",
+			setupMock: func() {
+				mockSubnet.On("ListSubnets", ctx, "vpc-error").Return([]subnet.SubnetInfo{}, fmt.Errorf("API error"))
+			},
+			wantErr:     true,
+			errContains: "failed to list subnets",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock
+			mockSubnet.ExpectedCalls = nil
+			if tt.setupMock != nil {
+				tt.setupMock()
+			}
+
+			err := controller.validateSubnetsAvailable(ctx, tt.vpcID, tt.zone)
+			
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+			
+			mockSubnet.AssertExpectations(t)
+		})
+	}
+}
+
+func TestValidateImage(t *testing.T) {
+	// Skip this test if no credentials available
+	if os.Getenv("IBM_API_KEY") == "" || os.Getenv("VPC_API_KEY") == "" {
+		t.Skip("Skipping validateImage test - requires IBM Cloud credentials")
+	}
+
+	ctx := context.Background()
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+
+	controller, err := NewController(kubeClient)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		imageID     string
+		region      string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "non-existent image",
+			imageID:     "r006-nonexistent",
+			region:      "us-south",
+			wantErr:     true,
+			errContains: "not found or not accessible",
+		},
+		{
+			name:        "empty image ID",
+			imageID:     "",
+			region:      "us-south",
+			wantErr:     true,
+		},
+	}
+
+	// Add real image test if available
+	if imageID := os.Getenv("IMAGE_ID"); imageID != "" {
+		tests = append(tests, struct {
+			name        string
+			imageID     string
+			region      string
+			wantErr     bool
+			errContains string
+		}{
+			name:    "valid image",
+			imageID: imageID,
+			region:  "us-south",
+			wantErr: false,
+		})
+	} else {
+		// Use a known Ubuntu 20.04 image ID for testing
+		tests = append(tests, struct {
+			name        string
+			imageID     string
+			region      string
+			wantErr     bool
+			errContains string
+		}{
+			name:    "known Ubuntu image",
+			imageID: "r006-988caa8b-7786-49c9-aea6-9553af2b1969",
+			region:  "us-south",
+			wantErr: false,
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := controller.validateImage(ctx, tt.imageID, tt.region)
+			
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRegister(t *testing.T) {
+	s := getTestScheme()
+	kubeClient := fake.NewClientBuilder().WithScheme(s).Build()
+	
+	controller := &Controller{
+		kubeClient: kubeClient,
+	}
+
+	// Create a fake manager - we'll just test that Register doesn't panic
+	// since controller-runtime's fake manager is complex to set up
+	ctx := context.Background()
+	
+	// Test should not panic
+	assert.NotPanics(t, func() {
+		// We can't easily test the full Register functionality without a real manager
+		// But we can test that the method exists and doesn't panic with nil manager
+		// In a real scenario, this would be called with a proper manager
+		_ = controller.Register(ctx, nil)
+	})
 }
