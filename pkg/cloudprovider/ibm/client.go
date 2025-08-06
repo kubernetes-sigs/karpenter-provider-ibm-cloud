@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"net/http" 
 )
 
 // Client represents an IBM Cloud API client
@@ -127,22 +128,22 @@ func (c *Client) VPCInstanceExists(ctx context.Context, instanceID string) (bool
 	return true, nil
 }
 
-// containsNotFoundError checks if an error indicates a resource was not found
 func containsNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
+    if err == nil {
+        return false
+    }
 
-	errStr := err.Error()
-	// Check for common "not found" error patterns from IBM Cloud VPC API
-	return containsAnyString(errStr, []string{
-		"not found",
-		"404",
-		"Not Found",
-		"does not exist",
-		"cannot be found",
-	})
+    errStr := err.Error()
+    // Check for common "not found" error patterns from IBM Cloud VPC API
+    return containsAnyString(errStr, []string{
+        "not found",
+        fmt.Sprintf("%d", http.StatusNotFound), // 404
+        "Not Found",
+        "does not exist",
+        "cannot be found",
+    })
 }
+
 
 // containsAnyString checks if a string contains any of the specified substrings
 func containsAnyString(s string, substrings []string) bool {
