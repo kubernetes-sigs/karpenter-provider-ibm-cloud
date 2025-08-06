@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/logging"
@@ -158,14 +159,10 @@ func (p *IBMPricingProvider) fetchPricingData(ctx context.Context) (map[string]m
 
 	pricingMap := make(map[string]map[string]float64)
 
-	// Define IBM Cloud regions and their zones
-	regionZones := map[string][]string{
-		"us-south": {"us-south-1", "us-south-2", "us-south-3"},
-		"us-east":  {"us-east-1", "us-east-2", "us-east-3"},
-		"eu-gb":    {"eu-gb-1", "eu-gb-2", "eu-gb-3"},
-		"eu-de":    {"eu-de-1", "eu-de-2", "eu-de-3"},
-		"jp-tok":   {"jp-tok-1", "jp-tok-2", "jp-tok-3"},
-		"au-syd":   {"au-syd-1", "au-syd-2", "au-syd-3"},
+	// Get all regions and zones dynamically from VPC API
+	regionZones, err := p.getAllRegionsAndZones(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting regions and zones: %w", err)
 	}
 
 	// Process each instance type
@@ -199,6 +196,68 @@ func (p *IBMPricingProvider) fetchPricingData(ctx context.Context) (map[string]m
 	}
 
 	return pricingMap, nil
+}
+
+// getAllRegionsAndZones fetches all regions and their zones from VPC API
+func (p *IBMPricingProvider) getAllRegionsAndZones(ctx context.Context) (map[string][]string, error) {
+	vpcClient, err := p.client.GetVPCClient()
+	if err != nil {
+		return nil, fmt.Errorf("getting VPC client: %w", err)
+	}
+
+	// Get SDK client
+	sdkClient := vpcClient.GetSDKClient()
+	if sdkClient == nil {
+		return nil, fmt.Errorf("VPC SDK client not available")
+	}
+
+	// List all regions
+	regionsResult, _, err := sdkClient.ListRegions(&vpcv1.ListRegionsOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing regions: %w", err)
+	}
+
+	if regionsResult == nil || regionsResult.Regions == nil {
+		return nil, fmt.Errorf("no regions found")
+	}
+
+	regionZones := make(map[string][]string)
+
+	// For each region, get its zones
+	for _, region := range regionsResult.Regions {
+		if region.Name == nil {
+			continue
+		}
+
+		regionName := *region.Name
+		
+		// List zones for this region
+		zonesResult, _, err := sdkClient.ListRegionZonesWithContext(ctx, &vpcv1.ListRegionZonesOptions{
+			RegionName: region.Name,
+		})
+		if err != nil {
+			p.logger.Warn("Failed to get zones for region", "region", regionName, "error", err)
+			continue
+		}
+
+		if zonesResult != nil && zonesResult.Zones != nil {
+			var zones []string
+			for _, zone := range zonesResult.Zones {
+				if zone.Name != nil {
+					zones = append(zones, *zone.Name)
+				}
+			}
+			if len(zones) > 0 {
+				regionZones[regionName] = zones
+			}
+		}
+	}
+
+	if len(regionZones) == 0 {
+		return nil, fmt.Errorf("no regions with zones found")
+	}
+
+	return regionZones, nil
 }
 
 // fetchInstancePricing fetches pricing for a specific instance type from IBM Cloud API

@@ -196,7 +196,7 @@ func (c *TokenController) cleanupExpiredTokens(ctx context.Context) error {
 }
 
 // CreateBootstrapToken creates a new bootstrap token with proper RBAC groups
-func (c *TokenController) CreateBootstrapToken(name string) (string, error) {
+func (c *TokenController) CreateBootstrapToken(ctx context.Context, name string) (string, error) {
 	tokenID := generateRandomString(6)
 	tokenSecret := generateRandomString(16)
 
@@ -220,7 +220,7 @@ func (c *TokenController) CreateBootstrapToken(name string) (string, error) {
 		},
 	}
 
-	_, err := c.client.CoreV1().Secrets("kube-system").Create(context.TODO(), secret, metav1.CreateOptions{})
+	_, err := c.client.CoreV1().Secrets("kube-system").Create(ctx, secret, metav1.CreateOptions{})
 	if err != nil {
 		return "", err
 	}

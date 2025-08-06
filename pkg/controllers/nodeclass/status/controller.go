@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -221,16 +222,10 @@ func (c *Controller) validateFieldFormats(nc *v1alpha1.IBMNodeClass) error {
 	}
 
 	// Validate region format
-	validRegions := []string{"us-south", "us-east", "eu-gb", "eu-de", "jp-tok", "au-syd", "ca-tor", "br-sao"}
-	isValidRegion := false
-	for _, validRegion := range validRegions {
-		if region == validRegion {
-			isValidRegion = true
-			break
+	if region != "" {
+		if err := validateRegionFormat(region); err != nil {
+			return err
 		}
-	}
-	if !isValidRegion {
-		return fmt.Errorf("invalid region: %s, must be one of: %s", region, strings.Join(validRegions, ", "))
 	}
 
 	// Validate zone format if specified
@@ -244,6 +239,24 @@ func (c *Controller) validateFieldFormats(nc *v1alpha1.IBMNodeClass) error {
 	return nil
 }
 
+// validateRegionFormat validates the basic format of a region string
+func validateRegionFormat(region string) error {
+	// IBM Cloud regions follow pattern: xx-xxxx (e.g., us-south, eu-de, jp-tok)
+	// Basic format validation - must contain hyphen and be reasonable length
+	if !strings.Contains(region, "-") || len(region) < 5 || len(region) > 10 {
+		return fmt.Errorf("invalid region format: %s, expected format like 'us-south' or 'eu-de'", region)
+	}
+	
+	// Check for valid characters (lowercase letters and hyphen only)
+	for _, char := range region {
+		if (char < 'a' || char > 'z') && char != '-' {
+			return fmt.Errorf("invalid region format: %s, regions must contain only lowercase letters and hyphens", region)
+		}
+	}
+	
+	return nil
+}
+
 // validateIBMCloudResources validates that IBM Cloud resources exist and are accessible
 func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1.IBMNodeClass) error {
 	// Skip IBM Cloud validation if clients are not available (e.g., in unit tests)
@@ -251,6 +264,11 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 		logger := log.FromContext(ctx).WithValues("nodeclass", nc.Name)
 		logger.V(1).Info("Skipping IBM Cloud resource validation - clients not available")
 		return nil
+	}
+
+	// Validate region exists
+	if err := c.validateRegion(ctx, nc.Spec.Region); err != nil {
+		return fmt.Errorf("region validation failed: %w", err)
 	}
 
 	// Validate VPC exists and is accessible
@@ -276,6 +294,53 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 	}
 
 	return nil
+}
+
+// validateRegion validates that the region exists and is accessible
+func (c *Controller) validateRegion(ctx context.Context, region string) error {
+	if region == "" {
+		return fmt.Errorf("region is required")
+	}
+
+	// First validate format
+	if err := validateRegionFormat(region); err != nil {
+		return err
+	}
+
+	// Get VPC client to query regions
+	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
+	if err != nil {
+		return fmt.Errorf("getting VPC client: %w", err)
+	}
+
+	// Get SDK client
+	sdkClient := vpcClient.GetSDKClient()
+	if sdkClient == nil {
+		return fmt.Errorf("VPC SDK client not available")
+	}
+
+	// List all regions and check if our region exists
+	regionsResult, _, err := sdkClient.ListRegions(&vpcv1.ListRegionsOptions{})
+	if err != nil {
+		return fmt.Errorf("listing regions from VPC API: %w", err)
+	}
+
+	if regionsResult == nil || regionsResult.Regions == nil {
+		return fmt.Errorf("no regions found in VPC API")
+	}
+
+	// Check if the region exists
+	for _, r := range regionsResult.Regions {
+		if r.Name != nil && *r.Name == region {
+			// Region found, also verify it's available
+			if r.Status != nil && *r.Status != "available" {
+				return fmt.Errorf("region %s exists but is not available (status: %s)", region, *r.Status)
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("region %s not found in VPC API", region)
 }
 
 // validateBusinessLogic checks business rules and constraints

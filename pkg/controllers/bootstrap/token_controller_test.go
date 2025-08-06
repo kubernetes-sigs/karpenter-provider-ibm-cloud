@@ -128,7 +128,8 @@ func TestTokenController_CreateBootstrapToken(t *testing.T) {
 				client: client,
 			}
 
-			token, err := controller.CreateBootstrapToken(tt.nodeName)
+			ctx := context.Background()
+			token, err := controller.CreateBootstrapToken(ctx, tt.nodeName)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -146,7 +147,7 @@ func TestTokenController_CreateBootstrapToken(t *testing.T) {
 			assert.Len(t, parts[1], 16) // tokenSecret should be 16 chars
 
 			// Verify secret was created
-			secrets, err := client.CoreV1().Secrets("kube-system").List(context.TODO(), metav1.ListOptions{
+			secrets, err := client.CoreV1().Secrets("kube-system").List(ctx, metav1.ListOptions{
 				LabelSelector: "karpenter.sh/bootstrap-token=true",
 			})
 			require.NoError(t, err)

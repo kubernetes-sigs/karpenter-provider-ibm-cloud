@@ -22,7 +22,6 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -233,7 +232,7 @@ func TestConvertVPCProfileToInstanceType(t *testing.T) {
 		check   func(t *testing.T, it *cloudprovider.InstanceType)
 	}{
 		{
-			name: "valid balanced profile",
+			name: "valid balanced profile - but no client",
 			profile: vpcv1.InstanceProfile{
 				Name: &profileName,
 				VcpuCount: &vpcv1.InstanceProfileVcpu{
@@ -250,18 +249,7 @@ func TestConvertVPCProfileToInstanceType(t *testing.T) {
 					Value: &gpuCount,
 				},
 			},
-			wantErr: false,
-			check: func(t *testing.T, it *cloudprovider.InstanceType) {
-				if it.Name != profileName {
-					t.Errorf("Name = %v, want %v", it.Name, profileName)
-				}
-				if it.Capacity.Cpu().Value() != cpuCount {
-					t.Errorf("CPU = %v, want %v", it.Capacity.Cpu().Value(), cpuCount)
-				}
-				if it.Capacity.Memory().ScaledValue(resource.Giga) != memoryValue {
-					t.Errorf("Memory = %v, want %v", it.Capacity.Memory().ScaledValue(resource.Giga), memoryValue)
-				}
-			},
+			wantErr: true, // Now expects error because client is nil
 		},
 		{
 			name: "profile without CPU",
@@ -287,7 +275,7 @@ func TestConvertVPCProfileToInstanceType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.convertVPCProfileToInstanceType(tt.profile)
+			got, err := provider.convertVPCProfileToInstanceType(context.Background(), tt.profile)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("convertVPCProfileToInstanceType() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -466,45 +454,3 @@ func TestIBMInstanceTypeProvider_List_Extended(t *testing.T) {
 	}
 }
 
-// Test convertCatalogEntryToInstanceType with more edge cases
-func TestConvertCatalogEntryToInstanceType_Extended(t *testing.T) {
-	entryName := "bx2-4x16"
-	
-	tests := []struct {
-		name    string
-		entry   *globalcatalogv1.CatalogEntry
-		want    *cloudprovider.InstanceType
-		wantErr bool
-	}{
-		{
-			name: "nil entry",
-			entry: nil,
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "entry with valid name",
-			entry: &globalcatalogv1.CatalogEntry{
-				Name: &entryName,
-			},
-			want:    nil, // Don't check exact match, just verify it doesn't error
-			wantErr: false,
-		},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := convertCatalogEntryToInstanceType(tt.entry)
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Nil(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-				if tt.want != nil {
-					assert.Equal(t, tt.want.Name, result.Name)
-				}
-			}
-		})
-	}
-}

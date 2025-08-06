@@ -289,7 +289,7 @@ func TestOptionsValidateRequiredFields(t *testing.T) {
 				Zone:   "eu-de-1", // Wrong zone for us-south region
 			},
 			expectError: true,
-			errorMsg:    "invalid zone eu-de-1 for region us-south",
+			errorMsg:    "zone eu-de-1 does not match region us-south",
 		},
 	}
 

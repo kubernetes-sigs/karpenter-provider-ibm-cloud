@@ -36,6 +36,7 @@ type vpcClientInterface interface {
 	GetImageWithContext(context.Context, *vpcv1.GetImageOptions) (*vpcv1.Image, *core.DetailedResponse, error)
 	ListImagesWithContext(context.Context, *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error)
 	ListInstanceProfilesWithContext(context.Context, *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error)
+	GetInstanceProfileWithContext(context.Context, *vpcv1.GetInstanceProfileOptions) (*vpcv1.InstanceProfile, *core.DetailedResponse, error)
 	ListSecurityGroupsWithContext(context.Context, *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error)
 	// Volume methods
 	ListVolumesWithContext(context.Context, *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, *core.DetailedResponse, error)
@@ -53,6 +54,9 @@ type vpcClientInterface interface {
 	ListLoadBalancerPoolMembersWithContext(context.Context, *vpcv1.ListLoadBalancerPoolMembersOptions) (*vpcv1.LoadBalancerPoolMemberCollection, *core.DetailedResponse, error)
 	UpdateLoadBalancerPoolMemberWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error)
 	UpdateLoadBalancerPoolWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error)
+	// Region and Zone methods
+	ListRegionZonesWithContext(context.Context, *vpcv1.ListRegionZonesOptions) (*vpcv1.ZoneCollection, *core.DetailedResponse, error)
+	ListRegions(*vpcv1.ListRegionsOptions) (*vpcv1.RegionCollection, *core.DetailedResponse, error)
 }
 
 // VPCClient handles interactions with the IBM Cloud VPC API
@@ -62,6 +66,11 @@ type VPCClient struct {
 	apiKey   string
 	region   string
 	client   vpcClientInterface
+}
+
+// GetSDKClient returns the underlying VPC SDK client
+func (c *VPCClient) GetSDKClient() vpcClientInterface {
+	return c.client
 }
 
 func NewVPCClient(baseURL, authType, apiKey, region string) (*VPCClient, error) {
@@ -362,6 +371,24 @@ func (c *VPCClient) ListInstanceProfiles(options *vpcv1.ListInstanceProfilesOpti
 	}
 
 	return c.client.ListInstanceProfilesWithContext(context.Background(), options)
+}
+
+// GetInstanceProfile retrieves a specific instance profile by name
+func (c *VPCClient) GetInstanceProfile(ctx context.Context, profileName string) (*vpcv1.InstanceProfile, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("VPC client not initialized")
+	}
+
+	options := &vpcv1.GetInstanceProfileOptions{
+		Name: &profileName,
+	}
+
+	profile, _, err := c.client.GetInstanceProfileWithContext(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("getting instance profile %s: %w", profileName, err)
+	}
+
+	return profile, nil
 }
 
 // GetLoadBalancer retrieves a load balancer by ID

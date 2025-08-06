@@ -85,6 +85,10 @@ func (m *MockVPCSDKClient) ListInstanceProfilesWithContext(context.Context, *vpc
 	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
 }
 
+func (m *MockVPCSDKClient) GetInstanceProfileWithContext(context.Context, *vpcv1.GetInstanceProfileOptions) (*vpcv1.InstanceProfile, *core.DetailedResponse, error) {
+	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
 func (m *MockVPCSDKClient) ListSecurityGroupsWithContext(context.Context, *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error) {
 	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
 }
@@ -142,6 +146,35 @@ func (m *MockVPCSDKClient) UpdateLoadBalancerPoolMemberWithContext(context.Conte
 
 func (m *MockVPCSDKClient) UpdateLoadBalancerPoolWithContext(context.Context, *vpcv1.UpdateLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) {
 	return nil, &core.DetailedResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockVPCSDKClient) ListRegionZonesWithContext(context.Context, *vpcv1.ListRegionZonesOptions) (*vpcv1.ZoneCollection, *core.DetailedResponse, error) {
+	// Return default zones for testing
+	zone1 := "us-south-1"
+	zone2 := "us-south-2"
+	zone3 := "us-south-3"
+	return &vpcv1.ZoneCollection{
+		Zones: []vpcv1.Zone{
+			{Name: &zone1},
+			{Name: &zone2},
+			{Name: &zone3},
+		},
+	}, &core.DetailedResponse{}, nil
+}
+
+func (m *MockVPCSDKClient) ListRegions(*vpcv1.ListRegionsOptions) (*vpcv1.RegionCollection, *core.DetailedResponse, error) {
+	// Return default regions for testing
+	region1 := "us-south"
+	region2 := "us-east" 
+	region3 := "eu-de"
+	status := "available"
+	return &vpcv1.RegionCollection{
+		Regions: []vpcv1.Region{
+			{Name: &region1, Status: &status},
+			{Name: &region2, Status: &status},
+			{Name: &region3, Status: &status},
+		},
+	}, &core.DetailedResponse{}, nil
 }
 
 

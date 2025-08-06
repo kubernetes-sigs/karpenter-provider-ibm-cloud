@@ -31,12 +31,13 @@ import (
 // =================
 
 type mockVPCClient struct {
-	err                    error
-	createInstanceResponse *vpcv1.Instance
-	getInstanceResponse    *vpcv1.Instance
-	listInstancesResponse  *vpcv1.InstanceCollection
-	listSubnetsResponse    *vpcv1.SubnetCollection
-	getSubnetResponse      *vpcv1.Subnet
+	err                       error
+	createInstanceResponse    *vpcv1.Instance
+	getInstanceResponse       *vpcv1.Instance
+	listInstancesResponse     *vpcv1.InstanceCollection
+	listSubnetsResponse       *vpcv1.SubnetCollection
+	getSubnetResponse         *vpcv1.Subnet
+	getInstanceProfileResponse *vpcv1.InstanceProfile
 }
 
 func (m *mockVPCClient) CreateInstanceWithContext(_ context.Context, _ *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
@@ -119,6 +120,13 @@ func (m *mockVPCClient) ListInstanceProfilesWithContext(_ context.Context, _ *vp
 	return &vpcv1.InstanceProfileCollection{}, &core.DetailedResponse{}, nil
 }
 
+func (m *mockVPCClient) GetInstanceProfileWithContext(_ context.Context, _ *vpcv1.GetInstanceProfileOptions) (*vpcv1.InstanceProfile, *core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	return m.getInstanceProfileResponse, &core.DetailedResponse{}, nil
+}
+
 func (m *mockVPCClient) ListImagesWithContext(_ context.Context, _ *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
 	if m.err != nil {
 		return nil, nil, m.err
@@ -195,6 +203,41 @@ func (m *mockVPCClient) UpdateLoadBalancerPoolWithContext(_ context.Context, _ *
 		return nil, nil, m.err
 	}
 	return &vpcv1.LoadBalancerPool{}, &core.DetailedResponse{}, nil
+}
+
+func (m *mockVPCClient) ListRegionZonesWithContext(_ context.Context, _ *vpcv1.ListRegionZonesOptions) (*vpcv1.ZoneCollection, *core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	// Return default zones for testing
+	zone1 := "us-south-1"
+	zone2 := "us-south-2"
+	zone3 := "us-south-3"
+	return &vpcv1.ZoneCollection{
+		Zones: []vpcv1.Zone{
+			{Name: &zone1},
+			{Name: &zone2},
+			{Name: &zone3},
+		},
+	}, &core.DetailedResponse{}, nil
+}
+
+func (m *mockVPCClient) ListRegions(_ *vpcv1.ListRegionsOptions) (*vpcv1.RegionCollection, *core.DetailedResponse, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	// Return default regions for testing
+	region1 := "us-south"
+	region2 := "us-east"
+	region3 := "eu-de"
+	status := "available"
+	return &vpcv1.RegionCollection{
+		Regions: []vpcv1.Region{
+			{Name: &region1, Status: &status},
+			{Name: &region2, Status: &status},
+			{Name: &region3, Status: &status},
+		},
+	}, &core.DetailedResponse{}, nil
 }
 
 // Volume methods
@@ -1034,6 +1077,82 @@ func TestListInstanceProfiles(t *testing.T) {
 	}
 }
 
+func TestGetInstanceProfile(t *testing.T) {
+	profileName := "bx2-2x8"
+	
+	tests := []struct {
+		name        string
+		mockVPC     vpcClientInterface
+		profileName string
+		wantErr     bool
+	}{
+		{
+			name: "successful instance profile retrieval",
+			mockVPC: &mockVPCClient{
+				getInstanceProfileResponse: &vpcv1.InstanceProfile{
+					Name: &profileName,
+					VcpuArchitecture: &vpcv1.InstanceProfileVcpuArchitecture{
+						Type:  stringPtr("fixed"),
+						Value: stringPtr("amd64"),
+					},
+				},
+			},
+			profileName: profileName,
+			wantErr:     false,
+		},
+		{
+			name: "API error response",
+			mockVPC: &mockVPCClient{
+				err: fmt.Errorf("API error"),
+			},
+			profileName: profileName,
+			wantErr:     true,
+		},
+		{
+			name:        "uninitialized client",
+			mockVPC:     nil,
+			profileName: profileName,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var client *VPCClient
+			if tt.mockVPC != nil {
+				client = &VPCClient{
+					client: tt.mockVPC,
+				}
+			} else {
+				client = &VPCClient{}
+			}
+
+			profile, err := client.GetInstanceProfile(context.Background(), tt.profileName)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if profile == nil {
+					t.Error("expected profile but got nil")
+				}
+				if profile != nil && profile.Name != nil && *profile.Name != tt.profileName {
+					t.Errorf("expected profile name %s, got %s", tt.profileName, *profile.Name)
+				}
+				if profile != nil && profile.VcpuArchitecture != nil && profile.VcpuArchitecture.Value != nil {
+					if *profile.VcpuArchitecture.Value != "amd64" {
+						t.Errorf("expected architecture amd64, got %s", *profile.VcpuArchitecture.Value)
+					}
+				}
+			}
+		})
+	}
+}
+
 // =================
 // Error Handling Tests
 // =================
@@ -1113,3 +1232,4 @@ func TestVPCClientErrorHandling(t *testing.T) {
 		})
 	}
 }
+

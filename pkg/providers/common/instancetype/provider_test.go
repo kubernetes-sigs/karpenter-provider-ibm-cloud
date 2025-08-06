@@ -374,12 +374,6 @@ func TestRankInstanceTypes(t *testing.T) {
 	assert.Contains(t, names, "large-cheap")
 }
 
-func TestConvertCatalogEntryToInstanceType(t *testing.T) {
-	// Test with nil entry
-	_, err := convertCatalogEntryToInstanceType(nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "catalog entry is nil")
-}
 
 func TestNewProvider_ErrorHandling(t *testing.T) {
 	// Test that NewProvider handles nil arguments gracefully

@@ -131,6 +131,14 @@ func (m *MockVPCSDKClient) ListInstanceProfilesWithContext(ctx context.Context, 
 	return args.Get(0).(*vpcv1.InstanceProfileCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
 }
 
+func (m *MockVPCSDKClient) GetInstanceProfileWithContext(ctx context.Context, options *vpcv1.GetInstanceProfileOptions) (*vpcv1.InstanceProfile, *core.DetailedResponse, error) {
+	args := m.Called(ctx, options)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*vpcv1.InstanceProfile), args.Get(1).(*core.DetailedResponse), args.Error(2)
+}
+
 func (m *MockVPCSDKClient) ListSecurityGroupsWithContext(ctx context.Context, options *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error) {
 	args := m.Called(ctx, options)
 	if args.Get(0) == nil {
@@ -244,6 +252,22 @@ func (m *MockVPCSDKClient) UpdateLoadBalancerPoolWithContext(ctx context.Context
 		return nil, nil, args.Error(2)
 	}
 	return args.Get(0).(*vpcv1.LoadBalancerPool), args.Get(1).(*core.DetailedResponse), args.Error(2)
+}
+
+func (m *MockVPCSDKClient) ListRegionZonesWithContext(ctx context.Context, options *vpcv1.ListRegionZonesOptions) (*vpcv1.ZoneCollection, *core.DetailedResponse, error) {
+	args := m.Called(ctx, options)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*vpcv1.ZoneCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
+}
+
+func (m *MockVPCSDKClient) ListRegions(options *vpcv1.ListRegionsOptions) (*vpcv1.RegionCollection, *core.DetailedResponse, error) {
+	args := m.Called(options)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*vpcv1.RegionCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
 }
 
 // IBMClientInterface defines the interface we need for testing

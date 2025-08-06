@@ -19,12 +19,10 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"time"
 
-	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -49,6 +47,8 @@ type IBMInstanceTypeProvider struct {
 	client           *ibm.Client
 	pricingProvider  pricing.Provider
 	vpcClientManager *vpcclient.Manager
+	zonesCache       map[string][]string // Cache zones by region
+	zonesCacheTime   time.Time
 }
 
 func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider {
@@ -56,6 +56,7 @@ func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider 
 		client:           client,
 		pricingProvider:  pricingProvider,
 		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
+		zonesCache:       make(map[string][]string),
 	}
 }
 
@@ -105,40 +106,29 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudp
 		return nil, fmt.Errorf("IBM client not initialized")
 	}
 
-	// Try VPC API first - more reliable than catalog
+	// Get VPC client 
 	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
-	if err == nil {
-		// List all profiles and find the one we want
-		profiles, _, profilesErr := vpcClient.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
-		err = profilesErr
-		if err == nil && profiles != nil && profiles.Profiles != nil {
-			for _, profile := range profiles.Profiles {
-				if profile.Name != nil && *profile.Name == name {
-					return p.convertVPCProfileToInstanceType(profile)
-				}
-			}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VPC client: %w", err)
+	}
+
+	// List all profiles and find the one we want
+	profiles, _, err := vpcClient.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instance profiles: %w", err)
+	}
+
+	if profiles == nil || profiles.Profiles == nil {
+		return nil, fmt.Errorf("no instance profiles returned from VPC API")
+	}
+
+	for _, profile := range profiles.Profiles {
+		if profile.Name != nil && *profile.Name == name {
+			return p.convertVPCProfileToInstanceType(ctx, profile)
 		}
 	}
 
-	// Fallback to Global Catalog if VPC API doesn't work
-	catalogClient, err := p.client.GetGlobalCatalogClient()
-	if err != nil {
-		return nil, fmt.Errorf("both VPC and Global Catalog clients failed: %w", err)
-	}
-
-	// Get instance profile details from Global Catalog
-	entry, err := catalogClient.GetInstanceType(ctx, name)
-	if err != nil {
-		return nil, fmt.Errorf("getting instance type from catalog: %w", err)
-	}
-
-	// Convert catalog entry to instance type
-	instanceType, err := convertCatalogEntryToInstanceType(entry)
-	if err != nil {
-		return nil, fmt.Errorf("converting catalog entry: %w", err)
-	}
-
-	return instanceType, nil
+	return nil, fmt.Errorf("instance profile %s not found in VPC API", name)
 }
 
 func (p *IBMInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
@@ -151,39 +141,15 @@ func (p *IBMInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.In
 		return nil, err
 	}
 
-	// Try VPC API first
+	// Use VPC API - this is the only source of truth
 	instanceTypes, err := p.listFromVPC(ctx)
 	if err != nil {
-		logger.Error(err, "Failed to list instance types from VPC API, trying Global Catalog")
-
-		// Fallback to Global Catalog
-		catalogClient, err := p.client.GetGlobalCatalogClient()
-		if err != nil {
-			logger.Error(err, "Failed to get Global Catalog client")
-			return nil, fmt.Errorf("both VPC API and Global Catalog failed: VPC error: %v, Catalog error: %w", err, err)
-		}
-
-		// List instance profiles from Global Catalog
-		entries, err := catalogClient.ListInstanceTypes(ctx)
-		if err != nil {
-			logger.Error(err, "Failed to list instance types from Global Catalog")
-			return nil, fmt.Errorf("both VPC API and Global Catalog failed to list instance types")
-		}
-
-		// Convert catalog entries to instance types
-		instanceTypes = nil
-		for _, entry := range entries {
-			instanceType, err := convertCatalogEntryToInstanceType(&entry)
-			if err != nil {
-				logger.Error(err, "Failed to convert catalog entry", "entry", entry)
-				continue
-			}
-			instanceTypes = append(instanceTypes, instanceType)
-		}
+		logger.Error(err, "Failed to list instance types from VPC API")
+		return nil, fmt.Errorf("failed to list instance types from VPC API: %w", err)
 	}
 
 	if len(instanceTypes) == 0 {
-		err := fmt.Errorf("no instance types found from either VPC API or Global Catalog")
+		err := fmt.Errorf("no instance types found from VPC API")
 		logger.Error(err, "No instance types available")
 		return nil, err
 	}
@@ -216,8 +182,21 @@ func (p *IBMInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requi
 	// Convert to extended instance types with pricing
 	var extendedTypes []*ExtendedInstanceType
 	for _, it := range allTypes {
-		// Get price for this instance type (use default zone for pricing)
-		zone := "us-south-1" // Default zone for pricing
+		// Get price for this instance type (use first zone from client's region)
+		if p.client == nil {
+			return nil, fmt.Errorf("IBM client not initialized - cannot determine region for pricing")
+		}
+		
+		region := p.client.GetRegion()
+		zones, err := p.getZonesForRegion(ctx, region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get zones for region %s: %w", region, err)
+		}
+		if len(zones) == 0 {
+			return nil, fmt.Errorf("no zones found for region %s", region)
+		}
+		
+		zone := zones[0] // Use first available zone for pricing
 
 		price, err := p.pricingProvider.GetPrice(ctx, it.Name, zone)
 		if err != nil {
@@ -319,14 +298,22 @@ func (p *IBMInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovid
 		// Get price for this instance type (use default zone for ranking)
 		var price float64
 		if p.pricingProvider != nil {
-			priceVal, err := p.pricingProvider.GetPrice(context.Background(), it.Name, "us-south-1")
-			if err != nil {
-				// Log warning but continue with 0 price - use background context since we don't have the original
-				log.Log.WithName("instancetype").Info("Could not get pricing for instance type ranking, using fallback price",
-					"instance_type", it.Name, "zone", "us-south-1", "error", err, "fallback_price", 0.0)
+			// Get zone from client's region for pricing
+			if p.client == nil {
+				// Cannot get pricing without knowing the region
 				price = 0.0
 			} else {
-				price = priceVal
+				region := p.client.GetRegion()
+				zone := region + "-1" // Use first zone for pricing lookup
+				priceVal, err := p.pricingProvider.GetPrice(context.Background(), it.Name, zone)
+				if err != nil {
+					// Log warning but continue with 0 price - use background context since we don't have the original
+					log.Log.WithName("instancetype").Info("Could not get pricing for instance type ranking, using fallback price",
+						"instance_type", it.Name, "zone", zone, "error", err, "fallback_price", 0.0)
+					price = 0.0
+				} else {
+					price = priceVal
+				}
 			}
 		} else {
 			price = 0.0
@@ -369,7 +356,7 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context) ([]*cloudprov
 
 	var instanceTypes []*cloudprovider.InstanceType
 	for _, profile := range result.Profiles {
-		instanceType, err := p.convertVPCProfileToInstanceType(profile)
+		instanceType, err := p.convertVPCProfileToInstanceType(ctx, profile)
 		if err != nil {
 			logger.Error(err, "Failed to convert VPC profile", "profile", *profile.Name)
 			continue
@@ -381,8 +368,60 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context) ([]*cloudprov
 	return instanceTypes, nil
 }
 
+// getZonesForRegion fetches available zones for a region from VPC API
+func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region string) ([]string, error) {
+	// Check cache first (cache for 1 hour)
+	if zones, ok := p.zonesCache[region]; ok && time.Since(p.zonesCacheTime) < time.Hour {
+		return zones, nil
+	}
+
+	// Get the SDK client directly for zone listing
+	vpcClient, err := p.client.GetVPCClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VPC client: %w", err)
+	}
+
+	// List zones for the region
+	listOptions := &vpcv1.ListRegionZonesOptions{
+		RegionName: &region,
+	}
+	
+	// Use the SDK client directly as VPCClient wrapper doesn't have this method
+	sdkClient := vpcClient.GetSDKClient()
+	if sdkClient == nil {
+		return nil, fmt.Errorf("VPC SDK client not available")
+	}
+	
+	result, _, err := sdkClient.ListRegionZonesWithContext(ctx, listOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list zones for region %s: %w", region, err)
+	}
+
+	if result == nil || result.Zones == nil {
+		return nil, fmt.Errorf("no zones found for region %s", region)
+	}
+
+	// Extract zone names
+	var zones []string
+	for _, zone := range result.Zones {
+		if zone.Name != nil {
+			zones = append(zones, *zone.Name)
+		}
+	}
+
+	if len(zones) == 0 {
+		return nil, fmt.Errorf("no valid zones found for region %s", region)
+	}
+
+	// Update cache
+	p.zonesCache[region] = zones
+	p.zonesCacheTime = time.Now()
+
+	return zones, nil
+}
+
 // convertVPCProfileToInstanceType converts VPC instance profile to Karpenter instance type
-func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(profile vpcv1.InstanceProfile) (*cloudprovider.InstanceType, error) {
+func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Context, profile vpcv1.InstanceProfile) (*cloudprovider.InstanceType, error) {
 	if profile.Name == nil {
 		return nil, fmt.Errorf("instance profile name is nil")
 	}
@@ -415,10 +454,19 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(profile vpcv1.
 		arch = *profile.VcpuArchitecture.Value
 	}
 
+	// Get GPU count
+	var gpuCount int64
+	if profile.GpuCount != nil {
+		if gpuSpec, ok := profile.GpuCount.(*vpcv1.InstanceProfileGpu); ok && gpuSpec.Value != nil {
+			gpuCount = *gpuSpec.Value
+		}
+	}
+
 	// Convert to Kubernetes resource quantities
 	cpuResource := resource.NewQuantity(cpuCount, resource.DecimalSI)
 	// Memory is in GB from the profile, convert to bytes using standard GB (not GiB)
 	memoryResource := resource.NewQuantity(memoryGB*1000*1000*1000, resource.DecimalSI) // Convert GB to bytes
+	gpuResource := resource.NewQuantity(gpuCount, resource.DecimalSI)
 
 	// Calculate pod capacity (rough estimate: 110 pods per node for most instance types)
 	var podCount int64 = 110
@@ -437,11 +485,25 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(profile vpcv1.
 		scheduling.NewRequirement("karpenter.ibm.sh/instance-size", corev1.NodeSelectorOpIn, getInstanceSize(*profile.Name)),
 	)
 
+	// Get zones dynamically for the current region
+	if p.client == nil {
+		return nil, fmt.Errorf("IBM client not initialized - cannot determine zones for instance offerings")
+	}
+	
+	region := p.client.GetRegion()
+	zones, err := p.getZonesForRegion(ctx, region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get zones for region %s: %w", region, err)
+	}
+	if len(zones) == 0 {
+		return nil, fmt.Errorf("no zones found for region %s", region)
+	}
+
 	// Create offerings with on-demand capacity in all supported zones
 	offerings := cloudprovider.Offerings{
 		{
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "us-south-1", "us-south-2", "us-south-3"),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zones...),
 				scheduling.NewRequirement("karpenter.sh/capacity-type", corev1.NodeSelectorOpIn, "on-demand"),
 			),
 			Price:     0.1, // Default price when pricing provider unavailable
@@ -455,6 +517,7 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(profile vpcv1.
 			corev1.ResourceCPU:    *cpuResource,
 			corev1.ResourceMemory: *memoryResource,
 			corev1.ResourcePods:   *podResource,
+			"nvidia.com/gpu":      *gpuResource, // Standard Kubernetes GPU resource name
 		},
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved: corev1.ResourceList{
@@ -492,61 +555,3 @@ func getInstanceSize(instanceType string) string {
 	return "small"
 }
 
-func convertCatalogEntryToInstanceType(entry *globalcatalogv1.CatalogEntry) (*cloudprovider.InstanceType, error) {
-	if entry == nil {
-		return nil, fmt.Errorf("catalog entry is nil")
-	}
-
-	// Extract instance type details from catalog entry metadata using reflection
-	vcpuCount := 0
-	memoryValue := 0
-	gpuCount := 0
-
-	// Extract values from metadata using reflection
-	if entry.Metadata != nil {
-		metadataValue := reflect.ValueOf(entry.Metadata).Elem()
-
-		// Extract CPU count
-		if vcpuField := metadataValue.FieldByName("VcpuCount"); vcpuField.IsValid() {
-			if vcpuInterface := vcpuField.Interface(); vcpuInterface != nil {
-				vcpuValue := reflect.ValueOf(vcpuInterface).Elem().FieldByName("Count")
-				if vcpuValue.IsValid() && vcpuValue.Kind() == reflect.Ptr && !vcpuValue.IsNil() {
-					vcpuCount = int(vcpuValue.Elem().Int())
-				}
-			}
-		}
-
-		// Extract memory
-		if memField := metadataValue.FieldByName("Memory"); memField.IsValid() {
-			if memInterface := memField.Interface(); memInterface != nil {
-				memValue := reflect.ValueOf(memInterface).Elem().FieldByName("Value")
-				if memValue.IsValid() && memValue.Kind() == reflect.Ptr && !memValue.IsNil() {
-					memoryValue = int(memValue.Elem().Int())
-				}
-			}
-		}
-
-		// Extract GPU count if available
-		if gpuField := metadataValue.FieldByName("GpuCount"); gpuField.IsValid() {
-			if gpuInterface := gpuField.Interface(); gpuInterface != nil {
-				gpuValue := reflect.ValueOf(gpuInterface).Elem().FieldByName("Count")
-				if gpuValue.IsValid() && gpuValue.Kind() == reflect.Ptr && !gpuValue.IsNil() {
-					gpuCount = int(gpuValue.Elem().Int())
-				}
-			}
-		}
-	}
-
-	return &cloudprovider.InstanceType{
-		Name: *entry.Name,
-		Capacity: corev1.ResourceList{
-			corev1.ResourceCPU:    *resource.NewQuantity(int64(vcpuCount), resource.DecimalSI),
-			corev1.ResourceMemory: *resource.NewQuantity(int64(memoryValue)*1024*1024*1024, resource.BinarySI),
-			"gpu":                 *resource.NewQuantity(int64(gpuCount), resource.DecimalSI),
-		},
-		Requirements: scheduling.NewRequirements(
-			scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, *entry.Name),
-			scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, "amd64"), // TODO: Get from metadata
-		),
-	}, nil
-}

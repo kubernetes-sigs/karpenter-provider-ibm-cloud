@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -280,30 +281,24 @@ func (o *Options) Validate() error {
 	return nil
 }
 
-// validateRegionZonePair ensures the zone is valid for the given region
+// validateRegionZonePair ensures the zone follows the correct format for the given region
 func validateRegionZonePair(region, zone string) error {
-	// Map of valid zones for each region
-	validZones := map[string][]string{
-		"us-south": {"us-south-1", "us-south-2", "us-south-3"},
-		"us-east":  {"us-east-1", "us-east-2", "us-east-3"},
-		"eu-gb":    {"eu-gb-1", "eu-gb-2", "eu-gb-3"},
-		"eu-de":    {"eu-de-1", "eu-de-2", "eu-de-3"},
-		"jp-tok":   {"jp-tok-1", "jp-tok-2", "jp-tok-3"},
-		"au-syd":   {"au-syd-1", "au-syd-2", "au-syd-3"},
-		"ca-tor":   {"ca-tor-1", "ca-tor-2", "ca-tor-3"},
-		"br-sao":   {"br-sao-1", "br-sao-2", "br-sao-3"},
+	// Validate zone format: should be region-N where N is a digit
+	expectedPrefix := region + "-"
+	if !strings.HasPrefix(zone, expectedPrefix) {
+		return fmt.Errorf("zone %s does not match region %s: expected format %sN", zone, region, expectedPrefix)
 	}
-
-	zones, exists := validZones[region]
-	if !exists {
-		return fmt.Errorf("invalid region: %s", region)
+	
+	// Extract and validate the zone number
+	zoneSuffix := strings.TrimPrefix(zone, expectedPrefix)
+	if len(zoneSuffix) != 1 {
+		return fmt.Errorf("invalid zone format %s: expected single digit after %s", zone, expectedPrefix)
 	}
-
-	for _, validZone := range zones {
-		if zone == validZone {
-			return nil
-		}
+	
+	// Check if it's a digit
+	if zoneSuffix[0] < '1' || zoneSuffix[0] > '9' {
+		return fmt.Errorf("invalid zone number in %s: must be between 1-9", zone)
 	}
-
-	return fmt.Errorf("invalid zone %s for region %s", zone, region)
+	
+	return nil
 }
