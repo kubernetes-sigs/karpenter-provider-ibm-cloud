@@ -5,11 +5,11 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/pfeifferj/karpenter-provider-ibm-cloud)](https://goreportcard.com/report/github.com/pfeifferj/karpenter-provider-ibm-cloud)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/pfeifferj/karpenter-provider-ibm-cloud)](https://github.com/pfeifferj/karpenter-provider-ibm-cloud/releases)
-[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pfeifferj.github.io/karpenter-provider-ibm-cloud/docs/)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://karpenter-ibm.sh/)
 
 This repository contains the Karpenter Provider implementation for IBM Cloud, enabling dynamic node provisioning in IBM Cloud Kubernetes clusters using Karpenter.
 
-**[View Full Documentation](https://pfeifferj.github.io/karpenter-provider-ibm-cloud/docs/)** | 🚀 **[Getting Started Guide](https://pfeifferj.github.io/karpenter-provider-ibm-cloud/docs/getting-started/)**
+**[View Full Documentation](https://karpenter-ibm.sh/)** | 🚀 **[Getting Started Guide](https://karpenter-ibm.sh//getting-started/)**
 
 ## Overview
 
@@ -56,7 +56,7 @@ These CI workflows ensure chart quality through pre-merge validation and maintai
 
 - 💬 **[Join our Slack](https://cloud-native.slack.com/archives/C094SDPCVLN)** - Get help from the community and maintainers
 - 🐛 **[Report Issues](https://github.com/pfeifferj/karpenter-provider-ibm-cloud/issues)** - Found a bug or have a feature request?
-- 📖 **[Documentation](https://pfeifferj.github.io/karpenter-provider-ibm-cloud/docs/)** - Complete guides and API reference
+- 📖 **[Documentation](https://karpenter-ibm.sh/)** - Complete guides and API reference
 
 ## Contributing
 
