@@ -123,7 +123,7 @@ func (p *TestableIKSBootstrapProvider) GetClusterConfig(ctx context.Context, clu
 	logger := log.FromContext(ctx)
 
 	if p.ibmClient == nil {
-		return nil, fmt.Errorf("IBM client not initialized")
+		return nil, fmt.Errorf("IBM client is not initialized")
 	}
 
 	iksClient := p.ibmClient.GetIKSClient()
@@ -370,13 +370,13 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 			},
 		},
 		{
-			name:      "IBM client not initialized",
+			name:      "IBM client is not initialized",
 			clusterID: "test-cluster-id",
 			setupMocks: func(ibmClient *MockIBMClient, iksClient *MockIKSClient) {
 				// Provider will be created with nil IBM client
 			},
 			expectError:   true,
-			errorContains: "IBM client not initialized",
+			errorContains: "IBM client is not initialized",
 		},
 		{
 			name:      "IKS client not available",
@@ -420,7 +420,7 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 			var mockIBMClient *MockIBMClient
 			var mockIKSClient *MockIKSClient
 
-			if tt.name == "IBM client not initialized" {
+			if tt.name == "IBM client is not initialized" {
 				// Create provider with nil IBM client
 				mockIBMClient = nil
 			} else {

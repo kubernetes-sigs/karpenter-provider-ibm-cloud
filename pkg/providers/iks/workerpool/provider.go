@@ -76,16 +76,12 @@ func (p *IKSWorkerPoolProvider) Create(ctx context.Context, nodeClaim *v1.NodeCl
 		return nil, fmt.Errorf("IKS cluster ID not found in nodeClass.spec.iksClusterID or IKS_CLUSTER_ID environment variable")
 	}
 
-	// Check if client is initialized
-	if p.client == nil {
+	if p == nil || p.client == nil {
 		return nil, fmt.Errorf("IBM client is not initialized")
 	}
 
-	// Get IKS client
+	// Get IKS client and proceed
 	iksClient := p.client.GetIKSClient()
-	if iksClient == nil {
-		return nil, fmt.Errorf("IKS client not available")
-	}
 
 	// Extract requested instance type using same logic as VPC mode
 	requestedInstanceType := nodeClass.Spec.InstanceProfile
@@ -177,8 +173,8 @@ func (p *IKSWorkerPoolProvider) Delete(ctx context.Context, node *corev1.Node) e
 
 	// Get IKS client
 	iksClient := p.client.GetIKSClient()
-	if iksClient == nil {
-		return fmt.Errorf("IKS client not available")
+	if p.client == nil {
+		return fmt.Errorf("IBM client is not initialized")
 	}
 
 	// Get current worker pool state

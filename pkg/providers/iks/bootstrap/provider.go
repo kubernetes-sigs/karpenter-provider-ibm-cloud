@@ -88,11 +88,11 @@ func (p *IKSBootstrapProvider) GetClusterConfig(ctx context.Context, clusterID s
 	logger := log.FromContext(ctx)
 
 	if p.client == nil {
-		return nil, fmt.Errorf("IBM client not initialized")
+		return nil, fmt.Errorf("IBM client is not initialized")
 	}
 
 	iksClient := p.client.GetIKSClient()
-	if iksClient == nil {
+	if p.client == nil {
 		return nil, fmt.Errorf("IKS client not available")
 	}
 
