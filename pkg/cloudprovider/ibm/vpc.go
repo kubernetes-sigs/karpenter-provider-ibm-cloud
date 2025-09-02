@@ -61,11 +61,12 @@ type vpcClientInterface interface {
 
 // VPCClient handles interactions with the IBM Cloud VPC API
 type VPCClient struct {
-	baseURL  string
-	authType string
-	apiKey   string
-	region   string
-	client   vpcClientInterface
+	baseURL         string
+	authType        string
+	apiKey          string
+	region          string
+	resourceGroupID string
+	client          vpcClientInterface
 }
 
 // GetSDKClient returns the underlying VPC SDK client
@@ -234,11 +235,11 @@ func (c *VPCClient) GetSubnet(ctx context.Context, subnetID string) (*vpcv1.Subn
 	return subnet, nil
 }
 
-func (c *VPCClient) GetVPC(ctx context.Context, vpcID string) (*vpcv1.VPC, error) {
-	return c.GetVPCWithResourceGroup(ctx, vpcID, "")
+func (c *VPCClient) GetVPC(ctx context.Context, vpcID string, resourceGroupID string) (*vpcv1.VPC, error) {
+	return c.GetVPCWithResourceGroup(ctx, vpcID, resourceGroupID)
 }
 
-func (c *VPCClient) GetVPCWithResourceGroup(ctx context.Context, vpcID, resourceGroupID string) (*vpcv1.VPC, error) {
+func (c *VPCClient) GetVPCWithResourceGroup(ctx context.Context, vpcID string, resourceGroupID string) (*vpcv1.VPC, error) {
 	if c.client == nil {
 		return nil, fmt.Errorf("VPC client not initialized")
 	}
@@ -247,12 +248,16 @@ func (c *VPCClient) GetVPCWithResourceGroup(ctx context.Context, vpcID, resource
 		ID: &vpcID,
 	}
 
-	// Add resource group header if provided
-	if resourceGroupID != "" {
+	// Add resource group header if provided, or use client's default
+	effectiveResourceGroupID := resourceGroupID
+	if effectiveResourceGroupID == "" {
+		effectiveResourceGroupID = c.resourceGroupID
+	}
+	if effectiveResourceGroupID != "" {
 		if options.Headers == nil {
 			options.Headers = make(map[string]string)
 		}
-		options.Headers["X-Auth-Resource-Group"] = resourceGroupID
+		options.Headers["X-Auth-Resource-Group"] = effectiveResourceGroupID
 	}
 
 	vpc, _, err := c.client.GetVPCWithContext(ctx, options)

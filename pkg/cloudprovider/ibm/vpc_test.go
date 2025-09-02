@@ -915,7 +915,7 @@ func TestGetVPC(t *testing.T) {
 				client = &VPCClient{}
 			}
 
-			vpc, err := client.GetVPC(ctx, tt.vpcID)
+			vpc, err := client.GetVPC(ctx, tt.vpcID, "")
 
 			if tt.wantErr {
 				if err == nil {

@@ -65,7 +65,7 @@ func TestRealVPCConnection(t *testing.T) {
 	// Test GetVPC if VPC ID provided
 	if testVPCID != "" {
 		t.Run("get_vpc", func(t *testing.T) {
-			vpc, err := client.GetVPC(ctx, testVPCID)
+			vpc, err := client.GetVPC(ctx, testVPCID, "")
 			if err != nil {
 				t.Errorf("Failed to get VPC %s: %v", testVPCID, err)
 				return
