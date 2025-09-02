@@ -3307,3 +3307,301 @@ func TestE2ENodeAffinity(t *testing.T) {
 
 	t.Logf("Node affinity E2E test completed successfully: %s", testName)
 }
+
+// TestE2EMixedArchitecture tests provisioning nodes with different CPU architectures
+// This validates that the provider can handle both AMD64 and s390x workloads
+func TestE2EMixedArchitecture(t *testing.T) {
+	suite := SetupE2ETestSuite(t)
+	ctx := context.Background()
+
+	testName := fmt.Sprintf("e2e-mixed-arch-%d", time.Now().Unix())
+	t.Logf("Starting mixed architecture E2E test: %s", testName)
+
+	// Step 1: Create NodeClass without architecture restrictions
+	nodeClass := suite.createArchitectureAgnosticNodeClass(t, testName)
+	t.Logf("Created architecture-agnostic NodeClass: %s", nodeClass.Name)
+
+	// Step 2: Wait for NodeClass to be ready
+	suite.waitForNodeClassReady(t, nodeClass.Name)
+	t.Logf("NodeClass is ready: %s", nodeClass.Name)
+
+	// Step 3: Create AMD64-specific NodePool
+	amd64NodePool := suite.createArchSpecificNodePool(t, testName+"-amd64", nodeClass.Name, "amd64",
+		[]string{"bx2-2x8", "bx2-4x16"}) // AMD64 instance types
+	t.Logf("Created AMD64 NodePool: %s", amd64NodePool.Name)
+
+	// Step 4: Create s390x-specific NodePool (IBM Z architecture)
+	s390xNodePool := suite.createArchSpecificNodePool(t, testName+"-s390x", nodeClass.Name, "s390x",
+		[]string{"bz2-2x8", "bz2-4x16"}) // Use IBM Z instance types (bz2 prefix)
+	t.Logf("Created s390x NodePool: %s", s390xNodePool.Name)
+
+	// Step 5: Deploy AMD64-specific workload
+	amd64Workload := suite.deployArchSpecificWorkload(t, testName+"-amd64", "amd64", amd64NodePool.Name)
+	t.Logf("Deployed AMD64 workload: %s", amd64Workload.Name)
+
+	// Step 6: Deploy s390x-specific workload
+	s390xWorkload := suite.deployArchSpecificWorkload(t, testName+"-s390x", "s390x", s390xNodePool.Name)
+	t.Logf("Deployed s390x workload: %s", s390xWorkload.Name)
+
+	// Step 7: Wait for both workloads to be scheduled
+	suite.waitForPodsToBeScheduled(t, amd64Workload.Name, amd64Workload.Namespace)
+	suite.waitForPodsToBeScheduled(t, s390xWorkload.Name, s390xWorkload.Namespace)
+	t.Logf("Both architecture-specific workloads scheduled successfully")
+
+	// Step 8: Verify architecture-specific node provisioning
+	suite.verifyArchitectureNodes(t, amd64NodePool.Name, "amd64")
+	suite.verifyArchitectureNodes(t, s390xNodePool.Name, "s390x")
+	t.Logf("Verified architecture-specific nodes provisioned correctly")
+
+	// Step 9: Test cross-architecture scheduling prevention
+	suite.testCrossArchitectureSchedulingPrevention(t, testName, amd64NodePool.Name, s390xNodePool.Name)
+	t.Logf("Verified cross-architecture scheduling prevention works")
+
+	// Step 10: Cleanup
+	suite.cleanupTestWorkload(t, amd64Workload.Name, amd64Workload.Namespace)
+	suite.cleanupTestWorkload(t, s390xWorkload.Name, s390xWorkload.Namespace)
+	err := suite.kubeClient.Delete(ctx, amd64NodePool)
+	require.NoError(t, err)
+	err = suite.kubeClient.Delete(ctx, s390xNodePool)
+	require.NoError(t, err)
+	suite.cleanupTestResources(t, testName)
+
+	t.Logf("Mixed architecture E2E test completed successfully: %s", testName)
+}
+
+// Helper function: Create architecture-agnostic NodeClass
+func (s *E2ETestSuite) createArchitectureAgnosticNodeClass(t *testing.T, testName string) *v1alpha1.IBMNodeClass {
+	nodeClass := &v1alpha1.IBMNodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-nodeclass", testName),
+		},
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Region:         s.testRegion,
+			Zone:           s.testZone,
+			Image:          s.testImage, // Should be multi-arch image
+			VPC:            s.testVPC,
+			Subnet:         s.testSubnet,
+			SecurityGroups: []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
+			// No instanceProfile specified - let NodePool decide
+			// No architecture requirement - support both
+			Tags: map[string]string{
+				"test":      "e2e",
+				"test-name": testName,
+				"purpose":   "mixed-architecture",
+			},
+		},
+	}
+
+	err := s.kubeClient.Create(context.Background(), nodeClass)
+	require.NoError(t, err)
+	return nodeClass
+}
+
+// Helper function: Create architecture-specific NodePool
+func (s *E2ETestSuite) createArchSpecificNodePool(t *testing.T, name, nodeClassName, arch string, instanceTypes []string) *karpv1.NodePool {
+	expireAfter := karpv1.MustParseNillableDuration("10m")
+	nodePool := &karpv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				"test":         "e2e",
+				"architecture": arch,
+			},
+		},
+		Spec: karpv1.NodePoolSpec{
+			Template: karpv1.NodeClaimTemplate{
+				ObjectMeta: karpv1.ObjectMeta{
+					Labels: map[string]string{
+						"architecture": arch,
+					},
+				},
+				Spec: karpv1.NodeClaimTemplateSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: "karpenter.ibm.sh",
+						Kind:  "IBMNodeClass",
+						Name:  nodeClassName,
+					},
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelArchStable, // "kubernetes.io/arch"
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{arch},
+							},
+						},
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelInstanceTypeStable,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   instanceTypes,
+							},
+						},
+					},
+					ExpireAfter: expireAfter,
+				},
+			},
+		},
+	}
+
+	err := s.kubeClient.Create(context.Background(), nodePool)
+	require.NoError(t, err)
+	return nodePool
+}
+
+// Helper function: Deploy architecture-specific workload
+func (s *E2ETestSuite) deployArchSpecificWorkload(t *testing.T, name, arch, nodePoolName string) *appsv1.Deployment {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &[]int32{2}[0],
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": name},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app":          name,
+						"architecture": arch,
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						"kubernetes.io/arch":    arch,
+						"karpenter.sh/nodepool": nodePoolName,
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "test-container",
+							Image: getArchSpecificImage(arch),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := s.kubeClient.Create(context.Background(), deployment)
+	require.NoError(t, err)
+	return deployment
+}
+
+// Helper function: Get architecture-specific container image
+func getArchSpecificImage(arch string) string {
+	switch arch {
+	case "s390x":
+		return "nginx:1.21-alpine" // nginx multi-arch image supports s390x
+	case "amd64":
+		return "nginx:1.21-alpine"
+	default:
+		return "nginx:1.21-alpine"
+	}
+}
+
+// Helper function: Verify nodes have correct architecture
+func (s *E2ETestSuite) verifyArchitectureNodes(t *testing.T, nodePoolName, expectedArch string) {
+	ctx := context.Background()
+	var nodeList corev1.NodeList
+	err := s.kubeClient.List(ctx, &nodeList, client.MatchingLabels{
+		"karpenter.sh/nodepool": nodePoolName,
+	})
+	require.NoError(t, err)
+
+	for _, node := range nodeList.Items {
+		// Verify architecture label
+		arch, exists := node.Labels["kubernetes.io/arch"]
+		require.True(t, exists, "Node %s should have architecture label", node.Name)
+		require.Equal(t, expectedArch, arch, "Node %s should have architecture %s", node.Name, expectedArch)
+
+		// Verify node status reports correct architecture
+		require.Equal(t, expectedArch, string(node.Status.NodeInfo.Architecture),
+			"Node %s status should report architecture %s", node.Name, expectedArch)
+
+		t.Logf("✓ Node %s correctly provisioned with architecture: %s", node.Name, arch)
+	}
+}
+
+// Helper function: Test that cross-architecture scheduling is prevented
+func (s *E2ETestSuite) testCrossArchitectureSchedulingPrevention(t *testing.T, testName, amd64NodePool, s390xNodePool string) {
+	// Try to schedule s390x workload on AMD64 nodes - should fail
+	wrongArchWorkload := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-wrong-arch", testName),
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &[]int32{1}[0],
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": fmt.Sprintf("%s-wrong-arch", testName)},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": fmt.Sprintf("%s-wrong-arch", testName)},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						"kubernetes.io/arch":    "s390x",       // Want s390x
+						"karpenter.sh/nodepool": amd64NodePool, // But selecting AMD64 pool
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "test",
+							Image: "nginx:1.21",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+									corev1.ResourceMemory: resource.MustParse("32Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	err := s.kubeClient.Create(ctx, wrongArchWorkload)
+	require.NoError(t, err)
+
+	// Wait a bit and verify pod remains unschedulable
+	time.Sleep(30 * time.Second)
+
+	var pods corev1.PodList
+	err = s.kubeClient.List(ctx, &pods, client.MatchingLabels{
+		"app": fmt.Sprintf("%s-wrong-arch", testName),
+	})
+	require.NoError(t, err)
+
+	for _, pod := range pods.Items {
+		require.Equal(t, corev1.PodPending, pod.Status.Phase,
+			"Pod with conflicting architecture requirements should remain pending")
+
+		// Check for scheduling failure event
+		var events corev1.EventList
+		err = s.kubeClient.List(ctx, &events, client.InNamespace("default"))
+		require.NoError(t, err)
+
+		foundSchedulingError := false
+		for _, event := range events.Items {
+			if event.InvolvedObject.Name == pod.Name && event.Reason == "FailedScheduling" {
+				foundSchedulingError = true
+				t.Logf("Found expected scheduling failure: %s", event.Message)
+				break
+			}
+		}
+		require.True(t, foundSchedulingError, "Should have FailedScheduling event for conflicting requirements")
+	}
+
+	// Cleanup
+	err = s.kubeClient.Delete(ctx, wrongArchWorkload)
+	require.NoError(t, err)
+}

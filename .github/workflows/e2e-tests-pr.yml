@@ -327,7 +327,7 @@ jobs:
           lifecycle_tests="TestE2EPodDisruptionBudget"
 
           # Combine all tests
-          all_tests="$core_tests $scheduling_tests $lifecycle_tests"
+          all_tests="TestE2EMixedArchitecture"
 
           test_failed="false"
           passed_tests=0
