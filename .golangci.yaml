@@ -1,0 +1,42 @@
+# golangci-lint configuration
+# See https://golangci-lint.run/usage/configuration/
+
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+
+  settings:
+    govet:
+      enable:
+        - shadow
+    misspell:
+      locale: US
+
+  exclusions:
+    paths:
+      - vendor/
+      - testdata/
+      - ".*\\.pb\\.go$"
+    rules:
+      - path: _test\.go
+        linters:
+          - gocyclo
+
+formatters:
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/pfeifferj/karpenter-provider-ibm-cloud
+
+run:
+  timeout: 5m

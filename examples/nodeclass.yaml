@@ -1,0 +1,57 @@
+apiVersion: karpenter.ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: vpc-nodeclass
+spec:
+  # REQUIRED: Region where instances will be created
+  region: us-south
+
+  # REQUIRED: Zone for instance placement
+  zone: us-south-1
+
+  # REQUIRED: VPC ID (must be an ID, not a name)
+  # Format: r###-########-####-####-####-############
+  vpc: "r006-a8efb117-fd5e-4f63-ae16-4fb9faafa4ff"
+
+  # REQUIRED: API server endpoint for nodes to join the cluster
+  # Format: https://IP:PORT or http://IP:PORT
+  # This is typically your cluster's private API endpoint
+  apiServerEndpoint: "https://10.240.0.1:6443"
+
+  # REQUIRED for VPC mode: Bootstrap mode
+  # Valid values: cloud-init, iks, user-data
+  bootstrapMode: cloud-init
+
+  # REQUIRED: Security groups (must be IDs, not names)
+  # Format: r###-########-####-####-####-############
+  # If not specified, VPC default security group will be used
+  securityGroups:
+    - "r006-12345678-1234-1234-1234-123456789012"
+
+  # RECOMMENDED: Subnet ID for instance placement
+  # Format: ####-########-####-####-####-############
+  # If not specified, auto-selection will be used
+  subnet: "0717-197e06f4-b500-426c-bc0f-900b215f996c"
+
+  # REQUIRED: Image for instances
+  # Can be either:
+  # - Image ID (recommended): r###-########-####-####-####-############
+  # - Image name: ubuntu-24-04-amd64 (slower, less reliable)
+  image: "r006-dd3c20fa-71d3-4dc0-913f-2f097bf3e500"  # Use ID for better performance
+
+  # OPTIONAL: Instance profile for direct specification
+  # If not specified, will be selected based on NodePool requirements
+  # instanceProfile: bx2-4x16
+
+  # OPTIONAL: SSH keys for instance access (must be IDs)
+  # Format: r###-########-####-####-####-############
+  sshKeys:
+    - "r006-82091c89-68e4-4b3f-bd2b-4e63ca2f67da"
+
+  # OPTIONAL: Resource group ID
+  resourceGroup: "88427352321742ef8cfac50b0ee6cc26"
+
+  # OPTIONAL: User data for additional instance configuration
+  # userData: |
+  #   #!/bin/bash
+  #   echo "Custom initialization"

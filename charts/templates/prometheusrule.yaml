@@ -1,0 +1,139 @@
+{{- if and .Values.metrics.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "karpenter.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "karpenter.labels" . | nindent 4 }}
+  {{- with .Values.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.additionalAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: karpenter-ibm.rules
+      interval: {{ .Values.metrics.prometheusRule.interval | default "30s" }}
+      rules:
+        # High-level operational alerts
+        - alert: KarpenterIBMControllerDown
+          expr: up{job="{{ include "karpenter.fullname" . }}"} == 0
+          for: {{ .Values.metrics.prometheusRule.alerts.controllerDown.for | default "5m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.controllerDown.severity | default "critical" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "Karpenter IBM Cloud Provider controller is down"
+            description: "The Karpenter IBM Cloud Provider controller has been down for more than {{ .Values.metrics.prometheusRule.alerts.controllerDown.for | default "5m" }}"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        - alert: KarpenterIBMHighErrorRate
+          expr: rate(controller_runtime_reconcile_errors_total{job="{{ include "karpenter.fullname" . }}"}[5m]) > {{ .Values.metrics.prometheusRule.alerts.highErrorRate.threshold | default "0.1" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.highErrorRate.for | default "10m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.highErrorRate.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "Karpenter IBM Cloud Provider has high error rate"
+            description: "Karpenter IBM Cloud Provider error rate is {{`{{ $value | humanizePercentage }}`}} over the last 5 minutes"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        - alert: KarpenterIBMSlowReconciliation
+          expr: histogram_quantile(0.99, rate(controller_runtime_reconcile_duration_seconds_bucket{job="{{ include "karpenter.fullname" . }}"}[5m])) > {{ .Values.metrics.prometheusRule.alerts.slowReconciliation.threshold | default "60" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.slowReconciliation.for | default "15m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.slowReconciliation.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "Karpenter IBM Cloud Provider reconciliation is slow"
+            description: "99th percentile reconciliation time is {{`{{ $value | humanizeDuration }}`}}"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        # IBM Cloud API specific alerts
+        - alert: KarpenterIBMAPIErrors
+          expr: rate(karpenter_ibm_api_requests_total{status_code!~"2.."}[5m]) > {{ .Values.metrics.prometheusRule.alerts.apiErrors.threshold | default "0.05" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.apiErrors.for | default "5m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.apiErrors.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "High IBM Cloud API error rate"
+            description: "IBM Cloud API error rate is {{`{{ $value | humanizePercentage }}`}} for {{`{{ $labels.service }}`}} operations"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        - alert: KarpenterIBMAPIRateLimit
+          expr: rate(karpenter_ibm_api_requests_total{status_code="429"}[5m]) > {{ .Values.metrics.prometheusRule.alerts.apiRateLimit.threshold | default "0.01" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.apiRateLimit.for | default "2m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.apiRateLimit.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "IBM Cloud API rate limiting detected"
+            description: "IBM Cloud API rate limiting is occurring at {{`{{ $value | humanizePercentage }}`}} for {{`{{ $labels.service }}`}} operations"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        # Node provisioning alerts
+        - alert: KarpenterIBMNoNodeProvisioning
+          expr: rate(karpenter_nodes_total[30m]) == 0 and on() karpenter_unschedulable_pods > {{ .Values.metrics.prometheusRule.alerts.noNodeProvisioning.podThreshold | default "0" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.noNodeProvisioning.for | default "10m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.noNodeProvisioning.severity | default "critical" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "No node provisioning activity with pending pods"
+            description: "No nodes have been provisioned in 30 minutes despite {{`{{ $value }}`}} unschedulable pods"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        - alert: KarpenterIBMSlowNodeProvisioning
+          expr: histogram_quantile(0.99, rate(karpenter_ibm_instance_provisioning_duration_seconds_bucket[10m])) > {{ .Values.metrics.prometheusRule.alerts.slowNodeProvisioning.threshold | default "600" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.slowNodeProvisioning.for | default "15m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.slowNodeProvisioning.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "Slow node provisioning detected"
+            description: "99th percentile node provisioning time is {{`{{ $value | humanizeDuration }}`}}"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        # Cache performance alerts
+        - alert: KarpenterIBMLowCacheHitRate
+          expr: karpenter_ibm_cache_hit_rate < {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.threshold | default "80" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.for | default "30m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.severity | default "info" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "Low cache hit rate detected"
+            description: "{{`{{ $labels.cache_type }}`}} cache hit rate is {{`{{ $value | humanizePercentage }}`}}"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        # Resource utilization alerts
+        - alert: KarpenterIBMHighMemoryUsage
+          expr: process_resident_memory_bytes{job="{{ include "karpenter.fullname" . }}"} / 1024 / 1024 > {{ .Values.metrics.prometheusRule.alerts.highMemoryUsage.threshold | default "500" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.highMemoryUsage.for | default "30m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.highMemoryUsage.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "High memory usage detected"
+            description: "Karpenter IBM Cloud Provider memory usage is {{`{{ $value | humanize }}`}}MB"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+        - alert: KarpenterIBMHighCPUUsage
+          expr: rate(process_cpu_seconds_total{job="{{ include "karpenter.fullname" . }}"}[5m]) * 100 > {{ .Values.metrics.prometheusRule.alerts.highCPUUsage.threshold | default "80" }}
+          for: {{ .Values.metrics.prometheusRule.alerts.highCPUUsage.for | default "30m" }}
+          labels:
+            severity: {{ .Values.metrics.prometheusRule.alerts.highCPUUsage.severity | default "warning" }}
+            service: karpenter-ibm
+          annotations:
+            summary: "High CPU usage detected"
+            description: "Karpenter IBM Cloud Provider CPU usage is {{`{{ $value | humanizePercentage }}`}}"
+            runbook_url: "{{ .Values.metrics.prometheusRule.runbookUrl | default "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md" }}"
+
+    {{- if .Values.metrics.prometheusRule.additionalRuleGroups }}
+    {{- toYaml .Values.metrics.prometheusRule.additionalRuleGroups | nindent 4 }}
+    {{- end }}
+{{- end -}}

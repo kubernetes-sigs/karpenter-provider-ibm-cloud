@@ -1,0 +1,597 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.3
+  name: ibmnodeclasses.karpenter.ibm.sh
+spec:
+  group: karpenter.ibm.sh
+  names:
+    kind: IBMNodeClass
+    listKind: IBMNodeClassList
+    plural: ibmnodeclasses
+    singular: ibmnodeclass
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: IBMNodeClass is the Schema for the IBMNodeClass API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec defines the desired state of IBMNodeClass
+            properties:
+              apiServerEndpoint:
+                description: |-
+                  APIServerEndpoint is the Kubernetes API server endpoint for node registration.
+                  If specified, this endpoint will be used instead of automatic discovery.
+                  This is useful when the control plane is not accessible via standard discovery methods.
+                  Must be a valid HTTP or HTTPS URL with hostname/IP and port.
+                  Examples: "https://10.243.65.4:6443", "http://k8s-api.example.com:6443"
+                pattern: ^https?://[a-zA-Z0-9.-]+:[0-9]+$
+                type: string
+              blockDeviceMappings:
+                description: |-
+                  BlockDeviceMappings defines custom block device configurations for instances
+                  If not specified, a default 100GB general-purpose boot volume will be used
+                  When specified, at least one mapping must have RootVolume set to true
+                items:
+                  description: |-
+                    IBMNodeClassSpec defines the desired state of IBMNodeClass.
+                    This specification validates several IBM Cloud resource identifiers and configuration constraints:
+
+                    VPC ID Format: Must follow pattern "r###-########-####-####-####-############"
+                    Example: "r010-12345678-1234-5678-9abc-def012345678"
+
+                    Subnet ID Format: Must follow pattern "####-########-####-####-####-############"
+                    Example: "0717-197e06f4-b500-426c-bc0f-900b215f996c"
+
+                    Configuration Rules:
+                    - instanceProfile and instanceRequirements are mutually exclusive (both are optional)
+                    - When bootstrapMode is "iks-api", iksClusterID must be provided
+                    - When zone is specified, it must belong to the specified region
+
+                    BlockDeviceMapping defines storage device configuration for instances
+                    This allows customization of boot and data volumes attached to instances
+                  properties:
+                    deviceName:
+                      description: |-
+                        DeviceName is the name for this volume attachment
+                        If not specified, a name will be auto-generated
+                      type: string
+                    rootVolume:
+                      description: |-
+                        RootVolume indicates if this is the boot/root volume
+                        Only one volume can be marked as root volume
+                      type: boolean
+                    volumeSpec:
+                      description: VolumeSpec contains the volume configuration
+                      properties:
+                        bandwidth:
+                          description: |-
+                            Bandwidth is the max bandwidth in megabits per second
+                            If not specified, it will be calculated based on profile, capacity, and IOPS
+                          format: int64
+                          maximum: 16000
+                          minimum: 1
+                          type: integer
+                        capacity:
+                          description: |-
+                            Capacity is the volume size in gigabytes
+                            For boot volumes: minimum is typically the image's minimum provisioned size, maximum is 250GB
+                            For data volumes: ranges vary by profile (typically 10GB to 16000GB)
+                          format: int64
+                          maximum: 16000
+                          minimum: 1
+                          type: integer
+                        deleteOnTermination:
+                          default: true
+                          description: |-
+                            DeleteOnTermination controls whether the volume is deleted when the instance is terminated
+                            Defaults to true
+                          type: boolean
+                        encryptionKeyID:
+                          description: |-
+                            EncryptionKeyID is the CRN of the customer root key for volume encryption
+                            If not specified, provider-managed encryption will be used
+                            Example: "crn:v1:bluemix:public:kms:us-south:a/..."
+                          type: string
+                        iops:
+                          description: |-
+                            IOPS is the max I/O operations per second
+                            Only applicable when Profile is "custom" or "defined_performance"
+                            Must be within the range supported by the profile and capacity
+                          format: int64
+                          maximum: 64000
+                          minimum: 100
+                          type: integer
+                        profile:
+                          description: |-
+                            Profile is the storage profile to use
+                            Examples: "general-purpose", "5iops-tier", "10iops-tier", "custom"
+                            If not specified, defaults to "general-purpose"
+                          type: string
+                        tags:
+                          description: Tags are user tags to apply to the volume
+                          items:
+                            type: string
+                          maxItems: 10
+                          type: array
+                      type: object
+                  type: object
+                maxItems: 10
+                type: array
+              bootstrapMode:
+                default: auto
+                description: |-
+                  BootstrapMode determines how nodes should be bootstrapped to join the cluster
+                  Valid values are:
+                  - "cloud-init" - Use cloud-init scripts to bootstrap nodes (default)
+                  - "iks-api" - Use IKS Worker Pool API to add nodes to cluster
+                  - "auto" - Automatically select the best method based on cluster type
+                enum:
+                - cloud-init
+                - iks-api
+                - auto
+                type: string
+              iksClusterID:
+                description: |-
+                  IKSClusterID is the IKS cluster ID for API-based bootstrapping.
+                  Required when BootstrapMode is "iks-api".
+                  Must be a valid IKS cluster identifier containing only lowercase letters and numbers.
+                  Examples: "bng6n48d0t6vj7b33kag", "c4f7x6qw0bx25g5b4vhg"
+                pattern: ^[a-z0-9]+$
+                type: string
+              iksWorkerPoolID:
+                description: |-
+                  IKSWorkerPoolID is the worker pool ID to add nodes to
+                  Used with IKS API bootstrapping mode
+                type: string
+              image:
+                description: |-
+                  Image is the ID or name of the boot image to use for nodes.
+                  Must contain only lowercase letters, numbers, and hyphens.
+                  Can be either an image ID or a standard image name.
+                  Examples: "ubuntu-24-04-amd64", "rhel-8-amd64", "centos-8-amd64"
+                minLength: 1
+                type: string
+              instanceProfile:
+                description: |-
+                  InstanceProfile is the name of the instance profile to use for nodes.
+                  If not specified, instance types will be automatically selected based on NodePool requirements.
+                  Must follow IBM Cloud instance profile naming convention: family-cpuxmemory.
+                  Examples: "bx2-4x16" (4 vCPUs, 16GB RAM), "mx2-8x64" (8 vCPUs, 64GB RAM), "gx2-16x128x2v100" (GPU instance)
+                minLength: 1
+                pattern: ^[a-z0-9]+-[0-9]+x[0-9]+$
+                type: string
+              instanceRequirements:
+                description: |-
+                  InstanceRequirements defines requirements for automatic instance type selection
+                  Only used when InstanceProfile is not specified
+                  If neither InstanceProfile nor InstanceRequirements are specified, NodePool requirements will be used
+                properties:
+                  architecture:
+                    description: |-
+                      Architecture specifies the required CPU architecture for instance types.
+                      This must match the architecture of your container images and workloads.
+                      Valid values: "amd64", "arm64", "s390x"
+                      Example: "amd64" for x86-64 based workloads, "arm64" for ARM-based workloads,
+                      "s390x" for IBM Z mainframe workloads
+                    enum:
+                    - amd64
+                    - arm64
+                    - s390x
+                    type: string
+                  maximumHourlyPrice:
+                    description: |-
+                      MaximumHourlyPrice specifies the maximum hourly price in USD for instance types.
+                      Instance types exceeding this price will be excluded from consideration.
+                      This helps control costs by preventing the selection of expensive instance types.
+                      Must be specified as a decimal string (e.g., "0.50" for 50 cents per hour).
+                      Example: "1.00" limits selection to instance types costing $1.00/hour or less
+                    pattern: ^\\d+\\.?\\d*$
+                    type: string
+                  minimumCPU:
+                    description: |-
+                      MinimumCPU specifies the minimum number of vCPUs required for instance types.
+                      Instance types with fewer CPUs than this value will be excluded from consideration.
+                      This helps ensure adequate compute capacity for CPU-intensive workloads.
+                      Example: Setting this to 4 will only consider instance types with 4 or more vCPUs
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  minimumMemory:
+                    description: |-
+                      MinimumMemory specifies the minimum amount of memory in GiB required for instance types.
+                      Instance types with less memory than this value will be excluded from consideration.
+                      This helps ensure adequate memory capacity for memory-intensive workloads.
+                      Example: Setting this to 16 will only consider instance types with 16 GiB or more memory
+                    format: int32
+                    minimum: 1
+                    type: integer
+                type: object
+              loadBalancerIntegration:
+                description: |-
+                  LoadBalancerIntegration defines load balancer integration settings
+                  When configured, nodes will be automatically registered with IBM Cloud Load Balancers
+                properties:
+                  autoDeregister:
+                    default: true
+                    description: |-
+                      AutoDeregister controls whether nodes are automatically removed from
+                      load balancers when they are terminated or become unhealthy
+                    type: boolean
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled controls whether load balancer integration is active
+                      When enabled, nodes will be automatically registered with specified load balancers
+                    type: boolean
+                  registrationTimeout:
+                    default: 300
+                    description: RegistrationTimeout is the maximum time to wait for
+                      target registration
+                    format: int32
+                    maximum: 600
+                    minimum: 30
+                    type: integer
+                  targetGroups:
+                    description: TargetGroups defines the load balancer pools to register
+                      nodes with
+                    items:
+                      description: LoadBalancerTarget defines a target group configuration
+                        for load balancer integration
+                      properties:
+                        healthCheck:
+                          description: HealthCheck defines health check configuration
+                            for the target
+                          properties:
+                            interval:
+                              default: 30
+                              description: Interval is the time in seconds between
+                                health checks
+                              format: int32
+                              maximum: 300
+                              minimum: 5
+                              type: integer
+                            path:
+                              description: |-
+                                Path is the URL path for HTTP/HTTPS health checks
+                                Only used when Protocol is "http" or "https"
+                              pattern: ^/.*$
+                              type: string
+                            protocol:
+                              default: tcp
+                              description: Protocol is the protocol to use for health
+                                checks
+                              enum:
+                              - http
+                              - https
+                              - tcp
+                              type: string
+                            retryCount:
+                              default: 2
+                              description: |-
+                                RetryCount is the number of consecutive successful checks required
+                                before marking a target as healthy
+                              format: int32
+                              maximum: 10
+                              minimum: 1
+                              type: integer
+                            timeout:
+                              default: 5
+                              description: Timeout is the timeout in seconds for each
+                                health check
+                              format: int32
+                              maximum: 60
+                              minimum: 1
+                              type: integer
+                          type: object
+                        loadBalancerID:
+                          description: |-
+                            LoadBalancerID is the ID of the IBM Cloud Load Balancer
+                            Must be a valid IBM Cloud Load Balancer ID
+                            Example: "r010-12345678-1234-5678-9abc-def012345678"
+                          minLength: 1
+                          pattern: ^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$
+                          type: string
+                        poolName:
+                          description: PoolName is the name of the load balancer pool
+                            to add targets to
+                          maxLength: 63
+                          minLength: 1
+                          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                          type: string
+                        port:
+                          description: Port is the port number on the target instances
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        weight:
+                          default: 50
+                          description: |-
+                            Weight specifies the weight for load balancing traffic to targets
+                            Higher weights receive proportionally more traffic
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                      required:
+                      - loadBalancerID
+                      - poolName
+                      - port
+                      type: object
+                    maxItems: 10
+                    type: array
+                type: object
+              placementStrategy:
+                description: |-
+                  PlacementStrategy defines how nodes should be placed across zones and subnets when explicit
+                  Zone or Subnet is not specified. This allows for intelligent distribution of nodes across
+                  availability zones to optimize for cost, availability, or balanced distribution.
+                  When Zone is specified, placement strategy is ignored for zone selection but may still
+                  affect subnet selection within that zone. When Subnet is specified, placement strategy
+                  is completely ignored as the exact placement is already determined.
+                  If PlacementStrategy is nil, a default balanced distribution will be used.
+                properties:
+                  subnetSelection:
+                    description: |-
+                      SubnetSelection defines criteria for automatic subnet selection when multiple subnets are available.
+                      This is only used when the Subnet field is not explicitly specified in the IBMNodeClassSpec.
+                      When both ZoneBalance and SubnetSelection are configured, subnets are first filtered by the
+                      selection criteria, then distributed according to the zone balancing strategy.
+                      If SubnetSelection is nil, all available subnets in the VPC will be considered for placement.
+                    properties:
+                      minimumAvailableIPs:
+                        description: |-
+                          MinimumAvailableIPs is the minimum number of available IPs a subnet must have to be considered
+                          for node placement. This helps ensure that subnets with sufficient capacity are chosen,
+                          preventing placement failures due to IP exhaustion.
+                          Example: Setting this to 10 ensures only subnets with at least 10 available IPs are used.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      requiredTags:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          RequiredTags specifies key-value pairs that subnets must have to be considered for selection.
+                          All specified tags must be present on a subnet for it to be eligible.
+                          This is useful for filtering subnets based on environment, team, or other organizational criteria.
+                          Example: {"Environment": "production", "Team": "platform"} will only select subnets
+                          that have both the Environment=production and Team=platform tags.
+                        type: object
+                    type: object
+                  zoneBalance:
+                    default: Balanced
+                    description: |-
+                      ZoneBalance determines the strategy for distributing nodes across availability zones.
+                      This affects both initial placement and replacement decisions when nodes are scaled or replaced.
+                      Valid values are:
+                      - "Balanced" (default) - Nodes are evenly distributed across all available zones to maximize
+                        fault tolerance and prevent concentration in any single zone
+                      - "AvailabilityFirst" - Prioritizes zones with the highest availability scores and most
+                        available capacity, which may result in uneven distribution but better resilience
+                      - "CostOptimized" - Balances cost considerations with availability, preferring zones and
+                        instance types that offer the best price-performance ratio while maintaining redundancy
+                    enum:
+                    - Balanced
+                    - AvailabilityFirst
+                    - CostOptimized
+                    type: string
+                type: object
+              placementTarget:
+                description: PlacementTarget is the ID of the placement target (dedicated
+                  host, placement group)
+                type: string
+              region:
+                description: |-
+                  Region is the IBM Cloud region where nodes will be created.
+                  Must follow IBM Cloud region naming convention: two-letter country code followed by region name.
+                  Examples: "us-south", "eu-de", "jp-tok", "au-syd"
+                minLength: 1
+                pattern: ^[a-z]{2}-[a-z]+$
+                type: string
+              resourceGroup:
+                description: ResourceGroup is the ID of the resource group for the
+                  instance
+                type: string
+              securityGroups:
+                description: |-
+                  SecurityGroups is a list of security group IDs to attach to nodes
+                  At least one security group must be specified for VPC instance creation
+                items:
+                  type: string
+                minItems: 1
+                type: array
+              sshKeys:
+                description: |-
+                  SSHKeys is a list of SSH key IDs to add to the instance.
+                  Must be valid IBM Cloud SSH key IDs in the format "r###-########-####-####-####-############".
+                  Example: "r010-82091c89-68e4-4b3f-bd2b-4e63ca2f67da"
+                  To find SSH key IDs: ibmcloud is keys --output json | jq '.[] | {name, id}'
+                items:
+                  type: string
+                type: array
+              subnet:
+                description: |-
+                  Subnet is the ID of the subnet where nodes will be created.
+                  If not specified, subnets will be automatically selected based on placement strategy.
+                  Must be a valid IBM Cloud subnet ID following the format "####-########-####-####-####-############".
+                  Example: "0717-197e06f4-b500-426c-bc0f-900b215f996c"
+                type: string
+              tags:
+                additionalProperties:
+                  type: string
+                description: Tags to apply to the instances
+                type: object
+              userData:
+                description: UserData contains user data script to run on instance
+                  initialization
+                type: string
+              vpc:
+                description: |-
+                  VPC is the ID of the IBM Cloud VPC where nodes will be created.
+                  Must be a valid IBM Cloud VPC ID following the format "r###-########-####-####-####-############".
+                  Example: "r010-12345678-1234-5678-9abc-def012345678"
+                minLength: 1
+                type: string
+              zone:
+                description: |-
+                  Zone is the availability zone where nodes will be created.
+                  If not specified, zones will be automatically selected based on placement strategy.
+                  Must follow IBM Cloud zone naming convention: region name followed by zone number.
+                  Examples: "us-south-1", "eu-de-2", "jp-tok-3"
+                pattern: ^[a-z]{2}-[a-z]+-[0-9]+$
+                type: string
+            required:
+            - image
+            - region
+            - securityGroups
+            - vpc
+            type: object
+            x-kubernetes-validations:
+            - message: subnet must be a valid IBM Cloud subnet ID format
+              rule: self.subnet == "" || self.subnet.matches('^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')
+            - message: image must contain only lowercase letters, numbers, and hyphens
+              rule: self.image.matches('^[a-z0-9-]+$')
+            - message: instanceProfile and instanceRequirements are mutually exclusive
+              rule: '!(has(self.instanceProfile) && has(self.instanceRequirements))'
+            - message: iksClusterID is required when bootstrapMode is 'iks-api'
+              rule: '!has(self.bootstrapMode) || self.bootstrapMode != ''iks-api''
+                || has(self.iksClusterID)'
+            - message: zone must be within the specified region
+              rule: self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1])
+                || self.zone == ""
+            - message: vpc must be a valid IBM Cloud VPC ID format
+              rule: self.vpc.matches('^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')
+          status:
+            description: Status defines the observed state of IBMNodeClass
+            properties:
+              conditions:
+                description: |-
+                  Conditions contains signals for health and readiness of the IBMNodeClass.
+                  Standard conditions include:
+                  - "Ready": Indicates whether the nodeclass is valid and ready for node provisioning
+                  - "Validated": Indicates whether the configuration has been successfully validated
+                  Conditions are updated by the controller based on validation results and resource availability.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastValidationTime:
+                description: |-
+                  LastValidationTime is the last time the nodeclass was validated against IBM Cloud APIs.
+                  This timestamp is updated whenever the controller performs validation of the nodeclass
+                  configuration, including checking VPC/subnet existence, security group validity, and
+                  instance type availability. Used to determine if revalidation is needed.
+                format: date-time
+                type: string
+              selectedInstanceTypes:
+                description: |-
+                  SelectedInstanceTypes contains the list of IBM Cloud instance types that meet the
+                  specified InstanceRequirements criteria. This field is populated and maintained by
+                  the controller when InstanceRequirements is used instead of a specific InstanceProfile.
+                  The list is updated when:
+                  - InstanceRequirements are modified
+                  - IBM Cloud instance type availability changes
+                  - Pricing information is updated
+                  When InstanceProfile is used, this field remains empty.
+                items:
+                  type: string
+                type: array
+              selectedSubnets:
+                description: |-
+                  SelectedSubnets contains the list of subnet IDs that have been selected for node placement
+                  based on the PlacementStrategy and SubnetSelection criteria. This field is populated when:
+                  - Subnet is not explicitly specified in the spec
+                  - PlacementStrategy.SubnetSelection criteria are defined
+                  The list represents subnets that meet all selection criteria and are available for use.
+                  When an explicit Subnet is specified in the spec, this field remains empty.
+                  The controller updates this list when subnet availability or tags change.
+                items:
+                  type: string
+                type: array
+              validationError:
+                description: |-
+                  ValidationError contains the error message from the most recent validation attempt.
+                  This field is populated when validation fails due to invalid configuration, missing
+                  resources, or API errors. When validation succeeds, this field is cleared (empty).
+                  Use this field to diagnose configuration issues that prevent node provisioning.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

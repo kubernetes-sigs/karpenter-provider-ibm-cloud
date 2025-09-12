@@ -1,0 +1,45 @@
+{{- if .Values.customResources.enabled }}
+{{- include "karpenter.cr.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "karpenter.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "karpenter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+data:
+  # Mode configuration
+  mode: {{ .Values.customResources.mode | quote }}
+
+  {{- if eq .Values.customResources.mode "iks" }}
+  # IKS-specific configuration
+  iks-cluster-id: {{ .Values.iksClusterID | quote }}
+  bootstrap-mode: "iks-api"
+  {{- else if eq .Values.customResources.mode "vpc" }}
+  # VPC-specific configuration
+  vpc-id: {{ .Values.customResources.nodeClass.vpc.vpcId | quote }}
+  bootstrap-mode: {{ .Values.bootstrapMode | default "cloud-init" | quote }}
+  {{- end }}
+
+  # Global defaults
+  default-instance-types: {{ .Values.customResources.global.instanceTypes | join "," | quote }}
+  default-capacity-type: {{ .Values.customResources.global.capacityType | quote }}
+  default-architecture: {{ .Values.customResources.global.architecture | quote }}
+
+  # Discovery configuration
+  discovery-name: {{ include "karpenter.fullname" . | quote }}
+
+  # NodePool configuration summary
+  enabled-pools: |
+    {{- range $pool := .Values.customResources.nodePools }}
+    {{- if $pool.enabled }}
+    - name: {{ $pool.name }}
+      instanceTypes: {{ $pool.requirements.instanceTypes | default $.Values.customResources.global.instanceTypes | toJson }}
+      capacityType: {{ $pool.requirements.capacityType | default $.Values.customResources.global.capacityType }}
+      limits:
+        cpu: {{ $pool.limits.cpu | default $.Values.customResources.global.limits.cpu }}
+        memory: {{ $pool.limits.memory | default $.Values.customResources.global.limits.memory }}
+    {{- end }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,31 @@
+# Go toolchain
+coverage.out
+coverage.html
+*.test
+*.cpuprofile
+*.heapprofile
+go.work
+go.work.sum
+
+# Environment
+.idea
+.vscode
+.DS_Store
+
+# Project Specific
+*.csv
+site/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/

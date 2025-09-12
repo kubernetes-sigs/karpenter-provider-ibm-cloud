@@ -1,0 +1,150 @@
+/* Custom styles for Karpenter IBM Cloud Provider docs */
+
+/* IBM Cloud brand colors */
+:root {
+  --ibm-blue: #5c64ab;
+  --ibm-blue-dark: #474f8b;
+  --ibm-gray: #f4f4f4;
+}
+
+/* Override Material theme colors for IBM branding */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--ibm-blue);
+  --md-primary-fg-color--light: #7a81c4;
+  --md-primary-fg-color--dark: var(--ibm-blue-dark);
+  --md-accent-fg-color: var(--ibm-blue);
+  --md-accent-fg-color--transparent: rgba(92, 100, 171, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #7a81c4;
+  --md-primary-fg-color--light: #9aa0d4;
+  --md-primary-fg-color--dark: var(--ibm-blue);
+  --md-accent-fg-color: #7a81c4;
+  --md-accent-fg-color--transparent: rgba(122, 129, 196, 0.1);
+}
+
+/* Ensure custom primary color is applied */
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: #5c64ab;
+  --md-primary-fg-color--light: #7a81c4;
+  --md-primary-fg-color--dark: #474f8b;
+}
+
+/* Header/nav specific overrides */
+.md-header {
+  background-color: var(--md-primary-fg-color);
+}
+
+.md-tabs {
+  background-color: var(--md-primary-fg-color--dark);
+}
+
+/* Custom admonition for IBM Cloud specific notes */
+.md-typeset .admonition.ibm,
+.md-typeset details.ibm {
+  border-color: var(--ibm-blue);
+}
+
+.md-typeset .ibm > .admonition-title,
+.md-typeset .ibm > summary {
+  background-color: rgba(92, 100, 171, 0.1);
+  border-color: var(--ibm-blue);
+}
+
+.md-typeset .ibm > .admonition-title::before,
+.md-typeset .ibm > summary::before {
+  background-color: var(--ibm-blue);
+  -webkit-mask-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>');
+  mask-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>');
+}
+
+/* Grid cards for homepage */
+.md-typeset .grid.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.md-typeset .grid.cards > * {
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.25rem;
+  padding: 1.5rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.md-typeset .grid.cards > *:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Feature highlights */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 2rem;
+  margin: 2rem 0;
+}
+
+.feature-item {
+  text-align: center;
+  padding: 1rem;
+}
+
+.feature-item h3 {
+  margin-top: 1rem;
+  color: var(--ibm-blue);
+}
+
+/* Code block enhancements */
+.md-typeset pre > code {
+  border-radius: 0.25rem;
+}
+
+/* Copy button styling */
+.md-clipboard {
+  color: var(--md-default-fg-color--light);
+}
+
+.md-clipboard:hover {
+  color: var(--ibm-blue);
+}
+
+/* Table enhancements */
+.md-typeset table:not([class]) {
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--ibm-gray);
+  font-weight: 600;
+}
+
+/* Mermaid diagram styling */
+.mermaid {
+  text-align: center;
+}
+
+/* Navigation tabs */
+.md-tabs__link--active {
+  font-weight: 600;
+}
+
+/* Footer customization */
+.md-footer-meta {
+  background-color: var(--md-default-bg-color);
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+  .md-typeset .grid.cards {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}

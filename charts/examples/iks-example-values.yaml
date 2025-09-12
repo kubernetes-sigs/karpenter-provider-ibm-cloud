@@ -1,0 +1,147 @@
+# Example values for IKS mode deployment
+# This configures Karpenter IBM Cloud Provider for IBM Kubernetes Service (IKS) clusters
+
+# Required IBM Cloud credentials - these should be under credentials section
+credentials:
+  ibmApiKey: ""  # Set via --set credentials.ibmApiKey=<key> or external secret
+  vpcApiKey: ""  # Set via --set credentials.vpcApiKey=<key> or external secret
+  region: "us-south"
+
+# IKS cluster identification
+iksClusterID: "bng6n48d0t6vj7b33kag"  # Your IKS cluster ID
+clusterName: "my-iks-cluster"
+bootstrapMode: "iks-api"
+
+# Custom Resource Configuration for IKS mode
+customResources:
+  enabled: true
+  mode: "iks"
+
+  # Global settings
+  global:
+    instanceTypes:
+      - "bx2.4x16"
+      - "bx2.8x32"
+      - "bx2.16x64"
+    capacityType: "on-demand"
+    architecture: "amd64"
+
+    disruption:
+      consolidationPolicy: WhenUnderutilized
+      consolidateAfter: 60s  # Longer for IKS due to worker pool operations
+      expireAfter: 720h
+
+    limits:
+      cpu: 500
+      memory: 500Gi
+
+  # NodeClass configuration
+  nodeClass:
+    enabled: true
+    name: "iks-nodeclass"
+
+    iks:
+      workerPoolTemplate:
+        machineType: "bx2.4x16"
+        diskEncryption: true
+        operatingSystem: "UBUNTU_20_64"
+
+    common:
+      image:
+        strategy: "family"
+        family: "ubuntu"
+        operatingSystem: "ubuntu"
+        architecture: "amd64"
+
+      tags:
+        Environment: "production"
+        Team: "platform"
+        ManagedBy: "karpenter"
+        IKSCluster: "true"
+
+  # NodePools optimized for IKS
+  nodePools:
+    # General purpose IKS worker pool
+    - name: "iks-general"
+      enabled: true
+
+      requirements:
+        instanceTypes:
+          - "bx2.4x16"
+          - "bx2.8x32"
+        capacityType: "on-demand"
+        architecture: "amd64"
+
+      limits:
+        cpu: 100
+        memory: 100Gi
+
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 120s  # Longer for IKS operations
+        expireAfter: 720h
+
+      labels:
+        nodepool: "iks-general"
+        workload-type: "general"
+        platform: "iks"
+
+    # IKS worker pool for compute-intensive workloads
+    - name: "iks-compute"
+      enabled: false  # Enable when needed
+
+      requirements:
+        instanceTypes:
+          - "bx2.16x64"
+          - "bx2.32x128"
+        capacityType: "on-demand"
+        architecture: "amd64"
+
+      limits:
+        cpu: 200
+        memory: 200Gi
+
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 300s  # Even longer for large instances
+        expireAfter: 168h
+
+      taints:
+        - key: "workload-type"
+          value: "compute-intensive"
+          effect: "NoSchedule"
+
+      labels:
+        nodepool: "iks-compute"
+        workload-type: "compute-intensive"
+        platform: "iks"
+
+# Controller configuration
+controller:
+  metrics:
+    port: 8080
+  healthProbe:
+    port: 8081
+
+# Metrics and monitoring
+metrics:
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      monitoring: "prometheus"
+    interval: 60s  # Less frequent for IKS
+    scrapeTimeout: 15s
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# IKS-specific resource constraints
+resources:
+  limits:
+    cpu: 500m      # More conservative for IKS
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
