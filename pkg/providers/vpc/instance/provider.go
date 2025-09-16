@@ -142,26 +142,20 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		return nil, err
 	}
 
-	// Select an instance type from the compatible types provided by Karpenter
+	// Try instance types in Karpenter's ranked order until one succeeds (AWS Fleet-like behavior)
 	if len(instanceTypes) == 0 {
 		return nil, fmt.Errorf("no compatible instance types provided for nodeclaim %s", nodeClaim.Name)
 	}
 
-	// Use the first compatible instance type (Karpenter has already ranked them by preference)
-	selectedInstanceType := instanceTypes[0]
-	if selectedInstanceType == nil {
-		return nil, fmt.Errorf("first instance type in slice is nil for nodeclaim %s, available types: %d", nodeClaim.Name, len(instanceTypes))
-	}
-
-	instanceProfile := selectedInstanceType.Name
-	if instanceProfile == "" {
-		return nil, fmt.Errorf("selected instance type has empty name: %+v, available types: %d", selectedInstanceType, len(instanceTypes))
-	}
-
-	logger.Info("Selected instance type",
-		"instanceType", instanceProfile,
+	logger.Info("Starting instance type fallback selection (respecting Karpenter ranking)",
 		"availableTypes", len(instanceTypes),
-		"selectedInstanceTypeDetails", fmt.Sprintf("%+v", selectedInstanceType),
+		"instanceTypeNames", func() []string {
+			names := make([]string, len(instanceTypes))
+			for i, it := range instanceTypes {
+				names[i] = it.Name
+			}
+			return names
+		}(),
 		"nodeClaim", nodeClaim.Name)
 
 	// Determine zone and subnet - support both explicit and dynamic selection
@@ -190,6 +184,70 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 	if zone == "" || subnet == "" {
 		return nil, fmt.Errorf("both zone and subnet must be specified")
 	}
+
+	// Try each instance type in Karpenter's ranked order until one succeeds
+	var lastErr error
+	for i, selectedInstanceType := range instanceTypes {
+		if selectedInstanceType == nil {
+			logger.Info("Skipping nil instance type", "index", i)
+			continue
+		}
+
+		instanceProfile := selectedInstanceType.Name
+		if instanceProfile == "" {
+			logger.Info("Skipping instance type with empty name", "index", i)
+			continue
+		}
+
+		logger.Info("Attempting instance creation",
+			"attemptNumber", i+1,
+			"instanceType", instanceProfile,
+			"zone", zone,
+			"subnet", subnet,
+			"remainingTypes", len(instanceTypes)-i)
+
+		node, err := p.createInstanceWithType(ctx, nodeClaim, nodeClass, selectedInstanceType, zone, subnet, vpcClient, logger)
+		if err == nil {
+			logger.Info("Instance creation succeeded",
+				"instanceType", instanceProfile,
+				"attemptNumber", i+1,
+				"nodeClaim", nodeClaim.Name)
+			return node, nil
+		}
+
+		// Check if this is a oneOf validation error - if so, try next instance type
+		if strings.Contains(err.Error(), "Expected only one oneOf fields to be set") {
+			logger.Info("oneOf validation failed, trying next instance type",
+				"instanceType", instanceProfile,
+				"attemptNumber", i+1,
+				"error", err.Error(),
+				"remainingTypes", len(instanceTypes)-i-1)
+			lastErr = err
+			continue
+		}
+
+		// For non-oneOf errors, fail immediately (don't try other instance types)
+		logger.Error(err, "Instance creation failed with non-oneOf error",
+			"instanceType", instanceProfile,
+			"attemptNumber", i+1)
+		return nil, err
+	}
+
+	// All instance types failed with oneOf validation errors
+	return nil, fmt.Errorf("all %d instance types failed with oneOf validation errors, last error: %w", len(instanceTypes), lastErr)
+}
+
+// createInstanceWithType attempts to create an instance with a specific instance type
+func (p *VPCInstanceProvider) createInstanceWithType(
+	ctx context.Context,
+	nodeClaim *v1.NodeClaim,
+	nodeClass *v1alpha1.IBMNodeClass,
+	selectedInstanceType *cloudprovider.InstanceType,
+	zone, subnet string,
+	vpcClient *ibm.VPCClient,
+	logger logr.Logger,
+) (*corev1.Node, error) {
+	instanceProfile := selectedInstanceType.Name
 
 	logger.Info("Creating VPC instance with VNI", "instance_profile", instanceProfile, "zone", zone, "subnet", subnet)
 
@@ -272,8 +330,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		"instanceProfile-ptr", &instanceProfile,
 		"instanceProfile-empty", instanceProfile == "",
 		"selectedInstanceType", selectedInstanceType.Name,
-		"selectedInstanceType-ptr", &selectedInstanceType.Name,
-		"availableTypes", len(instanceTypes))
+		"selectedInstanceType-ptr", &selectedInstanceType.Name)
 
 	// Create instance prototype with VNI
 	instancePrototype := &vpcv1.InstancePrototypeInstanceByImageInstanceByImageInstanceByNetworkAttachment{
