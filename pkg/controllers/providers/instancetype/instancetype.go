@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/singleton"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -58,9 +59,10 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 
 	// Refresh instance types by listing them
 	if _, err := c.instanceTypeProvider.List(ctx); err != nil {
+		metrics.ApiRequests.WithLabelValues("ListInstanceTypes", "500", "global").Inc()
 		return reconcile.Result{}, fmt.Errorf("refreshing instance types: %w", err)
 	}
-
+	metrics.ApiRequests.WithLabelValues("ListInstanceTypes", "200", "global").Inc()
 	// Reconcile every hour to refresh instance type information
 	return reconcile.Result{RequeueAfter: time.Hour}, nil
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/logging"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
 )
 
 // IBMPricingProvider implements the Provider interface for IBM Cloud pricing
@@ -76,6 +77,16 @@ func (p *IBMPricingProvider) GetPrice(ctx context.Context, instanceType string, 
 			p.mutex.RUnlock()
 			// Cache the result
 			p.priceCache.Set(cacheKey, price)
+
+			// Extract region from zone (assuming zone format like "us-south-1")
+			region := zone
+			if len(zone) > 2 && zone[len(zone)-2] == '-' {
+				region = zone[:len(zone)-2]
+			}
+
+			// Update cost metric
+			metrics.CostPerHour.WithLabelValues(instanceType, region).Set(price)
+
 			return price, nil
 		}
 	}

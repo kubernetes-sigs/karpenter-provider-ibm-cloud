@@ -16,6 +16,7 @@ package instance
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,9 @@ import (
 )
 
 func TestBootstrapIntegration(t *testing.T) {
+	// Set test API key to satisfy the requirement
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+
 	tests := []struct {
 		name          string
 		nodeClass     *v1alpha1.IBMNodeClass
@@ -95,6 +99,9 @@ func TestBootstrapIntegration(t *testing.T) {
 }
 
 func TestBootstrapBehavior(t *testing.T) {
+	// Set test API key to satisfy the requirement
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+
 	// Create mock IBM client
 	mockClient := &ibm.Client{}
 	kubeClient := fake.NewClientBuilder().Build()
@@ -125,6 +132,9 @@ func TestBootstrapBehavior(t *testing.T) {
 }
 
 func TestBootstrapProviderLazyInitialization(t *testing.T) {
+	// Set test API key to satisfy the requirement
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+
 	mockClient := &ibm.Client{}
 	kubeClient := fake.NewClientBuilder().Build()
 

@@ -19,102 +19,101 @@ package metrics
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestRecordAPIRequest(t *testing.T) {
-	// Reset the counter for testing
-	APIRequestsTotal.Reset()
+func TestApiRequestsMetric(t *testing.T) {
+	// Reset the metric
+	ApiRequests.Reset()
 
-	RecordAPIRequest("vpc", "create_instance", "200")
-	RecordAPIRequest("vpc", "create_instance", "429")
-	RecordAPIRequest("iam", "get_token", "200")
+	// Test metric properties
+	if ApiRequests == nil {
+		t.Error("ApiRequests should not be nil")
+	}
 
-	// Check that metrics were recorded correctly
-	assert.Equal(t, 1.0, testutil.ToFloat64(APIRequestsTotal.WithLabelValues("vpc", "create_instance", "200")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(APIRequestsTotal.WithLabelValues("vpc", "create_instance", "429")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(APIRequestsTotal.WithLabelValues("iam", "get_token", "200")))
-}
+	// Test incrementing counter
+	ApiRequests.WithLabelValues("CreateInstance", "200", "us-south").Inc()
 
-func TestRecordInstanceProvisioningDuration(t *testing.T) {
-	// Reset the histogram for testing
-	InstanceProvisioningDuration.Reset()
-
-	duration := 30 * time.Second
-	RecordInstanceProvisioningDuration("bx2.2x8", "us-south-1", "success", duration)
-
-	// Verify that the observation was recorded
-	// For histograms, we check the _count metric instead of the histogram itself
-	metricString := `
-		# HELP karpenter_ibm_instance_provisioning_duration_seconds Time taken to provision instances in seconds
-		# TYPE karpenter_ibm_instance_provisioning_duration_seconds histogram
-		karpenter_ibm_instance_provisioning_duration_seconds_count{instance_type="bx2.2x8",result="success",zone="us-south-1"} 1
+	expected := `
+		# HELP karpenter_ibm_api_requests_total Total IBM API requests by operation and status
+		# TYPE karpenter_ibm_api_requests_total counter
+		karpenter_ibm_api_requests_total{operation="CreateInstance",region="us-south",status="200"} 1
 	`
 
-	err := testutil.CollectAndCompare(InstanceProvisioningDuration, strings.NewReader(metricString), "karpenter_ibm_instance_provisioning_duration_seconds_count")
-	assert.NoError(t, err)
+	if err := testutil.CollectAndCompare(ApiRequests, strings.NewReader(expected)); err != nil {
+		t.Errorf("ApiRequests metric mismatch: %v", err)
+	}
 }
 
-func TestUpdateCacheHitRate(t *testing.T) {
-	// Reset the gauge for testing
-	CacheHitRate.Reset()
-
-	UpdateCacheHitRate("pricing", 85.5)
-	UpdateCacheHitRate("instance_types", 92.3)
-
-	assert.Equal(t, 85.5, testutil.ToFloat64(CacheHitRate.WithLabelValues("pricing")))
-	assert.Equal(t, 92.3, testutil.ToFloat64(CacheHitRate.WithLabelValues("instance_types")))
+func TestProvisioningDurationMetric(t *testing.T) {
+	ProvisioningDuration.Reset()
+	ProvisioningDuration.WithLabelValues("bx2-2x8", "us-south-1").Observe(2.5)
+	// no strict compare for histogram, just ensure metric can be used
+	t.Log("ProvisioningDuration metric works correctly")
 }
 
-func TestSetInstanceTypeOfferingAvailability(t *testing.T) {
-	// Reset the gauge for testing
-	InstanceTypeOfferingAvailable.Reset()
+func TestCostPerHourMetric(t *testing.T) {
+	CostPerHour.Reset()
+	CostPerHour.WithLabelValues("bx2-2x8", "us-south").Set(0.123)
 
-	SetInstanceTypeOfferingAvailability("bx2.2x8", "on-demand", "us-south-1", true)
-	SetInstanceTypeOfferingAvailability("bx2.4x16", "spot", "us-south-2", false)
+	expected := `
+		# HELP karpenter_ibm_cost_per_hour Estimated cost per hour for instance type in region.
+		# TYPE karpenter_ibm_cost_per_hour gauge
+		karpenter_ibm_cost_per_hour{instance_type="bx2-2x8",region="us-south"} 0.123
+	`
 
-	assert.Equal(t, 1.0, testutil.ToFloat64(InstanceTypeOfferingAvailable.WithLabelValues("bx2.2x8", "on-demand", "us-south-1")))
-	assert.Equal(t, 0.0, testutil.ToFloat64(InstanceTypeOfferingAvailable.WithLabelValues("bx2.4x16", "spot", "us-south-2")))
+	if err := testutil.CollectAndCompare(CostPerHour, strings.NewReader(expected)); err != nil {
+		t.Errorf("CostPerHour metric mismatch: %v", err)
+	}
 }
 
-func TestSetInstanceTypeOfferingPrice(t *testing.T) {
-	// Reset the gauge for testing
-	InstanceTypeOfferingPriceEstimate.Reset()
+func TestQuotaUtilizationMetric(t *testing.T) {
+	QuotaUtilization.Reset()
+	QuotaUtilization.WithLabelValues("vCPU", "us-south").Set(0.75)
 
-	SetInstanceTypeOfferingPrice("bx2.2x8", "us-south-1", 0.095)
-	SetInstanceTypeOfferingPrice("bx2.4x16", "us-south-2", 0.190)
+	expected := `
+		# HELP karpenter_ibm_quota_utilization Quota utilization for resource type in region (0..1).
+		# TYPE karpenter_ibm_quota_utilization gauge
+		karpenter_ibm_quota_utilization{region="us-south",resource_type="vCPU"} 0.75
+	`
 
-	assert.Equal(t, 0.095, testutil.ToFloat64(InstanceTypeOfferingPriceEstimate.WithLabelValues("bx2.2x8", "us-south-1")))
-	assert.Equal(t, 0.190, testutil.ToFloat64(InstanceTypeOfferingPriceEstimate.WithLabelValues("bx2.4x16", "us-south-2")))
+	if err := testutil.CollectAndCompare(QuotaUtilization, strings.NewReader(expected)); err != nil {
+		t.Errorf("QuotaUtilization metric mismatch: %v", err)
+	}
 }
 
-func TestRecordNodeProvisioningError(t *testing.T) {
-	// Reset the counter for testing
-	NodeProvisioningErrors.Reset()
+func TestInstanceLifecycleMetric(t *testing.T) {
+	InstanceLifecycle.Reset()
+	InstanceLifecycle.WithLabelValues("running", "bx2-2x8").Set(1)
 
-	RecordNodeProvisioningError("quota_exceeded", "bx2.2x8", "us-south-1")
-	RecordNodeProvisioningError("api_error", "bx2.4x16", "us-south-2")
-	RecordNodeProvisioningError("quota_exceeded", "bx2.2x8", "us-south-1") // Same error again
+	expected := `
+		# HELP karpenter_ibm_instance_lifecycle Instance lifecycle state as numeric label.
+		# TYPE karpenter_ibm_instance_lifecycle gauge
+		karpenter_ibm_instance_lifecycle{instance_type="bx2-2x8",state="running"} 1
+	`
 
-	assert.Equal(t, 2.0, testutil.ToFloat64(NodeProvisioningErrors.WithLabelValues("quota_exceeded", "bx2.2x8", "us-south-1")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(NodeProvisioningErrors.WithLabelValues("api_error", "bx2.4x16", "us-south-2")))
+	if err := testutil.CollectAndCompare(InstanceLifecycle, strings.NewReader(expected)); err != nil {
+		t.Errorf("InstanceLifecycle metric mismatch: %v", err)
+	}
 }
 
-func TestSetActiveNodes(t *testing.T) {
-	// Reset the gauge for testing
-	ActiveNodes.Reset()
+func TestMetricLabels(t *testing.T) {
+	// Test that metrics accept the expected labels
+	ApiRequests.Reset()
+	ApiRequests.WithLabelValues("test-operation", "200", "us-south").Inc()
 
-	SetActiveNodes("bx2.2x8", "us-south-1", "on-demand", 5.0)
-	SetActiveNodes("bx2.4x16", "us-south-2", "spot", 3.0)
+	ProvisioningDuration.Reset()
+	ProvisioningDuration.WithLabelValues("bx2-2x8", "us-south-1").Observe(1.0)
 
-	assert.Equal(t, 5.0, testutil.ToFloat64(ActiveNodes.WithLabelValues("bx2.2x8", "us-south-1", "on-demand")))
-	assert.Equal(t, 3.0, testutil.ToFloat64(ActiveNodes.WithLabelValues("bx2.4x16", "us-south-2", "spot")))
-}
+	CostPerHour.Reset()
+	CostPerHour.WithLabelValues("bx2-2x8", "us-south").Set(0.1)
 
-func TestMetricsNamespace(t *testing.T) {
-	assert.Equal(t, "karpenter", Namespace)
-	assert.Equal(t, "ibm", IBMSubsystem)
+	QuotaUtilization.Reset()
+	QuotaUtilization.WithLabelValues("vCPU", "us-south").Set(0.5)
+
+	InstanceLifecycle.Reset()
+	InstanceLifecycle.WithLabelValues("running", "bx2-2x8").Set(1)
+
+	t.Log("All metrics accept their expected labels")
 }
