@@ -1,0 +1,92 @@
+apiVersion: karpenter.ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: example-userdata-append
+spec:
+  # Required fields
+  region: us-south
+  zone: us-south-1
+  vpc: r010-12345678-1234-5678-9abc-def012345678
+  image: ubuntu-24-04-amd64
+  instanceProfile: bx2-2x8
+  securityGroups:
+    - r010-87654321-4321-8765-9abc-def098765432
+
+  # UserDataAppend: adds custom commands AFTER the standard bootstrap process
+  # This preserves the Karpenter bootstrap while adding custom configuration
+  userDataAppend: |
+    echo "Running custom configuration after bootstrap..."
+
+    # Install monitoring tools
+    apt-get update && apt-get install -y htop iotop
+
+    # Create custom marker file
+    echo "Node customized at $(date)" > /opt/custom-init.log
+
+    echo "Custom configuration completed"
+
+---
+apiVersion: karpenter.ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: example-userdata-override
+spec:
+  # Required fields
+  region: us-south
+  zone: us-south-1
+  vpc: r010-12345678-1234-5678-9abc-def012345678
+  image: ubuntu-24-04-amd64
+  instanceProfile: bx2-2x8
+  securityGroups:
+    - r010-87654321-4321-8765-9abc-def098765432
+
+  # UserData: completely replaces the entire bootstrap script
+  # WARNING: You are responsible for properly bootstrapping the node
+  userData: |
+    #!/bin/bash
+    set -euo pipefail
+
+    echo "Starting custom bootstrap script..."
+
+    # Your complete custom bootstrap logic here
+    # This bypasses ALL Karpenter bootstrap logic
+    # You MUST handle:
+    # - Container runtime installation
+    # - Kubernetes components installation
+    # - Node registration
+    # - CNI setup
+
+    echo "Custom bootstrap completed"
+
+  # Note: userDataAppend is ignored when userData is specified
+  userDataAppend: |
+    echo "This will be ignored because userData is set"
+
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: example-userdata-pool
+spec:
+  # NodePool using the NodeClass with userDataAppend
+  template:
+    spec:
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      nodeClassRef:
+        apiGroup: karpenter.ibm.sh
+        kind: IBMNodeClass
+        name: example-userdata-append
+      taints:
+        - key: example.com/custom
+          value: "true"
+          effect: NoSchedule
+
+  # Disruption settings
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized

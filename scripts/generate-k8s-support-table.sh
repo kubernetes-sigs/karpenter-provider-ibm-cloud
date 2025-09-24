@@ -137,6 +137,7 @@ map_k8s_version() {
     major_minor=$(echo "$dep_version" | sed -E 's/^([0-9]+\.[0-9]+).*$/\1/')
 
     case "$major_minor" in
+        "0.35") echo "1.35" ;;
         "0.34") echo "1.34" ;;
         "0.33") echo "1.33" ;;
         "0.32") echo "1.32" ;;
@@ -158,6 +159,7 @@ get_karpenter_k8s_compatibility() {
     # Karpenter version to Kubernetes compatibility mapping
     # Based on Karpenter release notes and compatibility matrix
     case "$karpenter_version" in
+        1.7.*) echo "1.29 - 1.35" ;;
         1.6.*) echo "1.28 - 1.34" ;;
         1.5.*) echo "1.28 - 1.31" ;;
         1.4.*) echo "1.27 - 1.30" ;;
@@ -203,8 +205,17 @@ collect_dependency_info() {
     # Parse Karpenter compatibility range
     local karpenter_min_k8s
     local karpenter_max_k8s
-    karpenter_min_k8s=$(echo "$karpenter_k8s_compat" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
-    karpenter_max_k8s=$(echo "$karpenter_k8s_compat" | sed -E 's/.*- ([0-9]+\.[0-9]+)$/\1/')
+
+    # Check if compatibility string contains valid version range
+    if [[ "$karpenter_k8s_compat" =~ ^[0-9]+\.[0-9]+.*-.*[0-9]+\.[0-9]+$ ]]; then
+        karpenter_min_k8s=$(echo "$karpenter_k8s_compat" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
+        karpenter_max_k8s=$(echo "$karpenter_k8s_compat" | sed -E 's/.*- ([0-9]+\.[0-9]+)$/\1/')
+    else
+        # For unknown versions, use fallback based on k8s.io dependencies
+        log_warn "Unknown Karpenter version compatibility: $karpenter_k8s_compat"
+        karpenter_min_k8s=$(echo "$k8s_api_k8s" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
+        karpenter_max_k8s="$karpenter_min_k8s"
+    fi
 
     # Get k8s.io dependency version (use the most common one)
     local k8s_dep_version
@@ -214,9 +225,11 @@ collect_dependency_info() {
     local min_k8s="$karpenter_min_k8s"
     local max_k8s="$karpenter_max_k8s"
 
-    # If k8s.io deps are older than karpenter max, use the k8s dep version as max
-    if [[ $(echo "$k8s_dep_version" | cut -d. -f2) -lt $(echo "$max_k8s" | cut -d. -f2) ]]; then
-        max_k8s="$k8s_dep_version"
+    # If k8s.io deps are older than karpenter max, use the k8s dep version as max (only if both are valid version numbers)
+    if [[ "$max_k8s" =~ ^[0-9]+\.[0-9]+$ ]] && [[ "$k8s_dep_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        if [[ $(echo "$k8s_dep_version" | cut -d. -f2) -lt $(echo "$max_k8s" | cut -d. -f2) ]]; then
+            max_k8s="$k8s_dep_version"
+        fi
     fi
 
     # Store results in associative arrays (simulated with variables)

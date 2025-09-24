@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
@@ -283,7 +283,7 @@ func TestController_Reconcile_ProviderError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refreshing instance types")
 	assert.Contains(t, err.Error(), "provider error")
-	assert.Equal(t, reconcile.Result{}, result)
+	assert.Equal(t, reconciler.Result{}, result)
 	assert.Equal(t, 1, mockProvider.GetListCallCount())
 }
 
@@ -303,7 +303,7 @@ func TestController_Reconcile_CancelledContext(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refreshing instance types")
-	assert.Equal(t, reconcile.Result{}, result)
+	assert.Equal(t, reconciler.Result{}, result)
 }
 
 // Test reconciliation with timeout context
@@ -322,7 +322,7 @@ func TestController_Reconcile_TimeoutContext(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refreshing instance types")
-	assert.Equal(t, reconcile.Result{}, result)
+	assert.Equal(t, reconciler.Result{}, result)
 }
 
 // Test multiple concurrent reconciliations
@@ -334,7 +334,7 @@ func TestController_Reconcile_Concurrent(t *testing.T) {
 
 	const numGoroutines = 10
 	var wg sync.WaitGroup
-	results := make([]reconcile.Result, numGoroutines)
+	results := make([]reconciler.Result, numGoroutines)
 	errors := make([]error, numGoroutines)
 
 	wg.Add(numGoroutines)

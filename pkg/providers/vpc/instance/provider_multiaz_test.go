@@ -173,6 +173,7 @@ func TestMultiAZNodeProvisioning(t *testing.T) {
 type testMultiAZInstanceProvider struct {
 	client         *mockIBMClient
 	subnetProvider *mockSubnetProvider
+	zoneIndex      int // Track zone selection for round-robin distribution
 }
 
 // selectZoneAndSubnet implements the core zone selection logic for multi-AZ provisioning
@@ -216,22 +217,31 @@ func (p *testMultiAZInstanceProvider) selectZoneAndSubnet(ctx context.Context, n
 		return "", "", fmt.Errorf("no eligible subnets found")
 	}
 
-	// For balanced placement, rotate through zones
-	// In a real implementation, this would use more sophisticated logic
+	// For balanced placement, rotate through zones using round-robin
 	zoneSubnets := make(map[string][]string)
+	var zones []string
 	for _, subnetInfo := range selectedSubnets {
 		zone := subnetInfo.Zone
+		if _, exists := zoneSubnets[zone]; !exists {
+			zones = append(zones, zone)
+		}
 		zoneSubnets[zone] = append(zoneSubnets[zone], subnetInfo.ID)
 	}
 
-	// Select first available zone and subnet (in real implementation, this would be smarter)
-	for zone, subnets := range zoneSubnets {
-		if len(subnets) > 0 {
-			return zone, subnets[0], nil
-		}
+	if len(zones) == 0 {
+		return "", "", fmt.Errorf("no zones available")
 	}
 
-	return "", "", fmt.Errorf("no suitable zone/subnet combination found")
+	// Implement round-robin zone selection for multi-AZ distribution
+	selectedZone := zones[p.zoneIndex%len(zones)]
+	p.zoneIndex++ // Increment for next call
+
+	subnets := zoneSubnets[selectedZone]
+	if len(subnets) == 0 {
+		return "", "", fmt.Errorf("no subnets available in zone %s", selectedZone)
+	}
+
+	return selectedZone, subnets[0], nil
 }
 
 // Mock IBM client for testing

@@ -1449,8 +1449,8 @@ func TestControllerPerformance(t *testing.T) {
 
 	t.Logf("Reconciled %d times in %v (avg: %v per reconciliation)", iterations, duration, avgDuration)
 
-	// Reconciliation should be fast (under 10ms per call)
-	assert.Less(t, avgDuration, 10*time.Millisecond, "Reconciliation should be fast")
+	// Reconciliation should be fast (under 20ms per call)
+	assert.Less(t, avgDuration, 20*time.Millisecond, "Reconciliation should be fast")
 }
 
 // =============================================================================

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 	v1 "k8s.io/api/core/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -27,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
@@ -59,11 +59,11 @@ func NewController(kubeClient client.Client) (*Controller, error) {
 }
 
 // Reconcile executes a control loop for the resource
-func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	// List all NodeClaims
 	nodeClaimList := &karpenterv1.NodeClaimList{}
 	if err := c.kubeClient.List(ctx, nodeClaimList); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 
 	for _, nodeClaim := range nodeClaimList.Items {
@@ -78,7 +78,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 			if client.IgnoreNotFound(err) == nil {
 				continue
 			}
-			return reconcile.Result{}, err
+			return reconciler.Result{}, err
 		}
 
 		// Extract provider ID
@@ -123,7 +123,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 		}
 	}
 
-	return reconcile.Result{}, nil
+	return reconciler.Result{}, nil
 }
 
 // isVPCMode determines if a NodeClass is configured for VPC mode

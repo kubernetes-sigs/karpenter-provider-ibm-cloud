@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
@@ -34,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
@@ -85,20 +85,20 @@ func isOrphanCleanupEnabled() bool {
 	return os.Getenv("KARPENTER_ENABLE_ORPHAN_CLEANUP") == "true"
 }
 
-func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	ctx = injection.WithControllerName(ctx, "node.orphancleanup.ibm")
 	logger := log.FromContext(ctx)
 
 	// Check if orphan cleanup is enabled
 	if !isOrphanCleanupEnabled() {
 		logger.V(1).Info("orphan cleanup is disabled, skipping")
-		return reconcile.Result{RequeueAfter: OrphanCheckInterval}, nil
+		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
 	// Get all nodes that have IBM providerIDs
 	nodeList := &corev1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodeList); err != nil {
-		return reconcile.Result{}, fmt.Errorf("listing nodes: %w", err)
+		return reconciler.Result{}, fmt.Errorf("listing nodes: %w", err)
 	}
 
 	// Filter for IBM nodes managed by Karpenter only
@@ -125,7 +125,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 
 	if len(ibmNodes) == 0 {
 		logger.V(1).Info("no IBM nodes found, skipping orphan cleanup")
-		return reconcile.Result{RequeueAfter: OrphanCheckInterval}, nil
+		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
 	// Extract instance IDs from provider IDs
@@ -142,14 +142,14 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 
 	if len(instanceIDs) == 0 {
 		logger.V(1).Info("no IBM nodes with valid provider IDs found")
-		return reconcile.Result{RequeueAfter: OrphanCheckInterval}, nil
+		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
 	// Check which instances still exist in IBM Cloud
 	existingInstances, err := c.getExistingVPCInstances(ctx, instanceIDs)
 	if err != nil {
 		logger.Error(err, "failed to check existing VPC instances")
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 
 	existingInstanceIDs := sets.New(existingInstances...)
@@ -165,7 +165,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	if len(orphanedNodes) == 0 {
 		logger.V(1).Info("no orphaned nodes found")
 		c.successfulCount++
-		return reconcile.Result{RequeueAfter: OrphanCheckInterval}, nil
+		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
 	logger.Info("found orphaned nodes", "count", len(orphanedNodes))
@@ -177,11 +177,11 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	})
 
 	if err := multierr.Combine(errs...); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 
 	c.successfulCount++
-	return reconcile.Result{RequeueAfter: OrphanCheckInterval}, nil
+	return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 }
 
 // extractInstanceIDFromProviderID extracts the instance ID from an IBM provider ID

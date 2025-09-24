@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -30,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
@@ -112,13 +112,13 @@ func NewController(kubeClient client.Client, recorder record.EventRecorder, unav
 }
 
 // Reconcile executes a control loop for the resource
-func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	// Since we're using singleton pattern, we don't get a request object
 	// Instead, we'll process all nodes in the cluster
 
 	nodeList := &v1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodeList); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 
 	for _, node := range nodeList.Items {
@@ -145,7 +145,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 		}
 	}
 
-	return reconcile.Result{RequeueAfter: time.Minute}, nil
+	return reconciler.Result{RequeueAfter: time.Minute}, nil
 }
 
 // isNodeInterrupted checks if a node is being interrupted by IBM Cloud

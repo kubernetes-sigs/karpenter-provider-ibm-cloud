@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
@@ -60,18 +60,18 @@ func NewController(pricingProvider pricing.Provider) (*Controller, error) {
 	}, nil
 }
 
-func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	ctx = injection.WithControllerName(ctx, "providers.pricing")
 
 	// Refresh pricing information
 	if err := c.pricingProvider.Refresh(ctx); err != nil {
 		metrics.ApiRequests.WithLabelValues("RefreshPricing", "500", "global").Inc()
-		return reconcile.Result{}, fmt.Errorf("refreshing pricing information: %w", err)
+		return reconciler.Result{}, fmt.Errorf("refreshing pricing information: %w", err)
 	}
 	metrics.ApiRequests.WithLabelValues("RefreshPricing", "200", "global").Inc()
 
 	// Requeue after 12 hours to refresh prices
-	return reconcile.Result{RequeueAfter: 12 * time.Hour}, nil
+	return reconciler.Result{RequeueAfter: 12 * time.Hour}, nil
 }
 
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
