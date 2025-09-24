@@ -17,147 +17,77 @@ limitations under the License.
 package metrics
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-const (
-	// Namespace for all karpenter IBM metrics
-	Namespace = "karpenter"
-	// Subsystem for IBM cloud provider specific metrics
-	IBMSubsystem = "ibm"
-)
-
 var (
-	// APIRequestsTotal tracks total number of IBM Cloud API requests
-	APIRequestsTotal = prometheus.NewCounterVec(
+	ApiRequests = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "api_requests_total",
-			Help:      "Total number of IBM Cloud API requests by service, operation, and status code",
+			Name: "karpenter_ibm_api_requests_total",
+			Help: "Total IBM API requests by operation and status",
 		},
-		[]string{"service", "operation", "status_code"},
+		[]string{"operation", "status", "region"},
 	)
 
-	// InstanceProvisioningDuration tracks time taken to provision instances
-	InstanceProvisioningDuration = prometheus.NewHistogramVec(
+	ProvisioningDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "instance_provisioning_duration_seconds",
-			Help:      "Time taken to provision instances in seconds",
-			Buckets:   prometheus.ExponentialBuckets(1, 2, 12), // 1s to ~1hr
-		},
-		[]string{"instance_type", "zone", "result"},
-	)
-
-	// CacheHitRate tracks cache hit rate percentage by cache type
-	CacheHitRate = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "cache_hit_rate",
-			Help:      "Cache hit rate percentage by cache type",
-		},
-		[]string{"cache_type"},
-	)
-
-	// InstanceTypeOfferingAvailable tracks instance type availability
-	InstanceTypeOfferingAvailable = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "instance_type_offering_available",
-			Help:      "Instance type offering availability by type, capacity type, and zone",
-		},
-		[]string{"instance_type", "capacity_type", "zone"},
-	)
-
-	// InstanceTypeOfferingPriceEstimate tracks estimated pricing for instance types
-	InstanceTypeOfferingPriceEstimate = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "instance_type_offering_price_estimate",
-			Help:      "Estimated hourly price for instance types in USD",
+			Name:    "karpenter_ibm_provisioning_duration_seconds",
+			Help:    "Provisioning duration in seconds.",
+			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"instance_type", "zone"},
 	)
 
-	// NodeProvisioningErrors tracks node provisioning errors
-	NodeProvisioningErrors = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "node_provisioning_errors_total",
-			Help:      "Total number of node provisioning errors by error type",
+	CostPerHour = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "karpenter_ibm_cost_per_hour",
+			Help: "Estimated cost per hour for instance type in region.",
 		},
-		[]string{"error_type", "instance_type", "zone"},
+		[]string{"instance_type", "region"},
 	)
 
-	// ActiveNodes tracks the number of active nodes managed by Karpenter IBM
-	ActiveNodes = prometheus.NewGaugeVec(
+	QuotaUtilization = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Namespace: Namespace,
-			Subsystem: IBMSubsystem,
-			Name:      "active_nodes",
-			Help:      "Number of active nodes managed by Karpenter IBM by instance type and zone",
+			Name: "karpenter_ibm_quota_utilization",
+			Help: "Quota utilization for resource type in region (0..1).",
 		},
-		[]string{"instance_type", "zone", "capacity_type"},
+		[]string{"resource_type", "region"},
+	)
+
+	InstanceLifecycle = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "karpenter_ibm_instance_lifecycle",
+			Help: "Instance lifecycle state as numeric label.",
+		},
+		[]string{"state", "instance_type"},
+	)
+
+	ErrorsByType = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "karpenter_ibm_errors_total",
+			Help: "Total number of errors by type, component, and region",
+		},
+		[]string{"error_type", "component", "region"},
+	)
+
+	TimeoutErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "karpenter_ibm_timeout_errors_total",
+			Help: "Total number of timeout errors by operation and region",
+		},
+		[]string{"operation", "region"},
 	)
 )
 
-// RecordAPIRequest increments the counter for IBM Cloud API requests
-func RecordAPIRequest(service, operation, statusCode string) {
-	APIRequestsTotal.WithLabelValues(service, operation, statusCode).Inc()
-}
-
-// RecordInstanceProvisioningDuration records the time taken to provision an instance
-func RecordInstanceProvisioningDuration(instanceType, zone, result string, duration time.Duration) {
-	InstanceProvisioningDuration.WithLabelValues(instanceType, zone, result).Observe(duration.Seconds())
-}
-
-// UpdateCacheHitRate updates the cache hit rate for a specific cache type
-func UpdateCacheHitRate(cacheType string, hitRate float64) {
-	CacheHitRate.WithLabelValues(cacheType).Set(hitRate)
-}
-
-// SetInstanceTypeOfferingAvailability sets the availability status for an instance type offering
-func SetInstanceTypeOfferingAvailability(instanceType, capacityType, zone string, available bool) {
-	var value float64
-	if available {
-		value = 1
-	}
-	InstanceTypeOfferingAvailable.WithLabelValues(instanceType, capacityType, zone).Set(value)
-}
-
-// SetInstanceTypeOfferingPrice sets the estimated price for an instance type
-func SetInstanceTypeOfferingPrice(instanceType, zone string, price float64) {
-	InstanceTypeOfferingPriceEstimate.WithLabelValues(instanceType, zone).Set(price)
-}
-
-// RecordNodeProvisioningError records a node provisioning error
-func RecordNodeProvisioningError(errorType, instanceType, zone string) {
-	NodeProvisioningErrors.WithLabelValues(errorType, instanceType, zone).Inc()
-}
-
-// SetActiveNodes sets the number of active nodes
-func SetActiveNodes(instanceType, zone, capacityType string, count float64) {
-	ActiveNodes.WithLabelValues(instanceType, zone, capacityType).Set(count)
-}
-
-// init registers all metrics with the controller-runtime metrics registry
 func init() {
 	metrics.Registry.MustRegister(
-		APIRequestsTotal,
-		InstanceProvisioningDuration,
-		CacheHitRate,
-		InstanceTypeOfferingAvailable,
-		InstanceTypeOfferingPriceEstimate,
-		NodeProvisioningErrors,
-		ActiveNodes,
+		ApiRequests,
+		ProvisioningDuration,
+		CostPerHour,
+		QuotaUtilization,
+		InstanceLifecycle,
+		ErrorsByType,
+		TimeoutErrors,
 	)
 }

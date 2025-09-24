@@ -6,6 +6,8 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator/options"
 
+	_ "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
+
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"

@@ -17,6 +17,7 @@ limitations under the License.
 package instance_test
 
 import (
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -39,8 +40,13 @@ var _ = Describe("VPC Instance Provider", func() {
 	)
 
 	BeforeEach(func() {
+		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		client = &ibm.Client{}
 		kubeClient = fake.NewClientBuilder()
+	})
+
+	AfterEach(func() {
+		_ = os.Unsetenv("IBMCLOUD_API_KEY")
 	})
 
 	Describe("Constructor", func() {

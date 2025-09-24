@@ -36,7 +36,7 @@ func TestIBMNodeClass_ValidateCreate(t *testing.T) {
 					Region:         "br-sao",
 					Zone:           "br-sao-2",
 					VPC:            "r042-4225852b-4846-4a4a-88c4-9966471337c6",
-					Image:          "ibm-ubuntu-22-04-5-minimal-amd64-5",
+					Image:          "ibm-ubuntu-22-04-5-minimal-amd64-6",
 					Subnet:         "02u7-718345b5-2de1-4a9a-b1de-fa7e307ee8c5",
 					SecurityGroups: []string{"sg-k8s-workers"}, // Name instead of ID
 					ResourceGroup:  "karpenter-rg",
@@ -49,7 +49,7 @@ func TestIBMNodeClass_ValidateCreate(t *testing.T) {
 				"security group 'sg-k8s-workers' appears to be a name",
 			},
 			wantWarnings: []string{
-				"image 'ibm-ubuntu-22-04-5-minimal-amd64-5' appears to be a name",
+				"image 'ibm-ubuntu-22-04-5-minimal-amd64-6' appears to be a name",
 				"bootstrapMode not specified",
 			},
 		},

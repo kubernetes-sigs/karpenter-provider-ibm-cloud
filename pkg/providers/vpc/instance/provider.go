@@ -18,10 +18,13 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -34,21 +37,29 @@ import (
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
+	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/image"
 	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/bootstrap"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
+type QuotaInfo struct {
+	InstanceUtilization float64
+	VCPUUtilization     float64
+}
+
 // VPCInstanceProvider implements VPC-specific instance provisioning
 type VPCInstanceProvider struct {
-	client            *ibm.Client
-	kubeClient        client.Client
-	k8sClient         kubernetes.Interface
-	bootstrapProvider *bootstrap.VPCBootstrapProvider
-	vpcClientManager  *vpcclient.Manager
+	client                 *ibm.Client
+	kubeClient             client.Client
+	k8sClient              kubernetes.Interface
+	bootstrapProvider      *bootstrap.VPCBootstrapProvider
+	vpcClientManager       *vpcclient.Manager
+	resourceManagerService *resourcemanagerv2.ResourceManagerV2
 }
 
 // Option configures the VPCInstanceProvider
@@ -100,11 +111,12 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 
 	// Create base provider with defaults
 	provider := &VPCInstanceProvider{
-		client:            client,
-		kubeClient:        kubeClient,
-		k8sClient:         nil, // Will be set via options if provided
-		bootstrapProvider: nil, // Will be lazily initialized or set via options
-		vpcClientManager:  vpcclient.NewManager(client, 30*time.Minute),
+		client:                 client,
+		kubeClient:             kubeClient,
+		k8sClient:              nil, // Will be set via options if provided
+		bootstrapProvider:      nil, // Will be lazily initialized or set via options
+		vpcClientManager:       vpcclient.NewManager(client, 30*time.Minute),
+		resourceManagerService: nil, // Will be initialized after applying options
 	}
 
 	// Apply options
@@ -112,6 +124,26 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 		if err := opt(provider); err != nil {
 			return nil, fmt.Errorf("applying option: %w", err)
 		}
+	}
+
+	// Create Resource Manager service if not provided via options
+	if provider.resourceManagerService == nil {
+		apiKey := os.Getenv("IBMCLOUD_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("IBMCLOUD_API_KEY environment variable is required")
+		}
+
+		authenticator := &core.IamAuthenticator{
+			ApiKey: apiKey,
+		}
+		resourceManagerServiceOptions := &resourcemanagerv2.ResourceManagerV2Options{
+			Authenticator: authenticator,
+		}
+		resourceManagerService, err := resourcemanagerv2.NewResourceManagerV2(resourceManagerServiceOptions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create resource manager service: %w", err)
+		}
+		provider.resourceManagerService = resourceManagerService
 	}
 
 	return provider, nil
@@ -127,6 +159,13 @@ func NewVPCInstanceProviderWithKubernetesClient(client *ibm.Client, kubeClient c
 func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*corev1.Node, error) {
 	logger := log.FromContext(ctx)
 
+	// Start timing for provisioning duration
+	start := time.Now()
+	var instanceType string
+	if len(instanceTypes) > 0 {
+		instanceType = instanceTypes[0].Name
+	}
+
 	if p.kubeClient == nil {
 		return nil, fmt.Errorf("kubernetes client not set")
 	}
@@ -139,6 +178,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 
 	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
+		metrics.ErrorsByType.WithLabelValues("vpc_client_error", "instance_provider", nodeClass.Spec.Region).Inc()
 		return nil, err
 	}
 
@@ -149,11 +189,21 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 
 	// Use the first compatible instance type (Karpenter has already ranked them by preference)
 	selectedInstanceType := instanceTypes[0]
-	instanceProfile := selectedInstanceType.Name
+	if selectedInstanceType == nil {
+		return nil, fmt.Errorf("first instance type in slice is nil for nodeclaim %s, available types: %d", nodeClaim.Name, len(instanceTypes))
+	}
 
-	// Validate that instanceProfile is not empty
+	instanceProfile := selectedInstanceType.Name
 	if instanceProfile == "" {
-		return nil, fmt.Errorf("selected instance type has empty name: %+v, available types: %d", selectedInstanceType, len(instanceTypes))
+		return nil, fmt.Errorf("selected instance type has empty name: %+v, available types: %d. "+
+			"This will cause IBM VPC oneOf constraint errors. "+
+			"Ensure IBMNodeClass has a valid instanceProfile specified", selectedInstanceType, len(instanceTypes))
+	}
+
+	// Additional validation for oneOf constraint compliance
+	if strings.TrimSpace(instanceProfile) == "" {
+		return nil, fmt.Errorf("instance profile is empty or whitespace-only: '%s'. "+
+			"This will cause IBM VPC oneOf constraint validation to fail", instanceProfile)
 	}
 
 	logger.Info("Selected instance type",
@@ -208,7 +258,8 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		AutoDelete: &[]bool{true}[0],
 	}
 
-	// Add resource group to VNI if specified (required for oneOf validation)
+	// Add resource group to VNI (required for oneOf validation)
+	// The VNI prototype requires a resource group to satisfy oneOf constraint
 	if nodeClass.Spec.ResourceGroup != "" {
 		resourceGroupID, rgErr := p.resolveResourceGroupID(ctx, nodeClass.Spec.ResourceGroup)
 		if rgErr != nil {
@@ -217,7 +268,11 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		vniPrototype.ResourceGroup = &vpcv1.ResourceGroupIdentityByID{
 			ID: &resourceGroupID,
 		}
-		logger.Info("Added resource group to VNI", "resource_group", resourceGroupID)
+		logger.Info("VNI resource group set", "input", nodeClass.Spec.ResourceGroup, "resolved_id", resourceGroupID)
+	} else {
+		// If no resource group specified, the VNI will use the account default
+		// This satisfies the oneOf constraint by explicitly not setting the ResourceGroup field
+		logger.Info("No resource group specified for VNI, using account default")
 	}
 
 	// Add security groups if specified, otherwise use default
@@ -248,9 +303,27 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 
 	// Resolve image identifier to image ID
 	imageResolver := image.NewResolver(vpcClient, nodeClass.Spec.Region)
-	imageID, err := imageResolver.ResolveImage(ctx, nodeClass.Spec.Image)
-	if err != nil {
-		return nil, fmt.Errorf("resolving image %s: %w", nodeClass.Spec.Image, err)
+	var imageID string
+
+	// Use explicit image if specified, otherwise use imageSelector
+	if nodeClass.Spec.Image != "" {
+		imageID, err = imageResolver.ResolveImage(ctx, nodeClass.Spec.Image)
+		if err != nil {
+			return nil, fmt.Errorf("resolving image %s: %w", nodeClass.Spec.Image, err)
+		}
+	} else if nodeClass.Spec.ImageSelector != nil {
+		imageID, err = imageResolver.ResolveImageBySelector(ctx, nodeClass.Spec.ImageSelector)
+		if err != nil {
+			return nil, fmt.Errorf("resolving image using selector (os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s): %w",
+				nodeClass.Spec.ImageSelector.OS,
+				nodeClass.Spec.ImageSelector.MajorVersion,
+				nodeClass.Spec.ImageSelector.MinorVersion,
+				nodeClass.Spec.ImageSelector.Architecture,
+				nodeClass.Spec.ImageSelector.Variant,
+				err)
+		}
+	} else {
+		return nil, fmt.Errorf("neither image nor imageSelector specified in NodeClass")
 	}
 
 	// Create boot volume attachment based on block device mappings or use default
@@ -299,14 +372,34 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 
 	// Add resource group if specified
 	if nodeClass.Spec.ResourceGroup != "" {
+		logger.Info("Starting instance resource group resolution",
+			"resourceGroup", nodeClass.Spec.ResourceGroup,
+			"instanceProfile", instanceProfile,
+			"selectionType", "dynamic")
+
 		resourceGroupID, rgErr := p.resolveResourceGroupID(ctx, nodeClass.Spec.ResourceGroup)
 		if rgErr != nil {
+			logger.Error(rgErr, "Instance resource group resolution failed",
+				"resourceGroup", nodeClass.Spec.ResourceGroup,
+				"instanceProfile", instanceProfile)
 			return nil, fmt.Errorf("resolving resource group %s: %w", nodeClass.Spec.ResourceGroup, rgErr)
 		}
+
+		if resourceGroupID == "" {
+			logger.Error(nil, "Instance resource group resolved to empty string",
+				"resourceGroup", nodeClass.Spec.ResourceGroup,
+				"instanceProfile", instanceProfile)
+			return nil, fmt.Errorf("resource group %s resolved to empty ID", nodeClass.Spec.ResourceGroup)
+		}
+
 		instancePrototype.ResourceGroup = &vpcv1.ResourceGroupIdentityByID{
 			ID: &resourceGroupID,
 		}
-		logger.Info("Resource group resolved", "input", nodeClass.Spec.ResourceGroup, "resolved_id", resourceGroupID)
+		logger.Info("Instance resource group successfully set",
+			"input", nodeClass.Spec.ResourceGroup,
+			"resolved_id", resourceGroupID,
+			"instanceProfile", instanceProfile,
+			"instance_has_resource_group", instancePrototype.ResourceGroup != nil)
 	}
 
 	// Add SSH keys if specified
@@ -362,14 +455,24 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		"hasName", instancePrototype.Name != nil,
 		"hasAvailabilityPolicy", instancePrototype.AvailabilityPolicy != nil)
 
-	// Log Profile struct details specifically
-	if instancePrototype.Profile != nil {
+	// Pre-API call validation to prevent oneOf constraint errors
+	if instancePrototype.Profile == nil {
+		return nil, fmt.Errorf("CRITICAL: instance prototype Profile field is nil - this violates IBM VPC oneOf constraint requirements")
+	}
+
+	// Validate the profile name in the prototype
+	if profileIdentity, ok := instancePrototype.Profile.(*vpcv1.InstanceProfileIdentityByName); ok {
+		if profileIdentity.Name == nil || *profileIdentity.Name == "" {
+			return nil, fmt.Errorf("CRITICAL: instance profile Name is nil or empty in prototype - this violates IBM VPC oneOf constraint requirements")
+		}
+		logger.Info("Profile validation passed for oneOf compliance",
+			"profileName", *profileIdentity.Name,
+			"profileType", fmt.Sprintf("%T", instancePrototype.Profile))
+	} else {
 		logger.Info("Profile field details for oneOf debugging",
 			"profileType", fmt.Sprintf("%T", instancePrototype.Profile),
 			"profileName", instanceProfile,
 			"profilePtr", fmt.Sprintf("%p", instancePrototype.Profile))
-	} else {
-		logger.Info("CRITICAL: Profile field is nil - this violates oneOf constraint!")
 	}
 
 	// Create the instance
@@ -422,21 +525,90 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		}
 	}
 
+	// Log the full instance prototype being sent to VPC API for debugging
+	logger.Info("FULL VPC CreateInstance request debug",
+		"instance_name", nodeClaim.Name,
+		"instance_prototype", fmt.Sprintf("%+v", instancePrototype),
+		"primary_network_attachment", fmt.Sprintf("%+v", instancePrototype.PrimaryNetworkAttachment),
+		"boot_volume_attachment", fmt.Sprintf("%+v", instancePrototype.BootVolumeAttachment),
+		"profile", fmt.Sprintf("%+v", instancePrototype.Profile),
+		"vpc", fmt.Sprintf("%+v", instancePrototype.VPC),
+		"resource_group", fmt.Sprintf("%+v", instancePrototype.ResourceGroup))
+
+	// ENHANCED DEBUGGING: Marshal to JSON to see exact API payload
+	if jsonBytes, jsonErr := json.MarshalIndent(instancePrototype, "", "  "); jsonErr == nil {
+		logger.Info("VPC CreateInstance JSON payload",
+			"instance_name", nodeClaim.Name,
+			"json_payload", string(jsonBytes))
+	} else {
+		logger.Error(jsonErr, "Failed to marshal instance prototype to JSON for debugging")
+	}
+
+	// Log oneOf discriminator fields specifically
+	logger.Info("OneOf discriminator field analysis",
+		"instance_name", nodeClaim.Name,
+		"prototype_type", fmt.Sprintf("%T", instancePrototype),
+		"image_field", instancePrototype.Image != nil,
+		"profile_field", instancePrototype.Profile != nil,
+		"vpc_field", instancePrototype.VPC != nil,
+		"zone_field", instancePrototype.Zone != nil,
+		"boot_volume_field", instancePrototype.BootVolumeAttachment != nil,
+		"primary_network_field", instancePrototype.PrimaryNetworkAttachment != nil)
+
 	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
 	if err != nil {
 		// Check if this is a partial failure that might have created resources
 		ibmErr := ibm.ParseError(err)
 
-		// Enhanced error logging with full error details
-		logger.Error(err, "VPC instance creation error",
+		// Track error metrics BEFORE existing logging
+		if isTimeoutError(err) {
+			metrics.TimeoutErrors.WithLabelValues("CreateInstance", nodeClass.Spec.Region).Inc()
+			metrics.ErrorsByType.WithLabelValues("timeout", "instance_provider", nodeClass.Spec.Region).Inc()
+		} else if isQuotaError(err) {
+			metrics.ErrorsByType.WithLabelValues("quota_exceeded", "instance_provider", nodeClass.Spec.Region).Inc()
+		} else if isAuthError(err) {
+			metrics.ErrorsByType.WithLabelValues("authentication", "instance_provider", nodeClass.Spec.Region).Inc()
+		} else if ibmErr.StatusCode >= 400 && ibmErr.StatusCode < 500 {
+			metrics.ErrorsByType.WithLabelValues("client_error", "instance_provider", nodeClass.Spec.Region).Inc()
+		} else if ibmErr.StatusCode >= 500 {
+			metrics.ErrorsByType.WithLabelValues("server_error", "instance_provider", nodeClass.Spec.Region).Inc()
+		} else {
+			metrics.ErrorsByType.WithLabelValues("api_error", "instance_provider", nodeClass.Spec.Region).Inc()
+		}
+
+		// Enhanced error logging with FULL error details for oneOf debugging
+		logger.Error(err, "VPC instance creation error - FULL ERROR MESSAGE",
 			"status_code", ibmErr.StatusCode,
 			"error_code", ibmErr.Code,
 			"retryable", ibmErr.Retryable,
-			"error_message", err.Error(),
+			"full_error_string", fmt.Sprintf("%s", err),
+			"full_error_details", fmt.Sprintf("%+v", err),
 			"error_type", fmt.Sprintf("%T", err),
 			"instance_prototype_type", fmt.Sprintf("%T", instancePrototype),
 			"ibm_error_message", ibmErr.Message,
-			"ibm_error_more_info", ibmErr.MoreInfo)
+			"ibm_error_more_info", ibmErr.MoreInfo,
+			"raw_error", err.Error())
+
+		// ENHANCED DEBUGGING: Try to extract full HTTP response for oneOf errors
+		if detailedErr, ok := err.(*core.SDKProblem); ok {
+			logger.Error(err, "IBM VPC SDK detailed error response",
+				"instance_name", nodeClaim.Name,
+				"sdk_problem", fmt.Sprintf("%+v", detailedErr),
+				"problem_summary", detailedErr.Summary)
+		}
+
+		// Log specific oneOf error pattern analysis
+		errorString := err.Error()
+		isOneOfError := strings.Contains(errorString, "oneOf") || strings.Contains(errorString, "Expected only one")
+		logger.Info("OneOf error analysis",
+			"instance_name", nodeClaim.Name,
+			"is_oneof_error", isOneOfError,
+			"error_contains_oneof", strings.Contains(errorString, "oneOf"),
+			"error_contains_expected_only_one", strings.Contains(errorString, "Expected only one"),
+			"selected_instance_type", instanceProfile,
+			"zone", zone,
+			"nodeclass_instance_profile", nodeClass.Spec.InstanceProfile,
+			"is_dynamic_selection", nodeClass.Spec.InstanceProfile == "")
 
 		if p.isPartialFailure(ibmErr) {
 			logger.Info("Instance creation failed after partial resource creation, attempting cleanup",
@@ -451,7 +623,14 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 			}
 		}
 
-		return nil, vpcclient.HandleVPCError(err, logger, "creating VPC instance")
+		// Create detailed error message for better debugging in NodeClaim conditions
+		detailedErr := fmt.Errorf("creating VPC instance failed: %s (code: %s, status: %d, instance_profile: %s, zone: %s, image: %s)",
+			err.Error(), ibmErr.Code, ibmErr.StatusCode, instanceProfile, zone, nodeClass.Spec.Image)
+
+		// Still use HandleVPCError for consistent logging but return our detailed error
+		_ = vpcclient.HandleVPCError(err, logger, "creating VPC instance",
+			"instance_profile", instanceProfile, "zone", zone, "image", nodeClass.Spec.Image)
+		return nil, detailedErr
 	}
 
 	// DETAILED RESPONSE LOGGING: Log the full VPC response details
@@ -533,7 +712,109 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 		},
 	}
 
+	// Record successful provisioning metrics
+	duration := time.Since(start).Seconds()
+	metrics.ProvisioningDuration.WithLabelValues(instanceType, zone).Observe(duration)
+	metrics.InstanceLifecycle.WithLabelValues("running", instanceType).Set(1)
+	metrics.ApiRequests.WithLabelValues("CreateInstance", "200", nodeClass.Spec.Region).Inc()
+	// Track quota utilization with actual data
+	if quotaInfo, err := p.getQuotaInfo(ctx, nodeClass.Spec.Region); err == nil {
+		metrics.QuotaUtilization.WithLabelValues("instances", nodeClass.Spec.Region).Set(quotaInfo.InstanceUtilization)
+		metrics.QuotaUtilization.WithLabelValues("vCPU", nodeClass.Spec.Region).Set(quotaInfo.VCPUUtilization)
+	} else {
+		// Log the error but don't fail the instance creation
+		logger.Info("Failed to get quota information", "error", err, "region", nodeClass.Spec.Region)
+	}
+
 	return node, nil
+}
+
+func (p *VPCInstanceProvider) getQuotaInfo(ctx context.Context, region string) (*QuotaInfo, error) {
+	// Create authenticator
+	authenticator := &core.IamAuthenticator{
+		ApiKey: os.Getenv("IBMCLOUD_API_KEY"),
+	}
+
+	// Create Resource Manager service with authenticator in options
+	resourceManagerServiceOptions := &resourcemanagerv2.ResourceManagerV2Options{
+		Authenticator: authenticator,
+	}
+
+	resourceManagerService, err := resourcemanagerv2.NewResourceManagerV2(resourceManagerServiceOptions)
+	if err != nil {
+		metrics.ErrorsByType.WithLabelValues("service_init", "quota_provider", region).Inc()
+		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
+	}
+
+	// List quota definitions
+	listQuotaDefinitionsOptions := resourceManagerService.NewListQuotaDefinitionsOptions()
+	quotaDefinitionList, _, err := resourceManagerService.ListQuotaDefinitions(listQuotaDefinitionsOptions)
+	if err != nil {
+		if isTimeoutError(err) {
+			metrics.TimeoutErrors.WithLabelValues("ListQuotaDefinitions", region).Inc()
+			metrics.ErrorsByType.WithLabelValues("timeout", "quota_provider", region).Inc()
+		} else if isAuthError(err) {
+			metrics.ErrorsByType.WithLabelValues("authentication", "quota_provider", region).Inc()
+		} else {
+			metrics.ErrorsByType.WithLabelValues("api_error", "quota_provider", region).Inc()
+		}
+		return nil, fmt.Errorf("failed to list quota definitions: %w", err)
+	}
+
+	// Get current VPC usage
+	currentInstances, currentVCPUs, err := p.getCurrentVPCUsage(ctx)
+	if err != nil {
+		metrics.ErrorsByType.WithLabelValues("vpc_usage", "quota_provider", region).Inc()
+		return nil, fmt.Errorf("failed to get current VPC usage: %w", err)
+	}
+
+	quotaInfo := &QuotaInfo{
+		InstanceUtilization: 0.0,
+		VCPUUtilization:     0.0,
+	}
+
+	// Process quota definitions
+	if quotaDefinitionList.Resources != nil {
+		for _, quota := range quotaDefinitionList.Resources {
+			if quota.Name == nil {
+				continue
+			}
+
+			switch *quota.Name {
+			case "vpc-instances", "instances":
+				maxInstances := 100.0
+				quotaInfo.InstanceUtilization = float64(currentInstances) / maxInstances
+			case "vpc-vcpu", "vcpu":
+				maxVCPUs := 500.0
+				quotaInfo.VCPUUtilization = float64(currentVCPUs) / maxVCPUs
+			}
+		}
+	}
+
+	return quotaInfo, nil
+}
+
+func (p *VPCInstanceProvider) getCurrentVPCUsage(ctx context.Context) (int, int, error) {
+	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	instances, err := vpcClient.ListInstances(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	instanceCount := len(instances)
+	vcpuCount := 0
+
+	for _, instance := range instances {
+		if instance.Vcpu != nil && instance.Vcpu.Count != nil {
+			vcpuCount += int(*instance.Vcpu.Count)
+		}
+	}
+
+	return instanceCount, vcpuCount, nil
 }
 
 // Delete removes a VPC instance
@@ -552,17 +833,56 @@ func (p *VPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) err
 
 	logger.Info("Deleting VPC instance", "instance_id", instanceID, "node", node.Name)
 
-	err = vpcClient.DeleteInstance(ctx, instanceID)
-	if err != nil {
-		// Check if this is a "not found" error, which is acceptable
-		if isIBMInstanceNotFoundError(err) {
-			logger.Info("VPC instance already deleted", "instance_id", instanceID)
-			return nil
+	// Extract instance type from node labels for metrics
+	instanceType := "unknown"
+	region := "unknown"
+	if node.Labels != nil {
+		if r, exists := node.Labels["topology.kubernetes.io/region"]; exists {
+			region = r
 		}
+		if it, exists := node.Labels["node.kubernetes.io/instance-type"]; exists {
+			instanceType = it
+		}
+	}
+
+	// First attempt to delete the instance
+	err = vpcClient.DeleteInstance(ctx, instanceID)
+	if err != nil && !isIBMInstanceNotFoundError(err) {
+		// Track specific error types
+		if isTimeoutError(err) {
+			metrics.TimeoutErrors.WithLabelValues("DeleteInstance", region).Inc()
+			metrics.ErrorsByType.WithLabelValues("timeout", "instance_provider", region).Inc()
+		} else if isAuthError(err) {
+			metrics.ErrorsByType.WithLabelValues("authentication", "instance_provider", region).Inc()
+		} else {
+			metrics.ErrorsByType.WithLabelValues("api_error", "instance_provider", region).Inc()
+		}
+
+		metrics.ApiRequests.WithLabelValues("DeleteInstance", "500", region).Inc()
 		return vpcclient.HandleVPCError(err, logger, "deleting VPC instance", "instance_id", instanceID)
 	}
 
-	logger.Info("VPC instance deleted successfully", "instance_id", instanceID)
+	// Check if the instance actually exists to confirm deletion status
+	// This is critical for proper Karpenter finalizer management
+	_, getErr := vpcClient.GetInstance(ctx, instanceID)
+	if isIBMInstanceNotFoundError(getErr) {
+		logger.Info("VPC instance confirmed deleted", "instance_id", instanceID)
+		metrics.ApiRequests.WithLabelValues("DeleteInstance", "200", region).Inc()
+		metrics.InstanceLifecycle.WithLabelValues("terminated", instanceType).Set(0)
+		return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", instanceID))
+	}
+	if getErr != nil {
+		// If we can't determine instance status due to API error, assume deletion in progress
+		logger.Info("Unable to verify instance status, assuming deletion in progress", "instance_id", instanceID, "error", getErr)
+		metrics.ApiRequests.WithLabelValues("DeleteInstance", "200", region).Inc()
+		metrics.InstanceLifecycle.WithLabelValues("terminated", instanceType).Set(0)
+		return nil
+	}
+
+	// Instance still exists, deletion was triggered but is in progress
+	logger.Info("VPC instance deletion triggered, still in progress", "instance_id", instanceID)
+	metrics.ApiRequests.WithLabelValues("DeleteInstance", "200", region).Inc()
+	metrics.InstanceLifecycle.WithLabelValues("terminated", instanceType).Set(0)
 	return nil
 }
 
@@ -1094,4 +1414,37 @@ func isHexString(s string) bool {
 		}
 	}
 	return true
+}
+
+// Helper functions to classify errors
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "context deadline exceeded") ||
+		strings.Contains(errStr, "i/o timeout")
+}
+
+func isQuotaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "quota") ||
+		strings.Contains(errStr, "limit exceeded") ||
+		strings.Contains(errStr, "insufficient capacity")
+}
+
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "unauthorized") ||
+		strings.Contains(errStr, "forbidden") ||
+		strings.Contains(errStr, "authentication failed") ||
+		strings.Contains(errStr, "401") ||
+		strings.Contains(errStr, "403")
 }

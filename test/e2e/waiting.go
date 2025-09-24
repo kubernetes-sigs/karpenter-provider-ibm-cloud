@@ -248,3 +248,41 @@ func (s *E2ETestSuite) waitForPodsGone(t *testing.T, deploymentName string) {
 	})
 	require.NoError(t, err, "All pods should be terminated")
 }
+
+// waitForPodToBeRunning waits for a single pod to be in running state
+func (s *E2ETestSuite) waitForPodToBeRunning(t *testing.T, podName, namespace string) {
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
+		var pod corev1.Pod
+		err := s.kubeClient.Get(ctx, types.NamespacedName{Name: podName, Namespace: namespace}, &pod)
+		if err != nil {
+			t.Logf("Error getting pod %s: %v", podName, err)
+			return false, nil
+		}
+
+		// Check if pod is running
+		if pod.Status.Phase == corev1.PodRunning {
+			// Also check that all containers are ready
+			allReady := true
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodReady {
+					if condition.Status != corev1.ConditionTrue {
+						allReady = false
+					}
+					break
+				}
+			}
+			if allReady {
+				t.Logf("✅ Pod %s is running and ready", podName)
+				return true, nil
+			}
+			t.Logf("⏳ Pod %s is running but not ready yet", podName)
+			return false, nil
+		}
+
+		t.Logf("⏳ Pod %s is in phase %s, waiting for Running...", podName, pod.Status.Phase)
+		return false, nil
+	})
+	require.NoError(t, err, "Pod should be running within timeout")
+}

@@ -998,12 +998,12 @@ func TestIBMCloudResourceValidation(t *testing.T) {
 	subnetID := os.Getenv("SUBNET_ID_US_SOUTH_1")
 	if subnetID != "" {
 		t.Run("validate real subnet", func(t *testing.T) {
-			err := controller.validateSubnet(ctx, subnetID, vpcID)
+			err := controller.validateSubnet(ctx, subnetID, vpcID, "us-south")
 			assert.NoError(t, err, "Real subnet should validate successfully")
 		})
 
 		t.Run("validate nonexistent subnet", func(t *testing.T) {
-			err := controller.validateSubnet(ctx, "0717-nonexistent-subnet-12345678", vpcID)
+			err := controller.validateSubnet(ctx, "0717-nonexistent-subnet-12345678", vpcID, "us-south")
 			assert.Error(t, err, "Nonexistent subnet should fail validation")
 		})
 	}
@@ -1868,6 +1868,21 @@ func TestValidateSubnet(t *testing.T) {
 			wantErr:     true,
 			errContains: "has insufficient available IPs",
 		},
+		{
+			name:     "subnet in different region",
+			subnetID: "subnet-wrong-region",
+			vpcID:    "vpc-12345",
+			setupMock: func() {
+				mockSubnet.On("GetSubnet", ctx, "subnet-wrong-region").Return(&subnet.SubnetInfo{
+					ID:           "subnet-wrong-region",
+					State:        "available",
+					AvailableIPs: 50,
+					Zone:         "eu-de-1", // Different region than expected us-south
+				}, nil)
+			},
+			wantErr:     true,
+			errContains: "Cross-region subnet references are not supported",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1878,7 +1893,7 @@ func TestValidateSubnet(t *testing.T) {
 				tt.setupMock()
 			}
 
-			err := controller.validateSubnet(ctx, tt.subnetID, tt.vpcID)
+			err := controller.validateSubnet(ctx, tt.subnetID, tt.vpcID, "us-south")
 
 			if tt.wantErr {
 				assert.Error(t, err)

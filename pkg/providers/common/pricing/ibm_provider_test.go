@@ -48,6 +48,20 @@ func TestNewIBMPricingProvider(t *testing.T) {
 	assert.NotNil(t, provider.pricingMap)
 }
 
+func TestIBMPricingProvider_Refresh(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("refresh with nil client", func(t *testing.T) {
+		// Test with nil client - this is a valid test case
+		provider := NewIBMPricingProvider(nil)
+
+		// Refresh will fail with nil client, which is expected
+		err := provider.Refresh(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "IBM client not available for pricing API calls")
+	})
+}
+
 func TestRefreshWithoutClient(t *testing.T) {
 	provider := NewIBMPricingProvider(nil)
 	ctx := context.Background()

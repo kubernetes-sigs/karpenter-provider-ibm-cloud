@@ -302,11 +302,56 @@ type VolumeSpec struct {
 	Tags []string `json:"tags,omitempty"`
 }
 
-// +kubebuilder:validation:XValidation:rule="self.subnet == \"\" || self.subnet.matches('^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')", message="subnet must be a valid IBM Cloud subnet ID format"
-// +kubebuilder:validation:XValidation:rule="self.image.matches('^[a-z0-9-]+$')", message="image must contain only lowercase letters, numbers, and hyphens"
+// ImageSelector defines semantic image selection criteria for automated latest image resolution.
+// When used, the system will automatically select the most recent image matching the specified criteria.
+// This eliminates the need to track specific image IDs and ensures nodes use up-to-date images.
+type ImageSelector struct {
+	// OS specifies the operating system for the image.
+	// Common values include: "ubuntu", "rhel", "centos", "rocky", "fedora", "debian", "suse"
+	// Examples: "ubuntu", "rhel", "centos"
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern="^[a-z]+$"
+	OS string `json:"os"`
+
+	// MajorVersion specifies the major version of the operating system.
+	// Examples: "20" for Ubuntu 20.x, "8" for RHEL 8.x, "22" for Ubuntu 22.x
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern="^[0-9]+$"
+	MajorVersion string `json:"majorVersion"`
+
+	// MinorVersion specifies the minor version of the operating system.
+	// If not specified, the latest available minor version will be automatically selected.
+	// Examples: "04" for Ubuntu x.04, omit for latest
+	// +optional
+	// +kubebuilder:validation:Pattern="^[0-9]+$"
+	MinorVersion string `json:"minorVersion,omitempty"`
+
+	// Architecture specifies the CPU architecture for the image.
+	// Must match the architecture requirements of your workload.
+	// Examples: "amd64", "arm64", "s390x"
+	// +optional
+	// +kubebuilder:validation:Enum=amd64;arm64;s390x
+	// +kubebuilder:default="amd64"
+	Architecture string `json:"architecture,omitempty"`
+
+	// Variant specifies the image variant or flavor.
+	// Common variants include: "minimal", "server", "cloud", "base"
+	// If not specified, any variant will be considered, with preference for "minimal".
+	// Examples: "minimal", "server"
+	// +optional
+	// +kubebuilder:validation:Pattern="^[a-z]+$"
+	Variant string `json:"variant,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="!has(self.subnet) || self.subnet == \"\" || self.subnet.matches('^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')", message="subnet must be a valid IBM Cloud subnet ID format"
+// +kubebuilder:validation:XValidation:rule="!has(self.image) || self.image.matches('^[a-z0-9-]+$')", message="image must contain only lowercase letters, numbers, and hyphens"
+// +kubebuilder:validation:XValidation:rule="has(self.image) || has(self.imageSelector)", message="either image or imageSelector must be specified"
+// +kubebuilder:validation:XValidation:rule="!(has(self.image) && has(self.imageSelector))", message="image and imageSelector are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!(has(self.instanceProfile) && has(self.instanceRequirements))", message="instanceProfile and instanceRequirements are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!has(self.bootstrapMode) || self.bootstrapMode != 'iks-api' || has(self.iksClusterID)", message="iksClusterID is required when bootstrapMode is 'iks-api'"
-// +kubebuilder:validation:XValidation:rule="self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1]) || self.zone == \"\"", message="zone must be within the specified region"
+// +kubebuilder:validation:XValidation:rule="!has(self.zone) || self.zone == \"\" || self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1])", message="zone must be within the specified region"
 // +kubebuilder:validation:XValidation:rule="self.vpc.matches('^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')", message="vpc must be a valid IBM Cloud VPC ID format"
 type IBMNodeClassSpec struct {
 	// Region is the IBM Cloud region where nodes will be created.
@@ -344,9 +389,17 @@ type IBMNodeClassSpec struct {
 	// Must contain only lowercase letters, numbers, and hyphens.
 	// Can be either an image ID or a standard image name.
 	// Examples: "ubuntu-24-04-amd64", "rhel-8-amd64", "centos-8-amd64"
-	// +required
+	// Mutually exclusive with ImageSelector. If both are specified, Image takes precedence.
+	// +optional
 	// +kubebuilder:validation:MinLength=1
-	Image string `json:"image"`
+	Image string `json:"image,omitempty"`
+
+	// ImageSelector provides semantic image selection based on OS, version, and architecture.
+	// This allows for automatic selection of the latest available minor versions and provides
+	// fallback mechanisms when specific images become unavailable.
+	// Mutually exclusive with Image. If both are specified, Image takes precedence.
+	// +optional
+	ImageSelector *ImageSelector `json:"imageSelector,omitempty"`
 
 	// VPC is the ID of the IBM Cloud VPC where nodes will be created.
 	// Must be a valid IBM Cloud VPC ID following the format "r###-########-####-####-####-############".
@@ -379,8 +432,16 @@ type IBMNodeClassSpec struct {
 	SecurityGroups []string `json:"securityGroups"`
 
 	// UserData contains user data script to run on instance initialization
+	// When specified, this completely overrides the default bootstrap script
+	// Use UserDataAppend if you want to add custom commands without replacing the bootstrap process
 	// +optional
 	UserData string `json:"userData,omitempty"`
+
+	// UserDataAppend contains additional user data script to append to the default bootstrap script
+	// Unlike UserData, this field adds your custom commands after the standard bootstrap process
+	// This is useful for running additional configuration without disrupting node bootstrapping
+	// +optional
+	UserDataAppend string `json:"userDataAppend,omitempty"`
 
 	// SSHKeys is a list of SSH key IDs to add to the instance.
 	// Must be valid IBM Cloud SSH key IDs in the format "r###-########-####-####-####-############".

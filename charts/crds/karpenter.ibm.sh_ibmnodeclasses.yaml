@@ -171,8 +171,61 @@ spec:
                   Must contain only lowercase letters, numbers, and hyphens.
                   Can be either an image ID or a standard image name.
                   Examples: "ubuntu-24-04-amd64", "rhel-8-amd64", "centos-8-amd64"
+                  Mutually exclusive with ImageSelector. If both are specified, Image takes precedence.
                 minLength: 1
                 type: string
+              imageSelector:
+                description: |-
+                  ImageSelector provides semantic image selection based on OS, version, and architecture.
+                  This allows for automatic selection of the latest available minor versions and provides
+                  fallback mechanisms when specific images become unavailable.
+                  Mutually exclusive with Image. If both are specified, Image takes precedence.
+                properties:
+                  architecture:
+                    default: amd64
+                    description: |-
+                      Architecture specifies the CPU architecture for the image.
+                      Must match the architecture requirements of your workload.
+                      Examples: "amd64", "arm64", "s390x"
+                    enum:
+                    - amd64
+                    - arm64
+                    - s390x
+                    type: string
+                  majorVersion:
+                    description: |-
+                      MajorVersion specifies the major version of the operating system.
+                      Examples: "20" for Ubuntu 20.x, "8" for RHEL 8.x, "22" for Ubuntu 22.x
+                    minLength: 1
+                    pattern: ^[0-9]+$
+                    type: string
+                  minorVersion:
+                    description: |-
+                      MinorVersion specifies the minor version of the operating system.
+                      If not specified, the latest available minor version will be automatically selected.
+                      Examples: "04" for Ubuntu x.04, omit for latest
+                    pattern: ^[0-9]+$
+                    type: string
+                  os:
+                    description: |-
+                      OS specifies the operating system for the image.
+                      Common values include: "ubuntu", "rhel", "centos", "rocky", "fedora", "debian", "suse"
+                      Examples: "ubuntu", "rhel", "centos"
+                    minLength: 1
+                    pattern: ^[a-z]+$
+                    type: string
+                  variant:
+                    description: |-
+                      Variant specifies the image variant or flavor.
+                      Common variants include: "minimal", "server", "cloud", "base"
+                      If not specified, any variant will be considered, with preference for "minimal".
+                      Examples: "minimal", "server"
+                    pattern: ^[a-z]+$
+                    type: string
+                required:
+                - majorVersion
+                - os
+                type: object
               instanceProfile:
                 description: |-
                   InstanceProfile is the name of the instance profile to use for nodes.
@@ -445,8 +498,16 @@ spec:
                 description: Tags to apply to the instances
                 type: object
               userData:
-                description: UserData contains user data script to run on instance
-                  initialization
+                description: |-
+                  UserData contains user data script to run on instance initialization
+                  When specified, this completely overrides the default bootstrap script
+                  Use UserDataAppend if you want to add custom commands without replacing the bootstrap process
+                type: string
+              userDataAppend:
+                description: |-
+                  UserDataAppend contains additional user data script to append to the default bootstrap script
+                  Unlike UserData, this field adds your custom commands after the standard bootstrap process
+                  This is useful for running additional configuration without disrupting node bootstrapping
                 type: string
               vpc:
                 description: |-
@@ -464,24 +525,27 @@ spec:
                 pattern: ^[a-z]{2}-[a-z]+-[0-9]+$
                 type: string
             required:
-            - image
             - region
             - securityGroups
             - vpc
             type: object
             x-kubernetes-validations:
             - message: subnet must be a valid IBM Cloud subnet ID format
-              rule: self.subnet == "" || self.subnet.matches('^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')
+              rule: '!has(self.subnet) || self.subnet == "" || self.subnet.matches(''^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$'')'
             - message: image must contain only lowercase letters, numbers, and hyphens
-              rule: self.image.matches('^[a-z0-9-]+$')
+              rule: '!has(self.image) || self.image.matches(''^[a-z0-9-]+$'')'
+            - message: either image or imageSelector must be specified
+              rule: has(self.image) || has(self.imageSelector)
+            - message: image and imageSelector are mutually exclusive
+              rule: '!(has(self.image) && has(self.imageSelector))'
             - message: instanceProfile and instanceRequirements are mutually exclusive
               rule: '!(has(self.instanceProfile) && has(self.instanceRequirements))'
             - message: iksClusterID is required when bootstrapMode is 'iks-api'
               rule: '!has(self.bootstrapMode) || self.bootstrapMode != ''iks-api''
                 || has(self.iksClusterID)'
             - message: zone must be within the specified region
-              rule: self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1])
-                || self.zone == ""
+              rule: '!has(self.zone) || self.zone == "" || self.region.startsWith(self.zone.split(''-'')[0]
+                + ''-'' + self.zone.split(''-'')[1])'
             - message: vpc must be a valid IBM Cloud VPC ID format
               rule: self.vpc.matches('^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')
           status:

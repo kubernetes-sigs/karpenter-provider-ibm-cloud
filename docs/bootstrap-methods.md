@@ -226,7 +226,7 @@ All bootstrap modes support environment variable customization:
 
 ```bash
 # Bootstrap behavior
-export KARPENTER_LOG_LEVEL=debug         # Enhanced logging
+export LOG_LEVEL=debug                   # Enhanced logging
 export BOOTSTRAP_TIMEOUT=600             # Bootstrap timeout in seconds
 
 # Container runtime preferences

@@ -349,28 +349,50 @@ func (cb *CircuitBreaker) getRecentFailuresSummary() string {
 	cutoff := time.Now().Add(-cb.config.FailureWindow)
 	var recentErrors []string
 
-	// Group similar errors and show the most recent ones
-	errorCounts := make(map[string]int)
-	errorExamples := make(map[string]string)
+	// Group similar errors and show the most recent ones with actual details
+	errorGroups := make(map[string][]FailureRecord)
 
 	for _, failure := range cb.failures {
 		if failure.Timestamp.After(cutoff) {
 			// Create a simplified error key for grouping
 			errorKey := cb.simplifyError(failure.Error)
-			errorCounts[errorKey]++
-			// Keep the most recent example
-			if errorExamples[errorKey] == "" || failure.Timestamp.After(cb.getTimestampFromExample(errorExamples[errorKey])) {
-				errorExamples[errorKey] = fmt.Sprintf("%s (%s)", errorKey, failure.Timestamp.Format("15:04:05"))
-			}
+			errorGroups[errorKey] = append(errorGroups[errorKey], failure)
 		}
 	}
 
-	// Build summary with counts
-	for errorKey, count := range errorCounts {
-		if count == 1 {
-			recentErrors = append(recentErrors, errorExamples[errorKey])
+	// Build summary with counts and actual error details
+	for errorKey, failures := range errorGroups {
+		count := len(failures)
+		// Get the most recent failure for this group
+		mostRecent := failures[0]
+		for _, f := range failures[1:] {
+			if f.Timestamp.After(mostRecent.Timestamp) {
+				mostRecent = f
+			}
+		}
+
+		// Extract the actual error details from the most recent failure
+		// Look for the part after "creating VPC instance failed:" to get the root cause
+		actualError := mostRecent.Error
+		if idx := strings.Index(actualError, "creating VPC instance failed:"); idx >= 0 {
+			// Extract just the error details after the prefix
+			details := strings.TrimSpace(actualError[idx+len("creating VPC instance failed:"):])
+			// Limit length but keep the important details
+			if len(details) > 150 {
+				details = details[:147] + "..."
+			}
+			if count == 1 {
+				recentErrors = append(recentErrors, fmt.Sprintf("%s: %s", errorKey, details))
+			} else {
+				recentErrors = append(recentErrors, fmt.Sprintf("%s (x%d): %s", errorKey, count, details))
+			}
 		} else {
-			recentErrors = append(recentErrors, fmt.Sprintf("%s (x%d)", errorKey, count))
+			// For non-VPC errors, include more of the actual error message
+			if count == 1 {
+				recentErrors = append(recentErrors, errorKey)
+			} else {
+				recentErrors = append(recentErrors, fmt.Sprintf("%s (x%d)", errorKey, count))
+			}
 		}
 	}
 

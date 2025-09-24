@@ -459,13 +459,13 @@ cgroupDriver: systemd
 registerWithTaints:
 {{ range .Taints }}
 - key: {{ .Key }}
-  value: {{ .Value }}
+  value: "{{ .Value }}"
   effect: {{ .Effect }}
 {{ end }}
 {{ if eq .CNIPlugin "cilium" }}
 - key: node.cilium.io/agent-not-ready
   value: "true"
-  effect: NoExecute
+  effect: PreferNoSchedule
 {{ end }}
 nodeLabels:
 {{ range $key, $value := .Labels }}

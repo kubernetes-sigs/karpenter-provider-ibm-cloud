@@ -38,12 +38,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ end }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: KARPENTER_LOG_LEVEL
+            - name: LOG_LEVEL
               value: {{ .Values.logLevel | default "debug" | quote }}
-            - name: KARPENTER_VERBOSE_LOG_LEVEL
-              value: {{ .Values.verboseLogLevel | default "5" | quote }}
-            - name: KARPENTER_DEBUG
-              value: {{ .Values.debug | default "true" | quote }}
             - name: IBMCLOUD_API_KEY
               valueFrom:
                 secretKeyRef:

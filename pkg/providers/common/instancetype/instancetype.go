@@ -477,11 +477,29 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context) ([]*cloudprov
 		// Success - process the results
 		var types []*cloudprovider.InstanceType
 		for _, profile := range result.Profiles {
+			// Log each profile for debugging
+			profileName := "<nil>"
+			if profile.Name != nil {
+				profileName = *profile.Name
+			}
+
 			instanceType, err := p.convertVPCProfileToInstanceType(ctx, profile)
 			if err != nil {
-				logger.Error(err, "Failed to convert VPC profile", "profile", *profile.Name)
+				logger.Error(err, "Failed to convert VPC profile",
+					"profile_name", profileName,
+					"profile_details", fmt.Sprintf("%+v", profile))
 				continue
 			}
+
+			// Validate the converted instance type has a valid name
+			if instanceType.Name == "" {
+				logger.Error(fmt.Errorf("converted instance type has empty name"),
+					"Converted instance type validation failed",
+					"original_profile_name", profileName,
+					"converted_name", instanceType.Name)
+				continue
+			}
+
 			types = append(types, instanceType)
 		}
 
@@ -611,10 +629,23 @@ func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region 
 	return zones, nil
 }
 
+// GetRegion returns the region this provider is configured for
+func (p *IBMInstanceTypeProvider) GetRegion() string {
+	if p.client != nil {
+		return p.client.GetRegion()
+	}
+	return "unknown"
+}
+
 // convertVPCProfileToInstanceType converts VPC instance profile to Karpenter instance type
 func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Context, profile vpcv1.InstanceProfile) (*cloudprovider.InstanceType, error) {
 	if profile.Name == nil {
 		return nil, fmt.Errorf("instance profile name is nil")
+	}
+
+	// Additional validation to ensure name is not empty
+	if *profile.Name == "" {
+		return nil, fmt.Errorf("instance profile has empty name")
 	}
 
 	var cpuCount int64

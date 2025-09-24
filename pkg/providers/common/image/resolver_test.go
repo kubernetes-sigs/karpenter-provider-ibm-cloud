@@ -25,6 +25,7 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
@@ -631,4 +632,200 @@ func TestEdgeCases(t *testing.T) {
 func createStrfmtDateTime(t time.Time) *strfmt.DateTime {
 	dt := strfmt.DateTime(t)
 	return &dt
+}
+
+// Test ResolveImageBySelector functionality
+func TestResolver_ResolveImageBySelector(t *testing.T) {
+	t.Run("successful image selection by selector", func(t *testing.T) {
+		now := time.Now()
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-ubuntu-20-04-1"),
+							Name:      stringPtr("ibm-ubuntu-20-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now.Add(-time.Hour)),
+							Status:    stringPtr("available"),
+						},
+						{
+							ID:        stringPtr("r006-ubuntu-20-04-2"),
+							Name:      stringPtr("ibm-ubuntu-20-04-minimal-amd64-2"),
+							CreatedAt: createStrfmtDateTime(now), // Most recent
+							Status:    stringPtr("available"),
+						},
+						{
+							ID:        stringPtr("r006-ubuntu-22-04-1"),
+							Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now.Add(-2 * time.Hour)),
+							Status:    stringPtr("available"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
+
+		resolver := NewResolver(mockVPCClient, "us-south")
+
+		selector := &v1alpha1.ImageSelector{
+			OS:           "ubuntu",
+			MajorVersion: "20",
+			MinorVersion: "04",
+			Architecture: "amd64",
+			Variant:      "minimal",
+		}
+
+		result, err := resolver.ResolveImageBySelector(context.Background(), selector)
+		assert.NoError(t, err)
+		assert.Equal(t, "r006-ubuntu-20-04-2", result) // Should select the most recent one
+	})
+
+	t.Run("image selection with latest minor version", func(t *testing.T) {
+		now := time.Now()
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-ubuntu-20-04-1"),
+							Name:      stringPtr("ibm-ubuntu-20-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now.Add(-time.Hour)),
+							Status:    stringPtr("available"),
+						},
+						{
+							ID:        stringPtr("r006-ubuntu-20-10-1"),
+							Name:      stringPtr("ibm-ubuntu-20-10-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now), // Most recent and higher minor version
+							Status:    stringPtr("available"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
+
+		resolver := NewResolver(mockVPCClient, "us-south")
+
+		selector := &v1alpha1.ImageSelector{
+			OS:           "ubuntu",
+			MajorVersion: "20",
+			// MinorVersion not specified - should pick latest
+			Architecture: "amd64",
+			Variant:      "minimal",
+		}
+
+		result, err := resolver.ResolveImageBySelector(context.Background(), selector)
+		assert.NoError(t, err)
+		assert.Equal(t, "r006-ubuntu-20-10-1", result) // Should select the latest minor version
+	})
+
+	t.Run("no matching images", func(t *testing.T) {
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-centos-8-1"),
+							Name:      stringPtr("ibm-centos-8-01-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(time.Now()),
+							Status:    stringPtr("available"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
+
+		resolver := NewResolver(mockVPCClient, "us-south")
+
+		selector := &v1alpha1.ImageSelector{
+			OS:           "ubuntu",
+			MajorVersion: "20",
+			MinorVersion: "04",
+			Architecture: "amd64",
+			Variant:      "minimal",
+		}
+
+		_, err := resolver.ResolveImageBySelector(context.Background(), selector)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no images found matching selector")
+	})
+
+	t.Run("nil selector", func(t *testing.T) {
+		mockVPCClient := &ibm.VPCClient{}
+		resolver := NewResolver(mockVPCClient, "us-south")
+
+		_, err := resolver.ResolveImageBySelector(context.Background(), nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "image selector cannot be nil")
+	})
+}
+
+// Test parseImageName functionality
+func TestResolver_parseImageName(t *testing.T) {
+	resolver := &Resolver{}
+
+	testCases := []struct {
+		name        string
+		imageName   string
+		expected    map[string]string
+		shouldBeNil bool
+	}{
+		{
+			name:      "full IBM format",
+			imageName: "ibm-ubuntu-22-04-minimal-amd64-1",
+			expected: map[string]string{
+				"os":           "ubuntu",
+				"majorVersion": "22",
+				"minorVersion": "04",
+				"variant":      "minimal",
+				"architecture": "amd64",
+				"build":        "1",
+			},
+		},
+		{
+			name:      "alternative IBM format",
+			imageName: "ibm-rhel-8-6-amd64-2",
+			expected: map[string]string{
+				"os":           "rhel",
+				"majorVersion": "8",
+				"minorVersion": "6",
+				"variant":      "minimal",
+				"architecture": "amd64",
+				"build":        "2",
+			},
+		},
+		{
+			name:      "simple format",
+			imageName: "ubuntu-20-04",
+			expected: map[string]string{
+				"os":           "ubuntu",
+				"majorVersion": "20",
+				"minorVersion": "04",
+				"variant":      "minimal",
+				"architecture": "amd64",
+				"build":        "1",
+			},
+		},
+		{
+			name:        "unparseable format",
+			imageName:   "invalid-image-name",
+			shouldBeNil: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := resolver.parseImageName(tc.imageName)
+			if tc.shouldBeNil {
+				assert.Nil(t, result)
+			} else {
+				assert.Equal(t, tc.expected, result)
+			}
+		})
+	}
 }

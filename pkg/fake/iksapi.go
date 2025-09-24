@@ -256,6 +256,24 @@ func (f *IKSAPI) PatchWorkerPool(ctx context.Context, clusterID, workerPoolID st
 
 // ResizeWorkerPool resizes a worker pool (v2 API)
 func (f *IKSAPI) ResizeWorkerPool(ctx context.Context, clusterID, workerPoolID string, size int, reason string) error {
+	f.mu.Lock()
+
+	if err := f.NextError.Get(); err != nil {
+		f.mu.Unlock()
+		return err
+	}
+
+	// Track the call
+	f.ResizeWorkerPoolBehavior.CalledWithInput.Add(ResizeWorkerPoolInput{
+		ClusterID:    clusterID,
+		WorkerPoolID: workerPoolID,
+		Size:         size,
+		Reason:       reason,
+	})
+
+	f.mu.Unlock() // Release lock before calling PatchWorkerPool
+
+	// Default behavior: delegate to PatchWorkerPool
 	return f.PatchWorkerPool(ctx, clusterID, workerPoolID, WorkerPoolPatchRequest{
 		State:           "resizing",
 		SizePerZone:     size,
@@ -265,6 +283,21 @@ func (f *IKSAPI) ResizeWorkerPool(ctx context.Context, clusterID, workerPoolID s
 
 // RebalanceWorkerPool rebalances a worker pool
 func (f *IKSAPI) RebalanceWorkerPool(ctx context.Context, clusterID, workerPoolID string) error {
+	f.mu.Lock()
+
+	if err := f.NextError.Get(); err != nil {
+		f.mu.Unlock()
+		return err
+	}
+
+	// Track the call
+	f.RebalanceWorkerPoolBehavior.CalledWithInput.Add(RebalanceWorkerPoolInput{
+		ClusterID:    clusterID,
+		WorkerPoolID: workerPoolID,
+	})
+
+	f.mu.Unlock() // Release lock before calling PatchWorkerPool
+
 	return f.PatchWorkerPool(ctx, clusterID, workerPoolID, WorkerPoolPatchRequest{
 		State: "rebalancing",
 	})

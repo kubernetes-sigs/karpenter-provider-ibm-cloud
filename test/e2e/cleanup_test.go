@@ -37,7 +37,7 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	ctx := context.Background()
 
 	// Create NodeClass
-	nodeClass := suite.createTestNodeClass(t, testName+"-nodeclass")
+	nodeClass := suite.createTestNodeClass(t, testName)
 	t.Logf("Created NodeClass: %s", nodeClass.Name)
 
 	// Wait for NodeClass to be ready
@@ -45,11 +45,11 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	t.Logf("NodeClass is ready: %s", nodeClass.Name)
 
 	// Create NodePool with 2 replicas for better testing
-	nodePool := suite.createTestNodePool(t, testName+"-nodepool", nodeClass.Name)
+	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
 	t.Logf("Created NodePool: %s", nodePool.Name)
 
 	// Create test workload to trigger provisioning
-	deployment := suite.createTestWorkload(t, testName+"-workload")
+	deployment := suite.createTestWorkload(t, testName)
 	// Modify the deployment to have 2 replicas
 	deployment.Spec.Replicas = &[]int32{2}[0]
 	err := suite.kubeClient.Update(ctx, deployment)
@@ -105,7 +105,7 @@ func TestE2ECleanupNodeClassDeletion(t *testing.T) {
 	ctx := context.Background()
 
 	// Create NodeClass
-	nodeClass := suite.createTestNodeClass(t, testName+"-nodeclass")
+	nodeClass := suite.createTestNodeClass(t, testName)
 	t.Logf("Created NodeClass: %s", nodeClass.Name)
 
 	// Wait for NodeClass to be ready
@@ -113,11 +113,11 @@ func TestE2ECleanupNodeClassDeletion(t *testing.T) {
 	t.Logf("NodeClass is ready: %s", nodeClass.Name)
 
 	// Create NodePool that references this NodeClass
-	nodePool := suite.createTestNodePool(t, testName+"-nodepool", nodeClass.Name)
+	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
 	t.Logf("Created NodePool: %s", nodePool.Name)
 
 	// Create test workload to trigger provisioning
-	deployment := suite.createTestWorkload(t, testName+"-workload")
+	deployment := suite.createTestWorkload(t, testName)
 	t.Logf("Created test workload: %s", deployment.Name)
 
 	// Wait for pods to be scheduled and nodes to be provisioned
@@ -178,12 +178,12 @@ func TestE2ECleanupOrphanedResources(t *testing.T) {
 	ctx := context.Background()
 
 	// Create NodeClass and NodePool
-	nodeClass := suite.createTestNodeClass(t, testName+"-nodeclass")
+	nodeClass := suite.createTestNodeClass(t, testName)
 	suite.waitForNodeClassReady(t, nodeClass.Name)
-	nodePool := suite.createTestNodePool(t, testName+"-nodepool", nodeClass.Name)
+	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
 
 	// Create test workload to trigger provisioning
-	deployment := suite.createTestWorkload(t, testName+"-workload")
+	deployment := suite.createTestWorkload(t, testName)
 	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
 
 	// Get the provisioned NodeClaim
@@ -250,12 +250,12 @@ func TestE2ECleanupIBMCloudResources(t *testing.T) {
 	t.Logf("Initial IBM Cloud instances: %d", initialInstanceCount)
 
 	// Create NodeClass and NodePool
-	nodeClass := suite.createTestNodeClass(t, testName+"-nodeclass")
+	nodeClass := suite.createTestNodeClass(t, testName)
 	suite.waitForNodeClassReady(t, nodeClass.Name)
-	nodePool := suite.createTestNodePool(t, testName+"-nodepool", nodeClass.Name)
+	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
 
 	// Create test workload to trigger provisioning
-	deployment := suite.createTestWorkload(t, testName+"-workload")
+	deployment := suite.createTestWorkload(t, testName)
 	// Modify the deployment to have 2 replicas
 	deployment.Spec.Replicas = &[]int32{2}[0]
 	err = suite.kubeClient.Update(ctx, deployment)

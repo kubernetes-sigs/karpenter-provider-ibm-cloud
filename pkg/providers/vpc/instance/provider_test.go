@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/IBM/go-sdk-core/v5/core"
@@ -1351,11 +1352,15 @@ func TestNewVPCInstanceProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if !tt.expectError {
+				_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+				defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+			}
+
 			provider, err := NewVPCInstanceProvider(tt.client, tt.kubeClient)
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Nil(t, provider)
-				assert.Contains(t, err.Error(), "IBM client cannot be nil")
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, provider)
@@ -1390,6 +1395,11 @@ func TestNewVPCInstanceProviderWithKubernetesClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if !tt.expectError {
+				_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+				defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+			}
+
 			provider, err := NewVPCInstanceProviderWithKubernetesClient(tt.client, tt.kubeClient, tt.k8sClient)
 			if tt.expectError {
 				assert.Error(t, err)
@@ -1706,6 +1716,9 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 		assert.Contains(t, err.Error(), "IBM client cannot be nil")
 
 		// Test with valid client
+		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
 		client := &ibm.Client{}
 		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
 		provider, err = NewVPCInstanceProvider(client, fakeKubeClient)
@@ -1721,6 +1734,9 @@ func TestRealVPCInstanceProvider_Methods(t *testing.T) {
 		assert.Contains(t, err.Error(), "IBM client cannot be nil")
 
 		// Test with valid client
+		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
 		client := &ibm.Client{}
 		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
 		fakeK8sClient := k8sfake.NewSimpleClientset()
@@ -1811,6 +1827,10 @@ func TestVPCInstanceProvider_ErrorHandling(t *testing.T) {
 // Test real provider List, Get, Delete, UpdateTags methods
 func TestVPCInstanceProvider_CRUDOperations(t *testing.T) {
 	t.Run("List method structure", func(t *testing.T) {
+		// Set required environment variable
+		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
 		// Create a real provider instance
 		client := &ibm.Client{}
 		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()

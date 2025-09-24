@@ -163,6 +163,8 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	}
 
 	var nodeClaims []*karpv1.NodeClaim
+	var providerErrors []error
+
 	for _, node := range nodeList.Items {
 		if node.Spec.ProviderID == "" {
 			continue
@@ -184,7 +186,9 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 
 		instanceProvider, err := c.providerFactory.GetInstanceProvider(nodeClass)
 		if err != nil {
-			continue // Skip if we can't get provider
+			log.Error(err, "Failed to get instance provider", "node", node.Name, "providerID", node.Spec.ProviderID)
+			providerErrors = append(providerErrors, fmt.Errorf("node %s: %w", node.Name, err))
+			continue
 		}
 
 		_, err = instanceProvider.Get(ctx, node.Spec.ProviderID)
@@ -204,6 +208,22 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 			},
 		}
 		nodeClaims = append(nodeClaims, nc)
+	}
+
+	// Report any provider errors that occurred during listing
+	if len(providerErrors) > 0 {
+		log.Info("Some nodes were excluded from list due to provider errors",
+			"excludedNodeCount", len(providerErrors),
+			"totalNodes", len(nodeList.Items),
+			"includedNodes", len(nodeClaims))
+		// Log first few errors for debugging context
+		for i, err := range providerErrors {
+			if i >= 3 { // Only log first 3 to avoid spam
+				log.Info("Additional provider errors omitted for brevity", "remainingErrors", len(providerErrors)-3)
+				break
+			}
+			log.V(1).Info("Provider error detail", "error", err.Error())
+		}
 	}
 
 	return nodeClaims, nil
@@ -500,8 +520,16 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 		return nil, err
 	}
 
-	log.Info("Successfully retrieved instance types", "count", len(instanceTypes))
-	return instanceTypes, nil
+	// Filter instance types based on NodePool requirements
+	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodePool.Spec.Template.Spec.Requirements...)
+	compatible := lo.Filter(instanceTypes, func(it *cloudprovider.InstanceType, _ int) bool {
+		return reqs.Compatible(it.Requirements, scheduling.AllowUndefinedWellKnownLabels) == nil
+	})
+
+	log.Info("Successfully retrieved and filtered instance types",
+		"total", len(instanceTypes),
+		"compatible", len(compatible))
+	return compatible, nil
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {

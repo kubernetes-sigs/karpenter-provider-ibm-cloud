@@ -24,8 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"os"
-
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,10 +62,11 @@ func TestE2EStartupTaints(t *testing.T) {
 			VPC:               suite.testVPC,
 			Subnet:            suite.testSubnet,
 			Image:             suite.testImage,
-			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
-			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			APIServerEndpoint: suite.APIServerEndpoint,
 			BootstrapMode:     lo.ToPtr("cloud-init"),
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),
+			ResourceGroup:     suite.testResourceGroup,
+			SSHKeys:           []string{suite.testSshKeyId},
 		},
 	}
 
@@ -282,10 +281,11 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 			VPC:               suite.testVPC,
 			Subnet:            suite.testSubnet,
 			Image:             suite.testImage,
-			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
-			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			APIServerEndpoint: suite.APIServerEndpoint,
 			BootstrapMode:     lo.ToPtr("cloud-init"),
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),
+			ResourceGroup:     suite.testResourceGroup,
+			SSHKeys:           []string{suite.testSshKeyId},
 		},
 	}
 
@@ -365,7 +365,7 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 					Containers: []corev1.Container{
 						{
 							Name:  "taint-remover",
-							Image: "busybox:1.35",
+							Image: "quay.io/isovalent/busybox:1.37.0",
 							Command: []string{
 								"/bin/sh",
 								"-c",
@@ -480,10 +480,11 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 			VPC:               suite.testVPC,
 			Subnet:            suite.testSubnet,
 			Image:             suite.testImage,
-			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
-			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			APIServerEndpoint: suite.APIServerEndpoint,
 			BootstrapMode:     lo.ToPtr("cloud-init"),
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),
+			ResourceGroup:     suite.testResourceGroup,
+			SSHKeys:           []string{suite.testSshKeyId},
 		},
 	}
 
@@ -645,10 +646,11 @@ func TestE2ETaintValues(t *testing.T) {
 			VPC:               suite.testVPC,
 			Subnet:            suite.testSubnet,
 			Image:             suite.testImage,
-			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
-			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			APIServerEndpoint: suite.APIServerEndpoint,
 			BootstrapMode:     lo.ToPtr("cloud-init"),
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),
+			ResourceGroup:     suite.testResourceGroup,
+			SSHKeys:           []string{suite.testSshKeyId},
 		},
 	}
 
@@ -810,10 +812,11 @@ func TestE2ETaintSync(t *testing.T) {
 			VPC:               suite.testVPC,
 			Subnet:            suite.testSubnet,
 			Image:             suite.testImage,
-			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
-			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			APIServerEndpoint: suite.APIServerEndpoint,
 			BootstrapMode:     lo.ToPtr("cloud-init"),
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),
+			ResourceGroup:     suite.testResourceGroup,
+			SSHKeys:           []string{suite.testSshKeyId},
 		},
 	}
 
@@ -980,10 +983,11 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 			VPC:               suite.testVPC,
 			Subnet:            suite.testSubnet,
 			Image:             suite.testImage,
-			SecurityGroups:    []string{os.Getenv("TEST_SECURITY_GROUP_ID")},
-			APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			APIServerEndpoint: suite.APIServerEndpoint,
 			BootstrapMode:     lo.ToPtr("cloud-init"),
-			ResourceGroup:     os.Getenv("IBM_RESOURCE_GROUP_ID"),
+			ResourceGroup:     suite.testResourceGroup,
+			SSHKeys:           []string{suite.testSshKeyId},
 		},
 	}
 
@@ -1107,7 +1111,7 @@ func createResourceIntensiveWorkload(name, testLabel string, tolerations []corev
 					Containers: []corev1.Container{
 						{
 							Name:  "resource-intensive-container",
-							Image: "busybox:1.35",
+							Image: "quay.io/isovalent/busybox:1.37.0",
 							Command: []string{
 								"/bin/sh",
 								"-c",

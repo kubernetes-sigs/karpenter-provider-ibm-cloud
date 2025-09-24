@@ -17,11 +17,14 @@ package image
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
@@ -168,6 +171,174 @@ func (r *Resolver) ListAvailableImages(ctx context.Context, nameFilter string) (
 	})
 
 	return result, nil
+}
+
+// ResolveImageBySelector resolves an image using semantic selection criteria
+// Returns the most recent image that matches all specified criteria
+func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha1.ImageSelector) (string, error) {
+	if selector == nil {
+		return "", fmt.Errorf("image selector cannot be nil")
+	}
+
+	// List all available images
+	images, err := r.ListAvailableImages(ctx, "")
+	if err != nil {
+		return "", fmt.Errorf("listing images: %w", err)
+	}
+
+	// Filter images by selector criteria
+	candidates := r.filterImagesBySelector(images, selector)
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no images found matching selector: os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s",
+			selector.OS, selector.MajorVersion, selector.MinorVersion, selector.Architecture, selector.Variant)
+	}
+
+	// Sort by semantic version and creation date (newest first)
+	sortedCandidates := r.sortImagesByVersion(candidates, selector)
+
+	// Return the most recent matching image
+	return sortedCandidates[0].ID, nil
+}
+
+// filterImagesBySelector filters images based on selector criteria
+func (r *Resolver) filterImagesBySelector(images []ImageInfo, selector *v1alpha1.ImageSelector) []ImageInfo {
+	var candidates []ImageInfo
+
+	for _, img := range images {
+		if r.imageMatchesSelector(img, selector) {
+			candidates = append(candidates, img)
+		}
+	}
+
+	return candidates
+}
+
+// imageMatchesSelector checks if an image matches the selector criteria
+func (r *Resolver) imageMatchesSelector(img ImageInfo, selector *v1alpha1.ImageSelector) bool {
+	// Parse image name to extract components
+	// Expected format: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
+	// Example: "ibm-ubuntu-22-04-minimal-amd64-1"
+	components := r.parseImageName(img.Name)
+	if components == nil {
+		return false
+	}
+
+	// Check OS match
+	if components["os"] != selector.OS {
+		return false
+	}
+
+	// Check major version match
+	if components["majorVersion"] != selector.MajorVersion {
+		return false
+	}
+
+	// Check minor version match (if specified)
+	if selector.MinorVersion != "" {
+		if components["minorVersion"] != selector.MinorVersion {
+			return false
+		}
+	}
+
+	// Check architecture match (default to amd64 if not specified)
+	architecture := selector.Architecture
+	if architecture == "" {
+		architecture = "amd64"
+	}
+	if components["architecture"] != architecture {
+		return false
+	}
+
+	// Check variant match (if specified)
+	if selector.Variant != "" {
+		if components["variant"] != selector.Variant {
+			return false
+		}
+	}
+
+	return true
+}
+
+// parseImageName extracts components from IBM Cloud image names
+// Expected format: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
+// Alternative format: {os}-{major}-{minor} (for older images)
+func (r *Resolver) parseImageName(imageName string) map[string]string {
+	components := make(map[string]string)
+
+	// Try IBM format first: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
+	ibmPattern := regexp.MustCompile(`^ibm-([a-z]+)-([0-9]+)-([0-9]+)-([a-z]+)-([a-z0-9]+)-([0-9]+)$`)
+	matches := ibmPattern.FindStringSubmatch(imageName)
+	if len(matches) == 7 {
+		components["os"] = matches[1]
+		components["majorVersion"] = matches[2]
+		components["minorVersion"] = matches[3]
+		components["variant"] = matches[4]
+		components["architecture"] = matches[5]
+		components["build"] = matches[6]
+		return components
+	}
+
+	// Try alternative IBM format: ibm-{os}-{major}-{minor}-{arch}-{build}
+	ibmAltPattern := regexp.MustCompile(`^ibm-([a-z]+)-([0-9]+)-([0-9]+)-([a-z0-9]+)-([0-9]+)$`)
+	matches = ibmAltPattern.FindStringSubmatch(imageName)
+	if len(matches) == 6 {
+		components["os"] = matches[1]
+		components["majorVersion"] = matches[2]
+		components["minorVersion"] = matches[3]
+		components["variant"] = "minimal" // Default variant
+		components["architecture"] = matches[4]
+		components["build"] = matches[5]
+		return components
+	}
+
+	// Try simple format: {os}-{major}-{minor}
+	simplePattern := regexp.MustCompile(`^([a-z]+)-([0-9]+)-([0-9]+)$`)
+	matches = simplePattern.FindStringSubmatch(imageName)
+	if len(matches) == 4 {
+		components["os"] = matches[1]
+		components["majorVersion"] = matches[2]
+		components["minorVersion"] = matches[3]
+		components["variant"] = "minimal"    // Default variant
+		components["architecture"] = "amd64" // Default architecture
+		components["build"] = "1"            // Default build
+		return components
+	}
+
+	return nil // Unable to parse
+}
+
+// sortImagesByVersion sorts images by semantic version and creation date
+func (r *Resolver) sortImagesByVersion(images []ImageInfo, selector *v1alpha1.ImageSelector) []ImageInfo {
+	sort.Slice(images, func(i, j int) bool {
+		img1Components := r.parseImageName(images[i].Name)
+		img2Components := r.parseImageName(images[j].Name)
+
+		if img1Components == nil || img2Components == nil {
+			// Fall back to creation date if parsing fails
+			return images[i].CreatedAt.After(images[j].CreatedAt)
+		}
+
+		// If minor version not specified in selector, prefer higher minor versions
+		if selector.MinorVersion == "" {
+			minor1, _ := strconv.Atoi(img1Components["minorVersion"])
+			minor2, _ := strconv.Atoi(img2Components["minorVersion"])
+			if minor1 != minor2 {
+				return minor1 > minor2
+			}
+		}
+
+		// Prefer higher build numbers
+		build1, _ := strconv.Atoi(img1Components["build"])
+		build2, _ := strconv.Atoi(img2Components["build"])
+		if build1 != build2 {
+			return build1 > build2
+		}
+
+		// Finally, sort by creation date (newer first)
+		return images[i].CreatedAt.After(images[j].CreatedAt)
+	})
+
+	return images
 }
 
 // ImageInfo contains information about an image

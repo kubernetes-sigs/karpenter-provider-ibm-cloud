@@ -199,8 +199,9 @@ func (c *Controller) validateRequiredFields(nc *v1alpha1.IBMNodeClass) error {
 	if strings.TrimSpace(nc.Spec.Region) == "" {
 		missingFields = append(missingFields, "region")
 	}
-	if strings.TrimSpace(nc.Spec.Image) == "" {
-		missingFields = append(missingFields, "image")
+	// Either image or imageSelector must be specified (but not both - validated elsewhere)
+	if strings.TrimSpace(nc.Spec.Image) == "" && nc.Spec.ImageSelector == nil {
+		missingFields = append(missingFields, "image or imageSelector")
 	}
 	if strings.TrimSpace(nc.Spec.VPC) == "" {
 		missingFields = append(missingFields, "vpc")
@@ -305,7 +306,7 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 
 	// Validate subnet if specified
 	if nc.Spec.Subnet != "" {
-		if err := c.validateSubnet(ctx, nc.Spec.Subnet, nc.Spec.VPC); err != nil {
+		if err := c.validateSubnet(ctx, nc.Spec.Subnet, nc.Spec.VPC, nc.Spec.Region); err != nil {
 			return fmt.Errorf("subnet validation failed: %w", err)
 		}
 	} else {
@@ -315,8 +316,8 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 		}
 	}
 
-	// Validate image exists and is accessible
-	if err := c.validateImage(ctx, nc.Spec.Image, nc.Spec.Region); err != nil {
+	// Validate image configuration - either explicit image or imageSelector
+	if err := c.validateImageConfiguration(ctx, nc); err != nil {
 		return fmt.Errorf("image validation failed: %w", err)
 	}
 
@@ -538,18 +539,25 @@ func (c *Controller) validateVPC(ctx context.Context, vpcID, resourceGroupID str
 }
 
 // validateSubnet checks if the subnet exists and is in the correct VPC
-func (c *Controller) validateSubnet(ctx context.Context, subnetID, vpcID string) error {
+func (c *Controller) validateSubnet(ctx context.Context, subnetID, vpcID, expectedRegion string) error {
 	subnetInfo, err := c.subnetProvider.GetSubnet(ctx, subnetID)
 	if err != nil {
 		return fmt.Errorf("subnet %s not found or not accessible: %w", subnetID, err)
 	}
 
-	// Additional validation can be added here
-	// For example, checking if subnet has available IPs, correct state, etc.
+	// Extract region from subnet zone (e.g., "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de")
+	subnetRegion := extractRegionFromZone(subnetInfo.Zone)
+	if subnetRegion != expectedRegion {
+		return fmt.Errorf("subnet %s is in region %s but NodeClass expects region %s (subnet zone: %s). Cross-region subnet references are not supported",
+			subnetID, subnetRegion, expectedRegion, subnetInfo.Zone)
+	}
+
+	// Validate subnet state
 	if subnetInfo.State != "available" {
 		return fmt.Errorf("subnet %s is not in available state: %s", subnetID, subnetInfo.State)
 	}
 
+	// Validate sufficient available IPs
 	if subnetInfo.AvailableIPs < 10 {
 		return fmt.Errorf("subnet %s has insufficient available IPs (%d)", subnetID, subnetInfo.AvailableIPs)
 	}
@@ -624,7 +632,45 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 	return nil
 }
 
-// validateImage checks if the image exists and is accessible
+// validateImageConfiguration validates image configuration (either explicit image or imageSelector)
+func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha1.IBMNodeClass) error {
+	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	imageResolver := image.NewResolver(vpcClient, nc.Spec.Region)
+
+	// Validate explicit image if specified
+	if nc.Spec.Image != "" {
+		_, err = imageResolver.ResolveImage(ctx, nc.Spec.Image)
+		if err != nil {
+			return fmt.Errorf("image %s not found or not accessible in region %s: %w", nc.Spec.Image, nc.Spec.Region, err)
+		}
+		return nil
+	}
+
+	// Validate imageSelector if specified
+	if nc.Spec.ImageSelector != nil {
+		_, err = imageResolver.ResolveImageBySelector(ctx, nc.Spec.ImageSelector)
+		if err != nil {
+			return fmt.Errorf("no images found matching selector (os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s) in region %s: %w",
+				nc.Spec.ImageSelector.OS,
+				nc.Spec.ImageSelector.MajorVersion,
+				nc.Spec.ImageSelector.MinorVersion,
+				nc.Spec.ImageSelector.Architecture,
+				nc.Spec.ImageSelector.Variant,
+				nc.Spec.Region,
+				err)
+		}
+		return nil
+	}
+
+	// This should not happen due to CRD validation, but handle gracefully
+	return fmt.Errorf("either image or imageSelector must be specified")
+}
+
+// validateImage checks if the image exists and is accessible (legacy method)
 func (c *Controller) validateImage(ctx context.Context, imageIdentifier, region string) error {
 	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
@@ -785,6 +831,24 @@ func (c *Controller) validatePlacementStrategy(strategy *v1alpha1.PlacementStrat
 // patchNodeClassStatus patches the nodeclass status using optimistic locking
 func (c *Controller) patchNodeClassStatus(ctx context.Context, nc *v1alpha1.IBMNodeClass, stored *v1alpha1.IBMNodeClass) error {
 	return c.kubeClient.Status().Patch(ctx, nc, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
+}
+
+// extractRegionFromZone extracts the region from an IBM Cloud zone name
+// Examples: "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de", "us-south-3" -> "us-south"
+func extractRegionFromZone(zone string) string {
+	if zone == "" {
+		return ""
+	}
+
+	// IBM Cloud zone format is typically "{region}-{zone-number}"
+	// Find the last hyphen and take everything before it
+	lastHyphen := strings.LastIndex(zone, "-")
+	if lastHyphen == -1 {
+		// If no hyphen found, return the zone as-is (shouldn't happen in normal cases)
+		return zone
+	}
+
+	return zone[:lastHyphen]
 }
 
 // Register registers the controller with the manager

@@ -100,8 +100,9 @@ func TestE2ENodePoolInstanceTypeSelection(t *testing.T) {
 		suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
 		t.Logf("Pods scheduled successfully")
 
-		// Verify that instances use one of the allowed types
-		allowedTypes := []string{"bx2-4x16", "mx2-2x16", "mx2d-2x16", "mx3d-2x20"}
+		// Verify that instances use one of the allowed types - use same dynamic types as NodePool
+		allowedTypes := suite.GetMultipleInstanceTypes(t, 4)
+		t.Logf("Verifying instances use allowed types: %v", allowedTypes)
 		suite.verifyInstancesUseAllowedTypes(t, allowedTypes)
 		t.Logf("Verified instances use allowed instance types")
 

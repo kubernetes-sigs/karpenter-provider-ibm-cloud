@@ -15,6 +15,9 @@ go.work.sum
 # Project Specific
 *.csv
 site/
+run-e2e-debug.sh
+*-e2e-results.log
+e2e-test-output.log
 
 # Binaries for programs and plugins
 *.exe

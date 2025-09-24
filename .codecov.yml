@@ -1,0 +1,38 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+
+  ignore:
+    - "vendor/"
+    - "**/*_test.go"
+    - "test/"
+    - "**/*.pb.go"
+    - "**/*.generated.go"
+    - "**/*_generated.go"
+    - "charts/"
+    - "docs/"
+    - "scripts/"
+    - "*.md"
+    - "aws-provider-reference/"
+    - "karpenter/"
+    - "cmd/controller/main.go"  # Main functions typically have 0% coverage
+    - "main.go"  # Root main file if it exists
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
+
+codecov:
+  require_ci_to_pass: yes
+  notify:
+    wait_for_ci: yes

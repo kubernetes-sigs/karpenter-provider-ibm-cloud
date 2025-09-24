@@ -36,13 +36,27 @@ import (
 )
 
 // MockIBMClient implements the IBM client interface for testing
-type MockIBMClient struct{}
+type MockIBMClient struct {
+	vpcClientError   error
+	vpcClient        *ibm.VPCClient
+	globalCatError   error
+	instanceProfiles []vpcv1.InstanceProfile
+}
 
 func (m *MockIBMClient) GetVPCClient() (*ibm.VPCClient, error) {
-	return nil, nil
+	if m.vpcClientError != nil {
+		return nil, m.vpcClientError
+	}
+	if m.vpcClient != nil {
+		return m.vpcClient, nil
+	}
+	return &ibm.VPCClient{}, nil
 }
 
 func (m *MockIBMClient) GetGlobalCatalogClient() (*ibm.GlobalCatalogClient, error) {
+	if m.globalCatError != nil {
+		return nil, m.globalCatError
+	}
 	return nil, nil
 }
 

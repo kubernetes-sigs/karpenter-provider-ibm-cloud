@@ -8,15 +8,13 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/pfeifferj/karpenter-provider-ibm-cloud/controller
-  tag: v0.3.67
+  tag: v0.3.69
   pullPolicy: IfNotPresent
   # digest: "sha256:98e1441aa5d15f6e23e58a466c2526942e853d49281eefffa64e22361f7a19ad"
   # Overrides the image tag whose default is the chart appVersion.
 
 # Logging configuration
-logLevel: "debug"           # Options: debug, info, warn, error
-verboseLogLevel: "5"        # Verbosity level (1-5)
-debug: "true"               # Enable debug mode
+logLevel: "debug"           # Options: debug, info, error
 controllerVerbosity: "4"    # Controller manager verbosity (0-5)
 controllerLogLevel: "debug" # Controller manager log level
 

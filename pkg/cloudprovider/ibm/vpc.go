@@ -21,6 +21,8 @@ import (
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/logging"
 )
 
 // vpcClientInterface defines the interface for the VPC client
@@ -257,31 +259,37 @@ func (c *VPCClient) GetVPCWithResourceGroup(ctx context.Context, vpcID string, r
 		effectiveResourceGroupID = c.resourceGroupID
 	}
 
+	logger := logging.VPCLogger()
+
 	// Debug logging for VPC validation troubleshooting
 	if effectiveResourceGroupID != "" {
 		if options.Headers == nil {
 			options.Headers = make(map[string]string)
 		}
 		options.Headers["X-Auth-Resource-Group"] = effectiveResourceGroupID
-		fmt.Printf("[VPC-DEBUG] GetVPCWithResourceGroup - VPC ID: %s, Resource Group: %s, Header Set: %v\n",
-			vpcID, effectiveResourceGroupID, options.Headers["X-Auth-Resource-Group"])
+		logger.Debug("GetVPCWithResourceGroup request with resource group",
+			"vpcID", vpcID,
+			"resourceGroupID", effectiveResourceGroupID,
+			"headerSet", options.Headers["X-Auth-Resource-Group"])
 	} else {
-		fmt.Printf("[VPC-DEBUG] GetVPCWithResourceGroup - VPC ID: %s, No Resource Group provided\n", vpcID)
+		logger.Debug("GetVPCWithResourceGroup request without resource group", "vpcID", vpcID)
 	}
 
 	vpc, response, err := c.client.GetVPCWithContext(ctx, options)
 
 	// Log response details for debugging
 	if response != nil {
-		fmt.Printf("[VPC-DEBUG] API Response - Status: %d, Headers: %v\n", response.StatusCode, response.Headers)
+		logger.Debug("GetVPC API response",
+			"statusCode", response.StatusCode,
+			"headers", response.Headers)
 	}
 
 	if err != nil {
-		fmt.Printf("[VPC-DEBUG] GetVPCWithResourceGroup failed - Error: %v\n", err)
+		logger.Debug("GetVPCWithResourceGroup failed", "error", err)
 		return nil, fmt.Errorf("getting VPC: %w", err)
 	}
 
-	fmt.Printf("[VPC-DEBUG] GetVPCWithResourceGroup success - VPC Name: %s\n", *vpc.Name)
+	logger.Debug("GetVPCWithResourceGroup success", "vpcName", *vpc.Name)
 	return vpc, nil
 }
 

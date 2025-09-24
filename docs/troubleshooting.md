@@ -255,7 +255,7 @@ spec:
       containers:
       - name: controller
         env:
-        - name: KARPENTER_LOG_LEVEL
+        - name: LOG_LEVEL
           value: debug
 ```
 

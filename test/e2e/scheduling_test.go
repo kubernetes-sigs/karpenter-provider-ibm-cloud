@@ -79,7 +79,7 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 					Containers: []corev1.Container{
 						{
 							Name:  "test-container",
-							Image: "nginx:1.21",
+							Image: "quay.io/nginx/nginx-unprivileged:1.29.1-alpine",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("1000m"),
@@ -287,7 +287,7 @@ func TestE2EPodAntiAffinity(t *testing.T) {
 					Containers: []corev1.Container{
 						{
 							Name:  "test-container",
-							Image: "nginx:1.21",
+							Image: "quay.io/nginx/nginx-unprivileged:1.29.1-alpine",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -413,7 +413,7 @@ func TestE2ENodeAffinity(t *testing.T) {
 					Containers: []corev1.Container{
 						{
 							Name:  "test-container",
-							Image: "nginx:1.21",
+							Image: "quay.io/nginx/nginx-unprivileged:1.29.1-alpine",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("500m"),

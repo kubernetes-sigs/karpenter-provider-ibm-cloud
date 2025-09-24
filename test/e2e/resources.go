@@ -166,9 +166,54 @@ func (s *E2ETestSuite) createTestNodePool(t *testing.T, testName, nodeClassName 
 	return nodePool
 }
 
-// createTestNodePoolWithMultipleInstanceTypes creates a NodePool with customer's exact config
+// createTestNodePoolObject creates a NodePool object without persisting it to the cluster
+// This allows for modifications before creation to avoid update conflicts
+func (s *E2ETestSuite) createTestNodePoolObject(t *testing.T, testName, nodeClassName string) *karpv1.NodePool {
+	expireAfter := karpv1.MustParseNillableDuration("5m")
+	instanceTypes := s.GetMultipleInstanceTypes(t, 3)
+
+	nodePool := &karpv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-nodepool", testName),
+			Labels: map[string]string{
+				"test":      "e2e",
+				"test-name": testName,
+			},
+		},
+		Spec: karpv1.NodePoolSpec{
+			Template: karpv1.NodeClaimTemplate{
+				Spec: karpv1.NodeClaimTemplateSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: "karpenter.ibm.sh",
+						Kind:  "IBMNodeClass",
+						Name:  nodeClassName,
+					},
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      "node.kubernetes.io/instance-type",
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   instanceTypes,
+							},
+						},
+					},
+					ExpireAfter: expireAfter,
+				},
+			},
+		},
+	}
+
+	// Return the object without creating it in the cluster
+	return nodePool
+}
+
+// createTestNodePoolWithMultipleInstanceTypes creates a NodePool with known-good instance types
 func (s *E2ETestSuite) createTestNodePoolWithMultipleInstanceTypes(t *testing.T, testName string, nodeClassName string) *karpv1.NodePool {
 	expireAfter := karpv1.MustParseNillableDuration("5m")
+	// Use dynamically detected instance types instead of hardcoded ones
+	instanceTypes := s.GetMultipleInstanceTypes(t, 4)
+	t.Logf("Using multiple instance types: %v", instanceTypes)
+
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-nodepool", testName),
@@ -198,7 +243,7 @@ func (s *E2ETestSuite) createTestNodePoolWithMultipleInstanceTypes(t *testing.T,
 							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 								Key:      corev1.LabelInstanceTypeStable,
 								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"bx2-4x16", "mx2-2x16", "mx2d-2x16", "mx3d-2x20"},
+								Values:   instanceTypes,
 							},
 						},
 						{
@@ -360,7 +405,7 @@ func (s *E2ETestSuite) createTestWorkload(t *testing.T, testName string) *appsv1
 					Containers: []corev1.Container{
 						{
 							Name:  "test-container",
-							Image: "nginx:1.21",
+							Image: "quay.io/nginx/nginx-unprivileged:1.29.1-alpine",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("1000m"),
@@ -441,7 +486,7 @@ func (s *E2ETestSuite) createTestWorkloadWithInstanceTypeRequirements(t *testing
 					Containers: []corev1.Container{
 						{
 							Name:  "test-container",
-							Image: "nginx:1.21",
+							Image: "quay.io/nginx/nginx-unprivileged:1.29.1-alpine",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("1500m"),

@@ -411,7 +411,7 @@ func TestE2EBlockDeviceMappingValidation(t *testing.T) {
 		"test-name": testName,
 	}
 
-	// Test invalid block device mapping (invalid device name)
+	// Test invalid block device mapping (no root volume marked - should trigger webhook validation error)
 	invalidNodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("%s-invalid", testName),
@@ -431,22 +431,24 @@ func TestE2EBlockDeviceMappingValidation(t *testing.T) {
 			BootstrapMode:     stringPtr("cloud-init"),
 			BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
 				{
-					DeviceName: stringPtr("invalid-device"), // Invalid device name
+					DeviceName: stringPtr("/dev/vda"), // Valid device name
+					RootVolume: false,                 // ❌ Invalid: No root volume marked in mappings
 					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity: int64Ptr(50),
-						Profile:  stringPtr("general-purpose"),
+						Capacity:            int64Ptr(50),
+						Profile:             stringPtr("general-purpose"),
+						DeleteOnTermination: &[]bool{true}[0], // Required field
 					},
 				},
 			},
 		},
 	}
 
-	t.Logf("Testing NodeClass with invalid block device mapping")
+	t.Logf("Testing NodeClass with invalid block device mapping (no root volume marked)")
 	err := suite.kubeClient.Create(ctx, invalidNodeClass)
 
 	if err != nil {
-		// Validation should fail at creation time
-		t.Logf("✅ NodeClass creation failed as expected due to invalid block device mapping: %v", err)
+		// Validation should fail at creation time with our webhook validation
+		t.Logf("✅ NodeClass creation failed as expected due to missing root volume in block device mappings: %v", err)
 	} else {
 		// If creation succeeded, validation should fail during reconciliation
 		t.Logf("NodeClass created, waiting for validation to fail...")
@@ -470,13 +472,87 @@ func TestE2EBlockDeviceMappingValidation(t *testing.T) {
 		}
 
 		if !hasValidationError {
-			t.Errorf("Expected NodeClass validation to fail for invalid block device mapping")
+			t.Errorf("Expected NodeClass validation to fail due to missing root volume in block device mappings")
 		}
 
 		// Clean up
 		err = suite.kubeClient.Delete(ctx, invalidNodeClass)
 		if err != nil {
 			t.Logf("Warning: Failed to delete invalid NodeClass: %v", err)
+		}
+	}
+
+	// Test another invalid configuration: multiple root volumes
+	multipleRootNodeClass := &v1alpha1.IBMNodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("%s-multiple-root", testName),
+			Labels: testLabels,
+		},
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Region:            suite.testRegion,
+			Zone:              suite.testZone,
+			VPC:               suite.testVPC,
+			Image:             suite.testImage,
+			Subnet:            suite.testSubnet,
+			SecurityGroups:    []string{suite.testSecurityGroup},
+			SSHKeys:           []string{suite.testSshKeyId},
+			ResourceGroup:     suite.testResourceGroup,
+			APIServerEndpoint: suite.APIServerEndpoint,
+			InstanceProfile:   "bx2-2x8",
+			BootstrapMode:     stringPtr("cloud-init"),
+			BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
+				{
+					DeviceName: stringPtr("/dev/vda"),
+					RootVolume: true, // First root volume
+					VolumeSpec: &v1alpha1.VolumeSpec{
+						Capacity:            int64Ptr(50),
+						Profile:             stringPtr("general-purpose"),
+						DeleteOnTermination: &[]bool{true}[0],
+					},
+				},
+				{
+					DeviceName: stringPtr("/dev/vdb"),
+					RootVolume: true, // ❌ Invalid: Second root volume
+					VolumeSpec: &v1alpha1.VolumeSpec{
+						Capacity:            int64Ptr(100),
+						Profile:             stringPtr("general-purpose"),
+						DeleteOnTermination: &[]bool{true}[0],
+					},
+				},
+			},
+		},
+	}
+
+	t.Logf("Testing NodeClass with multiple root volumes (should fail)")
+	err = suite.kubeClient.Create(ctx, multipleRootNodeClass)
+
+	if err != nil {
+		t.Logf("✅ NodeClass creation failed as expected due to multiple root volumes: %v", err)
+	} else {
+		t.Logf("NodeClass created, waiting for validation to fail...")
+		time.Sleep(30 * time.Second)
+
+		var updatedNodeClass v1alpha1.IBMNodeClass
+		err = suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(multipleRootNodeClass), &updatedNodeClass)
+		require.NoError(t, err)
+
+		hasValidationError := false
+		for _, condition := range updatedNodeClass.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "False" {
+				hasValidationError = true
+				t.Logf("✅ NodeClass validation failed as expected: %s", condition.Message)
+				break
+			}
+		}
+
+		if !hasValidationError {
+			t.Errorf("Expected NodeClass validation to fail due to multiple root volumes")
+		}
+
+		// Clean up
+		err = suite.kubeClient.Delete(ctx, multipleRootNodeClass)
+		if err != nil {
+			t.Logf("Warning: Failed to delete multiple root NodeClass: %v", err)
 		}
 	}
 
