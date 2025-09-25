@@ -97,6 +97,10 @@ spec:
               value: {{ .Values.controller.metrics.port | quote }}
             - name: HEALTH_PROBE_PORT
               value: {{ .Values.controller.healthProbe.port | quote }}
+            {{- if .Values.controller.orphanCleanup.enabled }}
+            - name: KARPENTER_ENABLE_ORPHAN_CLEANUP
+              value: "true"
+            {{- end }}
             {{- if .Values.customResources.enabled }}
             {{- include "karpenter.cr.environmentConfig" . | nindent 12 }}
             {{- include "karpenter.cr.bootstrapConfig" . | nindent 12 }}

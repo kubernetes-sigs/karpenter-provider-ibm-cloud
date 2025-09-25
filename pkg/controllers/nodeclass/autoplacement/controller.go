@@ -163,6 +163,84 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		SelectedInstanceTypes.WithLabelValues(nodeClass.Name).Set(float64(len(nodeClass.Status.SelectedInstanceTypes)))
 	}
 
+	// Handle automatic subnet selection when using PlacementStrategy
+	if nodeClass.Spec.Subnet == "" && nodeClass.Spec.PlacementStrategy != nil {
+		// Store original state before making changes
+		stored := nodeClass.DeepCopy()
+		start := time.Now()
+
+		c.log.Info("Starting subnet selection", "nodeclass", req.Name, "strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance)
+
+		// Select subnets based on placement strategy
+		selectedSubnets, err := c.subnets.SelectSubnets(ctx, nodeClass.Spec.VPC, nodeClass.Spec.PlacementStrategy)
+		if err != nil {
+			c.log.Error(err, "failed to select subnets", "nodeclass", req.Name)
+			SubnetSelections.WithLabelValues(nodeClass.Name, "failure").Inc()
+			c.updateCondition(nodeClass, ConditionTypeAutoPlacement, metav1.ConditionFalse, "SubnetSelectionFailed", err.Error())
+			if updateErr := c.patchNodeClassStatusWithStored(ctx, nodeClass, stored); updateErr != nil {
+				if errors.IsConflict(updateErr) {
+					return reconcile.Result{Requeue: true}, nil
+				}
+				return reconcile.Result{}, fmt.Errorf("updating nodeclass status: %w", updateErr)
+			}
+			return reconcile.Result{}, err
+		}
+
+		if len(selectedSubnets) == 0 {
+			err := fmt.Errorf("no subnets found matching placement strategy")
+			c.log.Error(err, "subnet selection failed", "nodeclass", req.Name)
+			SubnetSelections.WithLabelValues(nodeClass.Name, "failure").Inc()
+			c.updateCondition(nodeClass, ConditionTypeAutoPlacement, metav1.ConditionFalse, "SubnetSelectionFailed", err.Error())
+			if updateErr := c.patchNodeClassStatusWithStored(ctx, nodeClass, stored); updateErr != nil {
+				if errors.IsConflict(updateErr) {
+					return reconcile.Result{Requeue: true}, nil
+				}
+				return reconcile.Result{}, fmt.Errorf("updating nodeclass status: %w", updateErr)
+			}
+			return reconcile.Result{}, err
+		}
+
+		// Update status with selected subnets
+		var subnetIDs []string
+		zoneMap := make(map[string][]string) // Track zones for logging
+		for _, subnet := range selectedSubnets {
+			subnetIDs = append(subnetIDs, subnet.ID)
+			zoneMap[subnet.Zone] = append(zoneMap[subnet.Zone], subnet.ID)
+		}
+		nodeClass.Status.SelectedSubnets = subnetIDs
+
+		// Update condition to reflect successful subnet selection
+		message := fmt.Sprintf("Selected %d subnets across %d zones", len(subnetIDs), len(zoneMap))
+		c.updateCondition(nodeClass, ConditionTypeAutoPlacement, metav1.ConditionTrue, "SubnetSelectionSucceeded", message)
+
+		if err := c.patchNodeClassStatusWithStored(ctx, nodeClass, stored); err != nil {
+			if errors.IsConflict(err) {
+				return reconcile.Result{Requeue: true}, nil
+			}
+			return reconcile.Result{}, fmt.Errorf("updating nodeclass status: %w", err)
+		}
+
+		c.log.Info("Subnet selection completed",
+			"nodeclass", req.Name,
+			"strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance,
+			"selectedSubnets", nodeClass.Status.SelectedSubnets,
+			"zones", len(zoneMap))
+
+		SubnetSelections.WithLabelValues(nodeClass.Name, "success").Inc()
+		SubnetSelectionLatency.WithLabelValues(nodeClass.Name).Observe(time.Since(start).Seconds())
+		SelectedSubnets.WithLabelValues(nodeClass.Name).Set(float64(len(nodeClass.Status.SelectedSubnets)))
+	} else if nodeClass.Spec.Subnet != "" && len(nodeClass.Status.SelectedSubnets) > 0 {
+		// Clear selected subnets if explicit subnet is specified and subnets exist
+		stored := nodeClass.DeepCopy()
+		nodeClass.Status.SelectedSubnets = []string{}
+		if err := c.patchNodeClassStatusWithStored(ctx, nodeClass, stored); err != nil {
+			if errors.IsConflict(err) {
+				return reconcile.Result{Requeue: true}, nil
+			}
+			return reconcile.Result{}, fmt.Errorf("clearing selectedSubnets: %w", err)
+		}
+	}
+
 	return reconcile.Result{}, nil
 }
 

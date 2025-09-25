@@ -103,9 +103,15 @@ spec:
   # Optional: Specific instance profile (mutually exclusive with instanceRequirements)
   # instanceProfile: bx2-4x16           # Uncomment to use a specific instance type
 
-  # Optional: Placement strategy for zone/subnet selection
+  # Optional: Placement strategy for multi-zone deployment (RECOMMENDED)
+  # Enables automatic subnet selection across zones with constraints
+  # See "Multi-Zone VPC Setup with Placement Constraints" section below for full examples
   placementStrategy:
     zoneBalance: Balanced               # Balanced, AvailabilityFirst, or CostOptimized
+    subnetSelection:                    # Optional: Subnet filtering constraints
+      minimumAvailableIPs: 10           # Minimum available IPs per subnet
+      requiredTags:                     # Required subnet tags
+        Environment: "production"       # Example: Only production subnets
 
   # Optional: SSH access for troubleshooting
   # To find SSH key IDs: ibmcloud is keys --output json | jq '.[] | {name, id}'
@@ -260,9 +266,107 @@ spec:
 
 ## Advanced VPC Configurations
 
-### Multi-Zone VPC Setup
+### Multi-Zone VPC Setup with Placement Constraints
+
+Karpenter IBM Cloud Provider supports sophisticated multi-zone deployments with flexible constraints for zones and subnets. There are two approaches: **PlacementStrategy** (recommended) and **explicit zone specifications**.
+
+#### Recommended: PlacementStrategy for Automatic Multi-Zone Distribution
+
+**PlacementStrategy** provides intelligent multi-zone distribution with automatic subnet selection based on constraints:
+
 ```yaml
-# Zone 1
+apiVersion: karpenter.ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: production-multizone
+  annotations:
+    karpenter.ibm.sh/description: "Production multi-zone with intelligent placement"
+spec:
+  region: us-south
+  vpc: "r006-4225852b-4846-4a4a-88c4-9966471337c6"
+  image: "r006-dd3c20fa-71d3-4dc0-913f-2f097bf3e500"
+  securityGroups:
+    - "r006-36f045e2-86a1-4af8-917e-b17a41f8abe3"
+  apiServerEndpoint: "https://10.240.0.1:6443"
+  bootstrapMode: cloud-init
+
+  # 🎯 PLACEMENT STRATEGY: Automatic multi-zone distribution
+  placementStrategy:
+    # Zone distribution strategy
+    zoneBalance: "Balanced"           # Options: Balanced, AvailabilityFirst, CostOptimized
+
+    # Subnet selection constraints
+    subnetSelection:
+      minimumAvailableIPs: 20         # Only subnets with ≥20 available IPs
+      requiredTags:                   # Tag-based subnet filtering
+        Environment: "production"     # Must have Environment=production
+        Tier: "private"              # Must have Tier=private
+        Team: "platform"             # Must have Team=platform
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: production-nodepool
+spec:
+  template:
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter.ibm.sh/v1alpha1
+        kind: IBMNodeClass
+        name: production-multizone
+
+      # 🎯 ZONE CONSTRAINTS: Limit which zones can be used
+      requirements:
+      - key: "topology.kubernetes.io/zone"
+        operator: In
+        values: ["us-south-1", "us-south-2"]    # Only allow these 2 zones
+      - key: node.kubernetes.io/instance-type
+        operator: In
+        values: ["bx2-4x16", "bx2-8x32", "cx2-4x8"]
+      - key: karpenter.sh/capacity-type
+        operator: In
+        values: ["on-demand"]
+
+  # Result: Nodes evenly distributed across us-south-1 and us-south-2,
+  # using only production/private/platform subnets with sufficient IPs
+```
+
+#### Zone Balance Strategies
+
+**1. Balanced (Default)** - Even distribution across all allowed zones:
+```yaml
+placementStrategy:
+  zoneBalance: "Balanced"
+# Result: 33% us-south-1, 33% us-south-2, 33% us-south-3
+```
+
+**2. AvailabilityFirst** - Prioritizes zones with highest availability:
+```yaml
+placementStrategy:
+  zoneBalance: "AvailabilityFirst"
+# Result: Prefers zones with most available capacity and best health metrics
+```
+
+**3. CostOptimized** - Balances cost efficiency with availability:
+```yaml
+placementStrategy:
+  zoneBalance: "CostOptimized"
+# Result: Considers instance pricing and availability zones for optimal cost-performance
+```
+
+#### How Multi-Zone Constraints Work
+
+1. **Zone Filtering**: NodePool requirements filter available zones (e.g., limit to us-south-1, us-south-2)
+2. **Subnet Filtering**: PlacementStrategy filters subnets by tags, available IPs, and state
+3. **Zone Distribution**: PlacementStrategy distributes filtered subnets across allowed zones
+4. **Selection**: Instance provider uses round-robin across distributed subnets
+
+#### Explicit Zone Specifications
+
+For cases requiring explicit control, you can still specify zones and subnets directly:
+
+```yaml
+# Zone 1 NodeClass
 ---
 apiVersion: karpenter.ibm.sh/v1alpha1
 kind: IBMNodeClass
@@ -270,26 +374,43 @@ metadata:
   name: vpc-us-south-1
 spec:
   region: us-south
-  zone: us-south-1
-  vpc: vpc-12345678
-  subnet: subnet-zone1-12345
-  image: r006-ubuntu-20-04
-  securityGroups:
-  - sg-k8s-workers
+  zone: us-south-1                    # Explicit zone
+  vpc: "r006-vpc-id"
+  subnet: "02c7-subnet-zone1-id"     # Explicit subnet
+  image: "r006-image-id"
+  securityGroups: ["r006-sg-id"]
+  apiServerEndpoint: "https://10.240.0.1:6443"
+  bootstrapMode: cloud-init
 ---
-# Zone 2
+# Zone 2 NodeClass
 apiVersion: karpenter.ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-us-south-2
 spec:
   region: us-south
-  zone: us-south-2
-  vpc: vpc-12345678
-  subnet: subnet-zone2-12345
-  image: r006-ubuntu-20-04
-  securityGroups:
-  - sg-k8s-workers
+  zone: us-south-2                    # Explicit zone
+  vpc: "r006-vpc-id"
+  subnet: "02c7-subnet-zone2-id"     # Explicit subnet
+  image: "r006-image-id"
+  securityGroups: ["r006-sg-id"]
+  apiServerEndpoint: "https://10.240.0.1:6443"
+  bootstrapMode: cloud-init
+---
+# Separate NodePools for each zone
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: zone1-nodepool
+spec:
+  template:
+    spec:
+      nodeClassRef:
+        name: vpc-us-south-1
+      requirements:
+      - key: "topology.kubernetes.io/zone"
+        operator: In
+        values: ["us-south-1"]
 ```
 
 ### GPU Workloads

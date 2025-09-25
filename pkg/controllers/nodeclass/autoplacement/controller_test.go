@@ -122,11 +122,37 @@ func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*s
 }
 
 func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]subnet.SubnetInfo, error) {
+	// Return multiple subnets for multi-zone testing
+	if strategy != nil && strategy.ZoneBalance == "Balanced" {
+		return []subnet.SubnetInfo{
+			{
+				ID:           "subnet-zone1",
+				Zone:         "us-south-1",
+				AvailableIPs: 100,
+				State:        "available",
+			},
+			{
+				ID:           "subnet-zone2",
+				Zone:         "us-south-2",
+				AvailableIPs: 80,
+				State:        "available",
+			},
+			{
+				ID:           "subnet-zone3",
+				Zone:         "us-south-3",
+				AvailableIPs: 120,
+				State:        "available",
+			},
+		}, nil
+	}
+
+	// Default single subnet
 	return []subnet.SubnetInfo{
 		{
 			ID:           "test-subnet",
 			Zone:         "test-zone",
 			AvailableIPs: 100,
+			State:        "available",
 		},
 	}, nil
 }
@@ -277,4 +303,183 @@ func TestReconcile(t *testing.T) {
 	require.NotNil(t, autoPlacementCondition)
 	assert.Equal(t, metav1.ConditionTrue, autoPlacementCondition.Status)
 	assert.Equal(t, "InstanceTypeSelectionSucceeded", autoPlacementCondition.Reason)
+}
+
+func TestReconcileSubnetSelection(t *testing.T) {
+	// Create a scheme with IBMNodeClass registered
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+
+	tests := []struct {
+		name                    string
+		nodeClass               *v1alpha1.IBMNodeClass
+		expectedSubnets         []string
+		expectedConditionStatus metav1.ConditionStatus
+		expectedConditionReason string
+	}{
+		{
+			name: "select subnets with balanced placement strategy",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass-balanced",
+				},
+				Spec: v1alpha1.IBMNodeClassSpec{
+					VPC: "test-vpc",
+					// No Subnet specified - should trigger selection
+					PlacementStrategy: &v1alpha1.PlacementStrategy{
+						ZoneBalance: "Balanced",
+					},
+				},
+			},
+			expectedSubnets:         []string{"subnet-zone1", "subnet-zone2", "subnet-zone3"},
+			expectedConditionStatus: metav1.ConditionTrue,
+			expectedConditionReason: "SubnetSelectionSucceeded",
+		},
+		{
+			name: "skip subnet selection when explicit subnet specified",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass-explicit",
+				},
+				Spec: v1alpha1.IBMNodeClassSpec{
+					VPC:    "test-vpc",
+					Subnet: "explicit-subnet", // Explicit subnet specified
+					PlacementStrategy: &v1alpha1.PlacementStrategy{
+						ZoneBalance: "Balanced",
+					},
+				},
+			},
+			expectedSubnets:         nil, // Should be nil (uninitialized)
+			expectedConditionStatus: metav1.ConditionUnknown,
+			expectedConditionReason: "",
+		},
+		{
+			name: "no selection without placement strategy",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass-no-strategy",
+				},
+				Spec: v1alpha1.IBMNodeClassSpec{
+					VPC: "test-vpc",
+					// No Subnet and no PlacementStrategy
+				},
+			},
+			expectedSubnets:         nil,
+			expectedConditionStatus: metav1.ConditionUnknown,
+			expectedConditionReason: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create fake client with the nodeclass and status subresource
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tt.nodeClass).
+				WithStatusSubresource(&v1alpha1.IBMNodeClass{}).
+				Build()
+
+			// Create the controller
+			controller := &Controller{
+				client:        fakeClient,
+				instanceTypes: &mockInstanceTypeProvider{},
+				subnets:       &mockSubnetProvider{},
+				log:           zap.New(zap.UseDevMode(true)),
+			}
+
+			// Reconcile the nodeclass
+			result, err := controller.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name: tt.nodeClass.Name,
+				},
+			})
+
+			// Verify no error occurred
+			assert.NoError(t, err)
+			assert.Equal(t, reconcile.Result{}, result)
+
+			// Get the updated nodeclass
+			var updatedNodeClass v1alpha1.IBMNodeClass
+			err = fakeClient.Get(context.Background(), types.NamespacedName{
+				Name: tt.nodeClass.Name,
+			}, &updatedNodeClass)
+			require.NoError(t, err)
+
+			// Verify selected subnets
+			assert.Equal(t, tt.expectedSubnets, updatedNodeClass.Status.SelectedSubnets,
+				"SelectedSubnets should match expected")
+
+			// Verify condition if expected
+			if tt.expectedConditionReason != "" {
+				var autoPlacementCondition *metav1.Condition
+				for i := range updatedNodeClass.Status.Conditions {
+					if updatedNodeClass.Status.Conditions[i].Type == ConditionTypeAutoPlacement {
+						cond := updatedNodeClass.Status.Conditions[i]
+						autoPlacementCondition = &cond
+						break
+					}
+				}
+				require.NotNil(t, autoPlacementCondition, "AutoPlacement condition should exist")
+				assert.Equal(t, tt.expectedConditionStatus, autoPlacementCondition.Status)
+				assert.Equal(t, tt.expectedConditionReason, autoPlacementCondition.Reason)
+				assert.Contains(t, autoPlacementCondition.Message, "subnet")
+			}
+		})
+	}
+}
+
+func TestReconcileSubnetSelectionClearOnExplicitSubnet(t *testing.T) {
+	// Test that selectedSubnets is cleared when explicit subnet is set
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+
+	// Create a nodeclass with pre-populated selectedSubnets
+	nodeClass := &v1alpha1.IBMNodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "test-nodeclass-clear",
+			ResourceVersion: "1",
+		},
+		Spec: v1alpha1.IBMNodeClassSpec{
+			VPC:    "test-vpc",
+			Subnet: "explicit-subnet", // Explicit subnet specified
+		},
+		Status: v1alpha1.IBMNodeClassStatus{
+			SelectedSubnets: []string{"old-subnet1", "old-subnet2"}, // Pre-existing selected subnets
+			Conditions:      []metav1.Condition{},                   // Initialize conditions
+		},
+	}
+
+	// Create fake client with status subresource
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		WithStatusSubresource(&v1alpha1.IBMNodeClass{}).
+		Build()
+
+	// Create the controller
+	controller := &Controller{
+		client:        fakeClient,
+		instanceTypes: &mockInstanceTypeProvider{},
+		subnets:       &mockSubnetProvider{},
+		log:           zap.New(zap.UseDevMode(true)),
+	}
+
+	// Reconcile
+	_, err := controller.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name: nodeClass.Name,
+		},
+	})
+	require.NoError(t, err)
+
+	// Get the updated nodeclass
+	var updatedNodeClass v1alpha1.IBMNodeClass
+	err = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: nodeClass.Name,
+	}, &updatedNodeClass)
+	require.NoError(t, err)
+
+	// Verify selectedSubnets was cleared
+	assert.Empty(t, updatedNodeClass.Status.SelectedSubnets,
+		"SelectedSubnets should be cleared when explicit subnet is specified")
 }

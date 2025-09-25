@@ -35,14 +35,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
+	"github.com/IBM/go-sdk-core/v5/core"
+	"github.com/IBM/platform-services-go-sdk/globaltaggingv1"
+	"github.com/go-logr/logr"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
 type Controller struct {
 	kubeClient      client.Client
 	ibmClient       *ibm.Client
+	globalTagging   *globaltaggingv1.GlobalTaggingV1
 	orphanTimeout   time.Duration
 	successfulCount uint64
 }
@@ -57,9 +62,28 @@ const (
 )
 
 func NewController(kubeClient client.Client, ibmClient *ibm.Client) *Controller {
+	// Initialize Global Tagging client only if orphan cleanup is enabled
+	var globalTaggingClient *globaltaggingv1.GlobalTaggingV1
+	if isOrphanCleanupEnabled() {
+		if apiKey := os.Getenv("IBMCLOUD_API_KEY"); apiKey != "" {
+			authenticator := &core.IamAuthenticator{
+				ApiKey: apiKey,
+			}
+			globalTaggingOptions := &globaltaggingv1.GlobalTaggingV1Options{
+				Authenticator: authenticator,
+			}
+			if client, err := globaltaggingv1.NewGlobalTaggingV1(globalTaggingOptions); err == nil {
+				globalTaggingClient = client
+			}
+			// Note: we don't fail if Global Tagging client creation fails,
+			// orphan cleanup will be disabled if the API is not available
+		}
+	}
+
 	return &Controller{
 		kubeClient:      kubeClient,
 		ibmClient:       ibmClient,
+		globalTagging:   globalTaggingClient,
 		orphanTimeout:   getOrphanTimeoutFromEnv(),
 		successfulCount: 0,
 	}
@@ -123,12 +147,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		return false
 	})
 
-	if len(ibmNodes) == 0 {
-		logger.V(1).Info("no IBM nodes found, skipping orphan cleanup")
-		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
-	}
-
-	// Extract instance IDs from provider IDs
+	// Extract instance IDs from provider IDs of existing Karpenter nodes
 	instanceIDs := make([]string, 0, len(ibmNodes))
 	nodeByInstanceID := make(map[string]corev1.Node)
 
@@ -140,43 +159,100 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		}
 	}
 
-	if len(instanceIDs) == 0 {
-		logger.V(1).Info("no IBM nodes with valid provider IDs found")
-		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
-	}
+	// Always check for orphaned instances, even if there are no current Karpenter nodes
+	// This handles cases where all NodeClaims were deleted but instances remain
+	logger.V(1).Info("checking for orphaned instances", "managedInstances", len(instanceIDs))
 
-	// Check which instances still exist in IBM Cloud
-	existingInstances, err := c.getExistingVPCInstances(ctx, instanceIDs)
+	// Get all instances from IBM Cloud to check for orphans
+	allInstances, err := c.getAllVPCInstances(ctx)
 	if err != nil {
-		logger.Error(err, "failed to check existing VPC instances")
+		logger.Error(err, "failed to get all VPC instances")
 		return reconciler.Result{}, err
 	}
 
-	existingInstanceIDs := sets.New(existingInstances...)
+	if len(allInstances) == 0 {
+		logger.V(1).Info("no VPC instances found")
+		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
+	}
 
-	// Find orphaned nodes (nodes whose instances no longer exist)
-	orphanedNodes := make([]corev1.Node, 0)
-	for instanceID, node := range nodeByInstanceID {
-		if !existingInstanceIDs.Has(instanceID) {
-			orphanedNodes = append(orphanedNodes, node)
+	// Get all NodeClaims to check which instances should exist
+	var nodeClaims karpv1.NodeClaimList
+	if err := c.kubeClient.List(ctx, &nodeClaims); err != nil {
+		logger.Error(err, "failed to list NodeClaims")
+		return reconciler.Result{}, err
+	}
+
+	// Collect instance IDs that should exist (from NodeClaims and existing nodes)
+	expectedInstanceIDs := sets.New(instanceIDs...)
+	for _, nodeClaim := range nodeClaims.Items {
+		if nodeClaim.Status.ProviderID != "" {
+			instanceID := c.extractInstanceIDFromProviderID(nodeClaim.Status.ProviderID)
+			if instanceID != "" {
+				expectedInstanceIDs.Insert(instanceID)
+			}
 		}
 	}
 
-	if len(orphanedNodes) == 0 {
-		logger.V(1).Info("no orphaned nodes found")
+	// Find orphaned instances (instances that exist in IBM Cloud but have no NodeClaim or Node)
+	// Only proceed if we have the Global Tagging API available for reliable identification
+	orphanedInstanceIDs := make([]string, 0)
+	if c.globalTagging != nil {
+		for _, instanceID := range allInstances {
+			if !expectedInstanceIDs.Has(instanceID) {
+				// Check if this instance was created by Karpenter by checking tags
+				// This is the primary method for identifying Karpenter-managed instances
+				if c.isKarpenterManagedInstance(ctx, instanceID) {
+					logger.V(1).Info("found Karpenter-managed orphaned instance", "instance-id", instanceID)
+					orphanedInstanceIDs = append(orphanedInstanceIDs, instanceID)
+				} else {
+					logger.V(2).Info("instance not managed by Karpenter, skipping", "instance-id", instanceID)
+				}
+			}
+		}
+	} else {
+		logger.V(1).Info("Global Tagging API not available, skipping orphaned instance cleanup")
+	}
+
+	if len(orphanedInstanceIDs) == 0 {
+		logger.V(1).Info("no orphaned instances found")
 		c.successfulCount++
 		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
-	logger.Info("found orphaned nodes", "count", len(orphanedNodes))
+	logger.Info("found orphaned instances", "count", len(orphanedInstanceIDs))
 
-	// Process orphaned nodes in parallel
-	errs := make([]error, len(orphanedNodes))
-	workqueue.ParallelizeUntil(ctx, 10, len(orphanedNodes), func(i int) {
-		errs[i] = c.processOrphanedNode(ctx, orphanedNodes[i])
-	})
+	// Handle both orphaned nodes (nodes without instances) and orphaned instances (instances without nodes/nodeclaims)
+	var allErrors []error
 
-	if err := multierr.Combine(errs...); err != nil {
+	// First, handle orphaned nodes (original logic)
+	managedInstanceIDs := sets.New(allInstances...)
+	orphanedNodes := make([]corev1.Node, 0)
+	for instanceID, node := range nodeByInstanceID {
+		if !managedInstanceIDs.Has(instanceID) {
+			orphanedNodes = append(orphanedNodes, node)
+		}
+	}
+
+	if len(orphanedNodes) > 0 {
+		logger.Info("found orphaned nodes (nodes without instances)", "count", len(orphanedNodes))
+		nodeErrs := make([]error, len(orphanedNodes))
+		workqueue.ParallelizeUntil(ctx, 10, len(orphanedNodes), func(i int) {
+			nodeErrs[i] = c.processOrphanedNode(ctx, orphanedNodes[i])
+		})
+		allErrors = append(allErrors, nodeErrs...)
+	}
+
+	// Second, handle orphaned instances (instances without nodes/nodeclaims)
+	if len(orphanedInstanceIDs) > 0 {
+		logger.Info("cleaning up orphaned instances (instances without nodes/nodeclaims)", "count", len(orphanedInstanceIDs))
+		instanceErrs := make([]error, len(orphanedInstanceIDs))
+		workqueue.ParallelizeUntil(ctx, 10, len(orphanedInstanceIDs), func(i int) {
+			instanceErrs[i] = c.processOrphanedInstance(ctx, orphanedInstanceIDs[i])
+		})
+		allErrors = append(allErrors, instanceErrs...)
+	}
+
+	if err := multierr.Combine(allErrors...); err != nil {
 		return reconciler.Result{}, err
 	}
 
@@ -203,31 +279,147 @@ func (c *Controller) extractInstanceIDFromProviderID(providerID string) string {
 	return ""
 }
 
-// getExistingVPCInstances checks which VPC instances still exist in IBM Cloud
-func (c *Controller) getExistingVPCInstances(ctx context.Context, instanceIDs []string) ([]string, error) {
+// getAllVPCInstances gets all VPC instances to check for orphans
+func (c *Controller) getAllVPCInstances(ctx context.Context) ([]string, error) {
 	logger := log.FromContext(ctx)
 
 	if c.ibmClient == nil {
-		logger.V(1).Info("IBM client is not initialized, skipping instance existence check")
-		return instanceIDs, nil // Return all instances as existing to avoid cleanup
+		logger.V(1).Info("IBM client is not initialized, skipping all instances check")
+		return nil, nil
 	}
 
-	// For VPC instances, we need to list all instances and check which ones exist
-	existingInstances := make([]string, 0)
+	// Get VPC client to list all instances
+	// Handle potential panic from GetVPCClient when ibmClient is not properly initialized
+	var vpcClient *ibm.VPCClient
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in GetVPCClient: %v", r)
+			}
+		}()
+		vpcClient, err = c.ibmClient.GetVPCClient()
+	}()
 
-	for _, instanceID := range instanceIDs {
-		exists, err := c.ibmClient.VPCInstanceExists(ctx, instanceID)
-		if err != nil {
-			logger.Error(err, "failed to check if VPC instance exists", "instance-id", instanceID)
+	if err != nil {
+		logger.Error(err, "failed to get VPC client")
+		return nil, nil // Return empty list rather than error to allow graceful degradation
+	}
+
+	if vpcClient == nil {
+		logger.V(1).Info("VPC client is nil, skipping all instances check")
+		return nil, nil
+	}
+
+	// Get all instances from VPC
+	allInstances, err := vpcClient.ListInstances(ctx)
+	if err != nil {
+		logger.Error(err, "failed to list all VPC instances")
+		return nil, err
+	}
+
+	instanceIDs := make([]string, 0, len(allInstances))
+	for _, instance := range allInstances {
+		instanceIDs = append(instanceIDs, *instance.ID)
+	}
+
+	logger.V(1).Info("retrieved all VPC instances", "count", len(instanceIDs))
+	return instanceIDs, nil
+}
+
+// isKarpenterManagedInstance checks if an instance was created by Karpenter
+// by examining its tags for Karpenter-specific markers using the Global Tagging API
+func (c *Controller) isKarpenterManagedInstance(ctx context.Context, instanceID string) bool {
+	logger := log.FromContext(ctx)
+
+	// Use the Global Tagging API if available
+	if c.globalTagging != nil {
+		return c.checkInstanceTagsWithGlobalTaggingAPI(ctx, instanceID, logger)
+	}
+
+	// If Global Tagging API is not available, we cannot reliably identify Karpenter instances
+	logger.V(1).Info("Global Tagging API not available, cannot identify Karpenter-managed instances", "instance-id", instanceID)
+	return false
+}
+
+// checkInstanceTagsWithGlobalTaggingAPI uses the IBM Global Tagging API to check if an instance has Karpenter tags
+func (c *Controller) checkInstanceTagsWithGlobalTaggingAPI(ctx context.Context, instanceID string, logger logr.Logger) bool {
+	// Construct the resource CRN for the VPC instance
+	// Format: crn:version:cname:ctype:service-name:location:scope:service-instance:resource-type:resource
+
+	if c.ibmClient == nil {
+		logger.V(1).Info("IBM client is not available for Global Tagging API", "instance-id", instanceID)
+		return false
+	}
+
+	// We need to get the instance details to construct the CRN properly
+	// Handle potential panic from GetVPCClient when ibmClient is not properly initialized
+	var vpcClient *ibm.VPCClient
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in GetVPCClient: %v", r)
+			}
+		}()
+		vpcClient, err = c.ibmClient.GetVPCClient()
+	}()
+
+	if err != nil {
+		logger.V(1).Info("failed to get VPC client for Global Tagging API", "instance-id", instanceID, "error", err.Error())
+		return false
+	}
+
+	instance, err := vpcClient.GetInstance(ctx, instanceID)
+	if err != nil {
+		logger.V(1).Info("failed to get instance for CRN construction", "instance-id", instanceID, "error", err.Error())
+		return false
+	}
+
+	// Use the instance CRN if available, otherwise construct one
+	var resourceCRN string
+	if instance.CRN != nil {
+		resourceCRN = *instance.CRN
+	} else {
+		// Fallback: construct CRN (this may not work perfectly without more instance details)
+		logger.V(1).Info("instance CRN not available, cannot use Global Tagging API", "instance-id", instanceID)
+		return false
+	}
+
+	// List tags for this resource
+	listTagsOptions := &globaltaggingv1.ListTagsOptions{
+		AttachedTo: &resourceCRN,
+	}
+
+	tagResults, _, err := c.globalTagging.ListTagsWithContext(ctx, listTagsOptions)
+	if err != nil {
+		logger.V(1).Info("failed to list tags using Global Tagging API", "instance-id", instanceID, "error", err.Error())
+		return false
+	}
+
+	if tagResults == nil || tagResults.Items == nil {
+		logger.V(1).Info("no tags found for instance", "instance-id", instanceID)
+		return false
+	}
+
+	// Check for Karpenter-specific tags
+	for _, tag := range tagResults.Items {
+		if tag.Name == nil {
 			continue
 		}
+		tagName := *tag.Name
 
-		if exists {
-			existingInstances = append(existingInstances, instanceID)
+		// Check for Karpenter management indicators
+		if tagName == "karpenter.sh/managed" ||
+			strings.HasPrefix(tagName, "karpenter.sh/") ||
+			strings.Contains(tagName, "karpenter") {
+			logger.V(1).Info("instance is Karpenter-managed (found via Global Tagging API)", "instance-id", instanceID, "tag", tagName)
+			return true
 		}
 	}
 
-	return existingInstances, nil
+	logger.V(2).Info("no Karpenter tags found via Global Tagging API", "instance-id", instanceID, "tags-count", len(tagResults.Items))
+	return false
 }
 
 // processOrphanedNode handles cleanup of a single orphaned node
@@ -290,6 +482,39 @@ func (c *Controller) processOrphanedNode(ctx context.Context, node corev1.Node) 
 	}
 
 	logger.Info("successfully cleaned up orphaned node")
+	return nil
+}
+
+// processOrphanedInstance handles cleanup of a single orphaned instance
+func (c *Controller) processOrphanedInstance(ctx context.Context, instanceID string) error {
+	logger := log.FromContext(ctx).WithValues("instance-id", instanceID)
+
+	// Safety check: verify this instance is really Karpenter-managed
+	if !c.isKarpenterManagedInstance(ctx, instanceID) {
+		logger.V(1).Info("instance not managed by Karpenter, skipping cleanup")
+		return nil
+	}
+
+	// Delete the instance from IBM Cloud
+	if c.ibmClient == nil {
+		logger.Error(nil, "IBM client is not initialized, cannot delete instance")
+		return fmt.Errorf("IBM client not initialized")
+	}
+
+	logger.Info("deleting orphaned instance from IBM Cloud")
+	// Get VPC client to delete instance
+	vpcClient, err := c.ibmClient.GetVPCClient()
+	if err != nil {
+		logger.Error(err, "failed to get VPC client for instance deletion")
+		return fmt.Errorf("failed to get VPC client: %w", err)
+	}
+
+	if err := vpcClient.DeleteInstance(ctx, instanceID); err != nil {
+		logger.Error(err, "failed to delete orphaned instance")
+		return fmt.Errorf("failed to delete instance %s: %w", instanceID, err)
+	}
+
+	logger.Info("successfully cleaned up orphaned instance")
 	return nil
 }
 

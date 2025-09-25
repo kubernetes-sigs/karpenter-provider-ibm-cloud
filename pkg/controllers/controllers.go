@@ -72,6 +72,7 @@ import (
 	controllerspricing "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/providers/pricing"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
 )
 
 // RecorderAdapter adapts between events.Recorder and record.EventRecorder
@@ -119,6 +120,7 @@ func NewControllers(
 	unavailableOfferings *cache.UnavailableOfferings,
 	cloudProvider cloudprovider.CloudProvider,
 	instanceTypeProvider instancetype.Provider,
+	subnetProvider subnet.Provider,
 	ibmClient *ibm.Client,
 ) []controller.Controller {
 	// Create event recorder adapter
@@ -134,7 +136,7 @@ func NewControllers(
 		controllers = append(controllers, hashCtrl)
 	}
 
-	if _, err := nodeclassautoplacement.NewController(mgr, instanceTypeProvider, nil); err != nil {
+	if _, err := nodeclassautoplacement.NewController(mgr, instanceTypeProvider, subnetProvider); err != nil {
 		logger.Error(err, "failed to create autoplacement controller")
 	} else {
 		logger.Info("successfully registered autoplacement controller")

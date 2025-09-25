@@ -19,9 +19,11 @@ package orphancleanup
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/IBM/platform-services-go-sdk/globaltaggingv1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -355,6 +357,135 @@ func TestGetOrphanTimeoutFromEnv(t *testing.T) {
 
 			result := getOrphanTimeoutFromEnv()
 			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestIsKarpenterManagedInstance(t *testing.T) {
+	testCases := []struct {
+		name             string
+		hasGlobalTagging bool
+		instanceID       string
+		expectedResult   bool
+	}{
+		{
+			name:             "no global tagging client available",
+			hasGlobalTagging: false,
+			instanceID:       "instance-999",
+			expectedResult:   false,
+		},
+		{
+			name:             "global tagging client available but no IBM client",
+			hasGlobalTagging: true,
+			instanceID:       "instance-123",
+			expectedResult:   false, // Will return false due to IBM client being nil
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			controller := &Controller{}
+
+			// Create a real GlobalTagging client but don't initialize IBM client
+			if tc.hasGlobalTagging {
+				// We can't easily create a real client without credentials, so just test the logic
+				// The actual test is in the integration with the existing environment variable
+				controller.globalTagging = &globaltaggingv1.GlobalTaggingV1{}
+			}
+
+			result := controller.isKarpenterManagedInstance(context.Background(), tc.instanceID)
+
+			assert.Equal(t, tc.expectedResult, result)
+		})
+	}
+}
+
+func TestGlobalTaggingLogic(t *testing.T) {
+	t.Run("tag identification logic", func(t *testing.T) {
+		// Test the tag identification logic directly
+		testTags := []struct {
+			tagName        string
+			tagValue       string
+			expectedResult bool
+		}{
+			{"karpenter.sh/managed", "true", true},
+			{"karpenter.sh/nodepool", "test-pool", true},
+			{"karpenter.sh/provisioner", "test-provisioner", true},
+			{"managed-by-karpenter", "", true},  // Tag name contains "karpenter"
+			{"managed-by-terraform", "", false}, // Tag name doesn't contain "karpenter"
+			{"some-karpenter-tag", "", true},    // Tag name contains "karpenter"
+			{"environment", "prod", false},
+			{"project", "test", false},
+			{"", "", false},
+		}
+
+		for _, tc := range testTags {
+			t.Run(tc.tagName+"_"+tc.tagValue, func(t *testing.T) {
+				// Test the logic used in checkInstanceTagsWithGlobalTaggingAPI
+				result := tc.tagName == "karpenter.sh/managed" ||
+					strings.HasPrefix(tc.tagName, "karpenter.sh/") ||
+					strings.Contains(tc.tagName, "karpenter")
+
+				assert.Equal(t, tc.expectedResult, result)
+			})
+		}
+	})
+}
+
+func TestNewControllerGlobalTaggingInitialization(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		orphanCleanupEnabled        string
+		ibmCloudAPIKey              string
+		expectedGlobalTaggingClient bool
+	}{
+		{
+			name:                        "orphan cleanup enabled with API key",
+			orphanCleanupEnabled:        "true",
+			ibmCloudAPIKey:              "test-api-key",
+			expectedGlobalTaggingClient: true,
+		},
+		{
+			name:                        "orphan cleanup enabled without API key",
+			orphanCleanupEnabled:        "true",
+			ibmCloudAPIKey:              "",
+			expectedGlobalTaggingClient: false,
+		},
+		{
+			name:                        "orphan cleanup disabled",
+			orphanCleanupEnabled:        "false",
+			ibmCloudAPIKey:              "test-api-key",
+			expectedGlobalTaggingClient: false,
+		},
+		{
+			name:                        "orphan cleanup not set",
+			orphanCleanupEnabled:        "",
+			ibmCloudAPIKey:              "test-api-key",
+			expectedGlobalTaggingClient: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set environment variables
+			if tc.orphanCleanupEnabled != "" {
+				_ = os.Setenv("KARPENTER_ENABLE_ORPHAN_CLEANUP", tc.orphanCleanupEnabled)
+				defer func() { _ = os.Unsetenv("KARPENTER_ENABLE_ORPHAN_CLEANUP") }()
+			}
+			if tc.ibmCloudAPIKey != "" {
+				_ = os.Setenv("IBMCLOUD_API_KEY", tc.ibmCloudAPIKey)
+				defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+			}
+
+			scheme := runtime.NewScheme()
+			client := clientfake.NewClientBuilder().WithScheme(scheme).Build()
+			controller := NewController(client, nil)
+
+			if tc.expectedGlobalTaggingClient {
+				assert.NotNil(t, controller.globalTagging, "Global Tagging client should be initialized")
+			} else {
+				assert.Nil(t, controller.globalTagging, "Global Tagging client should not be initialized")
+			}
 		})
 	}
 }

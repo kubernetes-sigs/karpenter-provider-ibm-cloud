@@ -120,7 +120,7 @@ jobs:
         # Wait for no disrupted nodes
         for i in {1..30}; do
           disrupted_nodes=$(kubectl get nodes --no-headers -o custom-columns="NAME:.metadata.name,TAINTS:.spec.taints[*].key" | grep -c "karpenter.sh/disrupted" 2>/dev/null || echo "0")
-          disrupted_nodes=$(echo "$disrupted_nodes" | tr -d '\n' | grep -o '[0-9]*' || echo "0")
+          disrupted_nodes=$(echo "$disrupted_nodes" | tr -d '\n' | grep -o '[0-9]\+' || echo "0")
           if [ "$disrupted_nodes" -eq 0 ]; then
             echo "✅ No disrupted nodes found"
             break
@@ -177,11 +177,14 @@ jobs:
         # Image selector tests from image_selector_test.go
         image_selector_tests="TestE2EImageSelector"
 
+        # Multi-zone tests from multizone_test.go
+        multizone_tests="TestE2EMultiZoneDistribution TestE2EZoneAntiAffinity TestE2ETopologySpreadConstraints TestE2EPlacementStrategyValidation TestE2EZoneFailover"
+
         # Cleanup tests from cleanup_test.go
         cleanup_tests="TestE2ECleanupNodePoolDeletion TestE2ECleanupNodeClassDeletion TestE2ECleanupOrphanedResources TestE2ECleanupIBMCloudResources"
 
         # Combine all tests
-        all_tests="$core_tests $validation_tests $block_device_tests $scheduling_tests $userdata_tests $image_selector_tests $cleanup_tests"
+        all_tests="$core_tests $validation_tests $block_device_tests $scheduling_tests $userdata_tests $image_selector_tests $multizone_tests $cleanup_tests"
 
         test_failed="false"
         passed_tests=0
@@ -195,6 +198,7 @@ jobs:
         echo "  Scheduling Tests: $(echo $scheduling_tests | wc -w)"
         echo "  UserData Tests: $(echo $userdata_tests | wc -w)"
         echo "  Image Selector Tests: $(echo $image_selector_tests | wc -w)"
+        echo "  Multi-Zone Tests: $(echo $multizone_tests | wc -w)"
         echo "  Cleanup Tests: $(echo $cleanup_tests | wc -w)"
         echo "  Total Tests: $total_tests"
         echo ""
@@ -211,6 +215,9 @@ jobs:
           case "$test" in
             "TestE2EDriftStability")
               timeout="30m"  # Drift test needs more time for monitoring
+              ;;
+            "TestE2EMultiZone"*|"TestE2EZone"*|"TestE2ETopology"*|"TestE2EPlacementStrategy"*)
+              timeout="25m"  # Multi-zone tests need extra time for cross-zone provisioning
               ;;
             "TestE2ECleanup"*)
               timeout="15m"  # Cleanup tests are typically faster
@@ -231,9 +238,15 @@ jobs:
           set +e  # Don't exit on failure
           timeout $timeout go test -tags=e2e -v -timeout $timeout ./test/e2e -run "^$test$" -count=1 2>&1 | tee "$test_log"
           test_exit_code=$?
+          test_exit_code=$(echo "$test_exit_code" | tr -d '\n' | tr -d ' ')
+          # Ensure exit code is numeric
+          if ! echo "$test_exit_code" | grep -q '^[0-9]\+$'; then
+            echo "⚠️  Invalid exit code '$test_exit_code', treating as failure"
+            test_exit_code=1
+          fi
           set -e  # Re-enable exit on failure
 
-          if [ $test_exit_code -eq 0 ]; then
+          if [ "$test_exit_code" -eq 0 ]; then
             echo "✅ Test $test passed"
             passed_tests=$((passed_tests + 1))
           else
@@ -396,26 +409,62 @@ jobs:
 
         # Force cleanup any stuck resources with direct patching
         echo "Force cleaning up any stuck resources..."
-        kubectl patch nodeclaims --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
-        kubectl patch nodepools --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
-        kubectl patch ibmnodeclasses --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+        kubectl get nodeclaims -l test=e2e -o name | xargs -r -I {} kubectl patch {} --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+        kubectl get nodepools -l test=e2e -o name | xargs -r -I {} kubectl patch {} --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+        kubectl get ibmnodeclasses -l test=e2e -o name | xargs -r -I {} kubectl patch {} --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
 
-        # Clean up IBM Cloud instances created by e2e tests
+        # Clean up IBM Cloud resources in the correct order
         echo "Cleaning up IBM Cloud instances..."
-        ibmcloud is instances --output json | \
-          jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id' | \
-          xargs -I {} ibmcloud is instance-delete {} --force || true
+        instance_ids=$(ibmcloud is instances --output json | \
+          jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id')
 
-        # Clean up orphaned VNIs (Virtual Network Interfaces)
+        if [ -n "$instance_ids" ]; then
+          echo "Found e2e instances to delete: $instance_ids"
+          echo "$instance_ids" | xargs -I {} ibmcloud is instance-delete {} --force || true
+
+          # Wait for instances to be fully deleted before cleaning up attached resources
+          echo "Waiting for instances to be deleted before cleaning up attached resources..."
+          sleep 60
+
+          # Verify instances are deleted
+          for i in {1..12}; do
+            remaining_instances=$(ibmcloud is instances --output json 2>/dev/null | \
+              jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id' | wc -l || echo 0)
+
+            if [ "$remaining_instances" -eq 0 ]; then
+              echo "✅ All e2e instances deleted"
+              break
+            fi
+
+            echo "⏳ Still have $remaining_instances e2e instances, waiting... ($((i*10))s/120s)"
+            sleep 10
+          done
+        else
+          echo "No e2e instances found to delete"
+        fi
+
+        # Clean up orphaned VNIs (Virtual Network Interfaces) - now safe to delete
         echo "Cleaning up orphaned VNIs..."
-        ibmcloud is virtual-network-interfaces --output json | \
-          jq -r '.[] | select(.name | test("e2e-.*-vni")) | .id' | \
-          xargs -I {} ibmcloud is virtual-network-interface-delete {} --force || true
+        vni_ids=$(ibmcloud is virtual-network-interfaces --output json 2>/dev/null | \
+          jq -r '.[] | select(.name | test("e2e-.*-vni")) | .id' || true)
 
-        # Clean up orphaned volumes
+        if [ -n "$vni_ids" ]; then
+          echo "Found VNIs to delete: $vni_ids"
+          echo "$vni_ids" | xargs -I {} ibmcloud is virtual-network-interface-delete {} --force || true
+        else
+          echo "No orphaned VNIs found"
+        fi
+
+        # Clean up orphaned volumes - now safe to delete
         echo "Cleaning up orphaned volumes..."
-        ibmcloud is volumes --output json | \
-          jq -r '.[] | select(.name | test("e2e-.*-boot")) | .id' | \
-          xargs -I {} ibmcloud is volume-delete {} --force || true
+        volume_ids=$(ibmcloud is volumes --output json 2>/dev/null | \
+          jq -r '.[] | select(.name | test("e2e-.*-boot")) | .id' || true)
+
+        if [ -n "$volume_ids" ]; then
+          echo "Found volumes to delete: $volume_ids"
+          echo "$volume_ids" | xargs -I {} ibmcloud is volume-delete {} --force || true
+        else
+          echo "No orphaned volumes found"
+        fi
 
         echo "✅ Cleanup completed"

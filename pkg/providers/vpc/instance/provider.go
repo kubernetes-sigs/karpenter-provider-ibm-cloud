@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
@@ -44,6 +44,7 @@ import (
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/image"
 	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/bootstrap"
+	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
@@ -58,6 +59,7 @@ type VPCInstanceProvider struct {
 	kubeClient             client.Client
 	k8sClient              kubernetes.Interface
 	bootstrapProvider      *bootstrap.VPCBootstrapProvider
+	subnetProvider         subnet.Provider
 	vpcClientManager       *vpcclient.Manager
 	resourceManagerService *resourcemanagerv2.ResourceManagerV2
 }
@@ -74,6 +76,8 @@ func WithKubernetesClient(k8sClient kubernetes.Interface) Option {
 		p.k8sClient = k8sClient
 		// Create bootstrap provider immediately with proper dependency injection
 		p.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(p.client, k8sClient, p.kubeClient)
+		// Set Kubernetes client on subnet provider for cluster awareness
+		p.subnetProvider.SetKubernetesClient(k8sClient)
 		return nil
 	}
 }
@@ -115,6 +119,7 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 		kubeClient:             kubeClient,
 		k8sClient:              nil, // Will be set via options if provided
 		bootstrapProvider:      nil, // Will be lazily initialized or set via options
+		subnetProvider:         subnet.NewProvider(client),
 		vpcClientManager:       vpcclient.NewManager(client, 30*time.Minute),
 		resourceManagerService: nil, // Will be initialized after applying options
 	}
@@ -156,7 +161,7 @@ func NewVPCInstanceProviderWithKubernetesClient(client *ibm.Client, kubeClient c
 }
 
 // Create provisions a new VPC instance
-func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*corev1.Node, error) {
+func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*corev1.Node, error) {
 	logger := log.FromContext(ctx)
 
 	// Start timing for provisioning duration
@@ -222,16 +227,77 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 			return nil, fmt.Errorf("zone selection requires either explicit zone/subnet or placement strategy")
 		}
 
-		// Use subnet provider to select optimal subnet based on placement strategy
-		// Note: This would require access to subnet provider - for now return error
-		return nil, fmt.Errorf("dynamic zone/subnet selection not yet implemented - specify zone and subnet explicitly")
+		// First, check if the controller has already selected subnets for us
+		if len(nodeClass.Status.SelectedSubnets) > 0 {
+			// Use pre-selected subnets from the autoplacement controller
+			selectedSubnetID := p.selectSubnetFromStatusList(nodeClass.Status.SelectedSubnets)
+
+			// Get subnet info to retrieve zone
+			subnetInfo, subnetErr := p.subnetProvider.GetSubnet(ctx, selectedSubnetID)
+			if subnetErr != nil {
+				return nil, fmt.Errorf("getting subnet info for selected subnet %s: %w", selectedSubnetID, subnetErr)
+			}
+
+			zone = subnetInfo.Zone
+			subnet = selectedSubnetID
+
+			logger.Info("Using pre-selected subnet from status",
+				"zone", zone, "subnet", subnet, "selectedSubnets", nodeClass.Status.SelectedSubnets)
+		} else {
+			// Fallback: Select subnets directly if status not populated
+			// This handles backward compatibility and cases where autoplacement controller hasn't run yet
+			selectedSubnets, selectErr := p.subnetProvider.SelectSubnets(ctx, nodeClass.Spec.VPC, nodeClass.Spec.PlacementStrategy)
+			if selectErr != nil {
+				return nil, fmt.Errorf("selecting subnets with placement strategy: %w", selectErr)
+			}
+
+			if len(selectedSubnets) == 0 {
+				return nil, fmt.Errorf("no subnets selected by placement strategy")
+			}
+
+			// Select subnet using round-robin across zones for balanced distribution
+			selectedSubnet := p.selectSubnetFromMultiZoneList(selectedSubnets)
+			zone = selectedSubnet.Zone
+			subnet = selectedSubnet.ID
+
+			logger.Info("Selected zone and subnet using placement strategy (fallback)",
+				"zone", zone, "subnet", subnet, "strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance)
+		}
+
 	} else if zone == "" && subnet != "" {
 		// Subnet specified but no zone - derive zone from subnet
-		// Note: This would require subnet lookup - for now return error
-		return nil, fmt.Errorf("zone derivation from subnet not yet implemented - specify zone explicitly")
+		subnetInfo, subnetErr := p.subnetProvider.GetSubnet(ctx, subnet)
+		if subnetErr != nil {
+			return nil, fmt.Errorf("getting subnet info for zone derivation: %w", subnetErr)
+		}
+		zone = subnetInfo.Zone
+		logger.Info("Derived zone from subnet", "zone", zone, "subnet", subnet)
+
 	} else if zone != "" && subnet == "" {
-		// Zone specified but no subnet - need subnet selection
-		return nil, fmt.Errorf("subnet selection within zone not yet implemented - specify subnet explicitly")
+		// Zone specified but no subnet - select subnet within zone
+		allSubnets, listErr := p.subnetProvider.ListSubnets(ctx, nodeClass.Spec.VPC)
+		if listErr != nil {
+			return nil, fmt.Errorf("listing subnets for zone-based selection: %w", listErr)
+		}
+
+		// Find best subnet in the specified zone
+		var bestSubnetID string
+		var bestSubnetAvailableIPs int32 = -1
+		for _, s := range allSubnets {
+			if s.Zone == zone && s.State == "available" {
+				if s.AvailableIPs > bestSubnetAvailableIPs {
+					bestSubnetID = s.ID
+					bestSubnetAvailableIPs = s.AvailableIPs
+				}
+			}
+		}
+
+		if bestSubnetID == "" {
+			return nil, fmt.Errorf("no available subnet found in zone %s", zone)
+		}
+
+		subnet = bestSubnetID
+		logger.Info("Selected subnet within specified zone", "zone", zone, "subnet", subnet)
 	}
 
 	// Both zone and subnet specified - use them directly (existing behavior)
@@ -302,18 +368,33 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 	}
 
 	// Resolve image identifier to image ID
-	imageResolver := image.NewResolver(vpcClient, nodeClass.Spec.Region)
+	imageResolver := image.NewResolver(vpcClient, nodeClass.Spec.Region, logger)
 	var imageID string
 
 	// Use explicit image if specified, otherwise use imageSelector
 	if nodeClass.Spec.Image != "" {
+		logger.Info("Resolving explicit image", "image", nodeClass.Spec.Image)
 		imageID, err = imageResolver.ResolveImage(ctx, nodeClass.Spec.Image)
 		if err != nil {
+			logger.Error(err, "Failed to resolve explicit image", "image", nodeClass.Spec.Image)
 			return nil, fmt.Errorf("resolving image %s: %w", nodeClass.Spec.Image, err)
 		}
+		logger.Info("Successfully resolved explicit image", "image", nodeClass.Spec.Image, "imageID", imageID)
 	} else if nodeClass.Spec.ImageSelector != nil {
+		logger.Info("Resolving image using selector",
+			"os", nodeClass.Spec.ImageSelector.OS,
+			"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
+			"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
+			"architecture", nodeClass.Spec.ImageSelector.Architecture,
+			"variant", nodeClass.Spec.ImageSelector.Variant)
 		imageID, err = imageResolver.ResolveImageBySelector(ctx, nodeClass.Spec.ImageSelector)
 		if err != nil {
+			logger.Error(err, "Failed to resolve image using selector",
+				"os", nodeClass.Spec.ImageSelector.OS,
+				"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
+				"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
+				"architecture", nodeClass.Spec.ImageSelector.Architecture,
+				"variant", nodeClass.Spec.ImageSelector.Variant)
 			return nil, fmt.Errorf("resolving image using selector (os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s): %w",
 				nodeClass.Spec.ImageSelector.OS,
 				nodeClass.Spec.ImageSelector.MajorVersion,
@@ -322,8 +403,25 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 				nodeClass.Spec.ImageSelector.Variant,
 				err)
 		}
+		logger.Info("Successfully resolved image using selector",
+			"os", nodeClass.Spec.ImageSelector.OS,
+			"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
+			"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
+			"architecture", nodeClass.Spec.ImageSelector.Architecture,
+			"variant", nodeClass.Spec.ImageSelector.Variant,
+			"resolvedImageID", imageID)
 	} else {
+		logger.Error(nil, "Neither image nor imageSelector specified in NodeClass")
 		return nil, fmt.Errorf("neither image nor imageSelector specified in NodeClass")
+	}
+
+	// Validate the resolved imageID is not empty
+	if imageID == "" {
+		logger.Error(nil, "Image resolution returned empty imageID",
+			"hasImage", nodeClass.Spec.Image != "",
+			"hasImageSelector", nodeClass.Spec.ImageSelector != nil,
+			"explicitImage", nodeClass.Spec.Image)
+		return nil, fmt.Errorf("image resolution returned empty imageID")
 	}
 
 	// Create boot volume attachment based on block device mappings or use default
@@ -710,6 +808,12 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *v1.NodeClai
 				},
 			},
 		},
+	}
+
+	// Add Karpenter-specific tags to the instance for orphan cleanup identification
+	if err := p.addKarpenterTags(ctx, vpcClient, *instance.ID, nodeClass, nodeClaim); err != nil {
+		logger.Error(err, "failed to add Karpenter tags to instance, continuing anyway", "instance-id", *instance.ID)
+		// Don't fail instance creation due to tagging issues
 	}
 
 	// Record successful provisioning metrics
@@ -1447,4 +1551,104 @@ func isAuthError(err error) bool {
 		strings.Contains(errStr, "authentication failed") ||
 		strings.Contains(errStr, "401") ||
 		strings.Contains(errStr, "403")
+}
+
+// selectSubnetFromStatusList selects a subnet from the pre-selected list in status using round-robin
+func (p *VPCInstanceProvider) selectSubnetFromStatusList(subnetIDs []string) string {
+	if len(subnetIDs) == 0 {
+		return ""
+	}
+
+	if len(subnetIDs) == 1 {
+		return subnetIDs[0]
+	}
+
+	// Simple round-robin based on current time for stateless distribution
+	index := int(time.Now().UnixNano()) % len(subnetIDs)
+	return subnetIDs[index]
+}
+
+// selectSubnetFromMultiZoneList selects a subnet from a list using round-robin across zones
+// to ensure balanced distribution when multiple subnets are available across zones
+func (p *VPCInstanceProvider) selectSubnetFromMultiZoneList(subnets []subnet.SubnetInfo) subnet.SubnetInfo {
+	if len(subnets) == 0 {
+		// This should not happen as caller checks length, but return empty for safety
+		return subnet.SubnetInfo{}
+	}
+
+	if len(subnets) == 1 {
+		return subnets[0]
+	}
+
+	// Group subnets by zone
+	zoneSubnets := make(map[string][]subnet.SubnetInfo)
+	var zones []string
+	for _, s := range subnets {
+		if _, exists := zoneSubnets[s.Zone]; !exists {
+			zones = append(zones, s.Zone)
+		}
+		zoneSubnets[s.Zone] = append(zoneSubnets[s.Zone], s)
+	}
+
+	// Simple round-robin based on current time for stateless distribution
+	// This ensures different instances get distributed across zones
+	zoneIndex := int(time.Now().UnixNano()) % len(zones)
+	selectedZone := zones[zoneIndex]
+
+	// Select the best subnet in the chosen zone (highest available IPs)
+	zoneSubnetList := zoneSubnets[selectedZone]
+	bestSubnet := zoneSubnetList[0]
+	for _, s := range zoneSubnetList {
+		if s.AvailableIPs > bestSubnet.AvailableIPs {
+			bestSubnet = s
+		}
+	}
+
+	return bestSubnet
+}
+
+// addKarpenterTags adds Karpenter-specific tags to an instance for identification during orphan cleanup
+func (p *VPCInstanceProvider) addKarpenterTags(ctx context.Context, vpcClient *ibm.VPCClient, instanceID string, nodeClass *v1alpha1.IBMNodeClass, nodeClaim *karpv1.NodeClaim) error {
+	logger := log.FromContext(ctx)
+
+	// Get cluster identifier (use cluster name from environment or nodeclass)
+	clusterName := os.Getenv("CLUSTER_NAME")
+	if clusterName == "" {
+		clusterName = "default"
+	}
+
+	// Create Karpenter-specific tags with cluster identifier
+	karpenterTags := map[string]string{
+		"karpenter.sh/managed":    "true",
+		"karpenter.sh/cluster":    clusterName,
+		"karpenter.sh/nodepool":   nodeClaim.Labels["karpenter.sh/nodepool"],
+		"karpenter.sh/provider":   "ibm-cloud",
+		"karpenter.sh/version":    "v0.3.69", // TODO: Get this from build info
+		"karpenter.sh/node-claim": nodeClaim.Name,
+		"managed-by":              fmt.Sprintf("karpenter-%s", clusterName),
+	}
+
+	// Add nodeclass-specific tags if available
+	if nodeClass.Spec.Tags != nil {
+		for key, value := range nodeClass.Spec.Tags {
+			// Don't override Karpenter system tags
+			if !strings.HasPrefix(key, "karpenter.sh/") && key != "managed-by" {
+				karpenterTags[key] = value
+			}
+		}
+	}
+
+	logger.Info("Adding Karpenter tags to instance",
+		"instance-id", instanceID,
+		"cluster", clusterName,
+		"nodepool", nodeClaim.Labels["karpenter.sh/nodepool"],
+		"nodeclaim", nodeClaim.Name)
+
+	// Add tags to the instance
+	if err := vpcClient.UpdateInstanceTags(ctx, instanceID, karpenterTags); err != nil {
+		return fmt.Errorf("updating instance tags: %w", err)
+	}
+
+	logger.V(1).Info("Successfully added Karpenter tags to instance", "instance-id", instanceID, "tags", len(karpenterTags))
+	return nil
 }

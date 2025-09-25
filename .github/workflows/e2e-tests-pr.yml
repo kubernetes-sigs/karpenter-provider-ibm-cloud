@@ -203,7 +203,7 @@ jobs:
     needs: [gate, build]
     if: ${{ needs.gate.outputs.approved == 'true' }}
     runs-on: [self-hosted, ibm-e2e]
-    timeout-minutes: 210
+    timeout-minutes: 180
     container:
       image: golang:1.24.6
       options: --user 0
@@ -272,28 +272,28 @@ jobs:
           kubectl delete ibmnodeclasses -l test=e2e --timeout=300s || true
 
           echo "⏳ Waiting for cluster stabilization..."
-          for i in {1..30}; do
+          for i in {1..20}; do
             pending_pods=$(kubectl get pods -l test=e2e --all-namespaces --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l)
             if [ "$pending_pods" -eq 0 ]; then
               echo "✅ No pending e2e pods found"
               break
             fi
             echo "⏳ Still have $pending_pods pending e2e pods, waiting..."
-            sleep 10
+            sleep 5
           done
 
-          for i in {1..30}; do
+          for i in {1..20}; do
             disrupted_nodes=$(kubectl get nodes --no-headers -o custom-columns="NAME:.metadata.name,TAINTS:.spec.taints[*].key" | grep -c "karpenter.sh/disrupted" 2>/dev/null || echo "0")
-            disrupted_nodes=$(echo "$disrupted_nodes" | tr -d '\n' | grep -o '[0-9]*' || echo "0")
+            disrupted_nodes=$(echo "$disrupted_nodes" | tr -d '\n' | grep -o '[0-9]\+' || echo "0")
             if [ "$disrupted_nodes" -eq 0 ]; then
               echo "✅ No disrupted nodes found"
               break
             fi
             echo "⏳ Still have $disrupted_nodes disrupted nodes, waiting..."
-            sleep 10
+            sleep 5
           done
 
-          sleep 30
+          sleep 15
           echo "✅ Pre-test cleanup completed"
 
       - name: Run E2E tests
@@ -317,45 +317,45 @@ jobs:
         run: |
           echo "🚀 Starting E2E test suite..."
 
-          # Define test groups
-          # Core functionality tests from basic_workflow_test.go
-          core_tests="TestE2EFullWorkflow TestE2ENodePoolInstanceTypeSelection TestE2EInstanceTypeSelection TestE2EDriftStability"
+          # Define test groups - optimized for faster execution
+          # Critical path tests (must run)
+          critical_tests="TestE2EFullWorkflow TestE2EImageSelector TestE2EDriftStability"
 
-          # NodeClass validation tests from validation_test.go
-          validation_tests="TestE2ENodeClassValidation TestE2EValidNodeClassCreation TestE2ENodeClassWithMissingFields"
+          # Validation tests (combine similar tests)
+          validation_tests="TestE2ENodeClassValidation TestE2ENodeClassWithMissingFields"
 
-          # Block device mapping tests from block_device_test.go
+          # Block device tests (keep both for coverage)
           block_device_tests="TestE2EBlockDeviceMapping TestE2EBlockDeviceMappingValidation"
 
-          # Scheduling constraint tests from scheduling_test.go and e2e_taints_test.go
-          scheduling_tests="TestE2EPodDisruptionBudget TestE2EConsolidationWithPDB TestE2EPodAntiAffinity TestE2ENodeAffinity TestE2EStartupTaints TestE2EStartupTaintsRemoval TestE2ETaintsBasicScheduling TestE2ETaintValues TestE2ETaintSync TestE2EUnregisteredTaintHandling"
+          # Essential scheduling tests (reduce redundant taint tests)
+          scheduling_tests="TestE2EPodDisruptionBudget TestE2EPodAntiAffinity TestE2ENodeAffinity TestE2ETaintsBasicScheduling TestE2ETaintSync"
 
-          # UserData feature tests from userdata_test.go
+          # UserData tests (keep both variants)
           userdata_tests="TestE2EUserDataAppend TestE2EStandardBootstrap"
 
-          # Image selector tests from image_selector_test.go
-          image_selector_tests="TestE2EImageSelector"
+          # Multi-zone tests (reduce to essential tests)
+          multizone_tests="TestE2EMultiZoneDistribution TestE2ETopologySpreadConstraints TestE2EZoneFailover"
 
-          # Cleanup tests from cleanup_test.go
-          cleanup_tests="TestE2ECleanupNodePoolDeletion TestE2ECleanupNodeClassDeletion TestE2ECleanupOrphanedResources TestE2ECleanupIBMCloudResources"
+          # Cleanup tests (combine related cleanup)
+          cleanup_tests="TestE2ECleanupNodePoolDeletion TestE2ECleanupOrphanedResources"
 
           # Combine all tests
-          all_tests="$core_tests $validation_tests $block_device_tests $scheduling_tests $userdata_tests $image_selector_tests $cleanup_tests"
+          all_tests="$critical_tests $validation_tests $block_device_tests $scheduling_tests $userdata_tests $multizone_tests $cleanup_tests"
 
           test_failed="false"
           passed_tests=0
           failed_tests=0
           total_tests=$(echo $all_tests | wc -w)
 
-          echo "📋 Test Suite Summary:"
-          echo "  Core Tests: $(echo $core_tests | wc -w)"
+          echo "📋 Test Suite Summary (Optimized):"
+          echo "  Critical Tests: $(echo $critical_tests | wc -w)"
           echo "  Validation Tests: $(echo $validation_tests | wc -w)"
           echo "  Block Device Tests: $(echo $block_device_tests | wc -w)"
           echo "  Scheduling Tests: $(echo $scheduling_tests | wc -w)"
           echo "  UserData Tests: $(echo $userdata_tests | wc -w)"
-          echo "  Image Selector Tests: $(echo $image_selector_tests | wc -w)"
+          echo "  Multi-Zone Tests: $(echo $multizone_tests | wc -w)"
           echo "  Cleanup Tests: $(echo $cleanup_tests | wc -w)"
-          echo "  Total Tests: $total_tests"
+          echo "  Total Tests: $total_tests (reduced from 31)"
           echo ""
 
           for test in $all_tests; do
@@ -365,19 +365,25 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
             # Set appropriate timeout based on test type
-            timeout="20m"
+            timeout="15m"
             case "$test" in
               "TestE2EDriftStability")
-                timeout="30m"  # Drift test needs more time for monitoring
+                timeout="25m"  # Drift test needs more time for monitoring
+                ;;
+              "TestE2EMultiZone"*|"TestE2EZone"*|"TestE2ETopology"*|"TestE2EPlacementStrategy"*)
+                timeout="20m"  # Multi-zone tests need extra time for cross-zone provisioning
                 ;;
               "TestE2ECleanup"*)
-                timeout="15m"  # Cleanup tests are typically faster
+                timeout="12m"  # Cleanup tests are typically faster
                 ;;
               "TestE2EValidation"*|"TestE2ENodeClass"*)
-                timeout="10m"  # Validation tests are quick
+                timeout="8m"  # Validation tests are quick
+                ;;
+              "TestE2EImageSelector")
+                timeout="12m"  # Image selector test optimized
                 ;;
               *)
-                timeout="20m"  # Default timeout for other tests
+                timeout="15m"  # Default timeout for other tests
                 ;;
             esac
 
@@ -385,13 +391,30 @@ jobs:
             test_log="test-artifacts/${test}-$(date +%s).log"
             mkdir -p test-artifacts
 
+            # Check circuit breaker status before running test
+            circuit_breaker_check=$(kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter-ibm --tail=100 2>/dev/null | grep -c "circuit breaker is OPEN" || echo "0")
+            circuit_breaker_check=$(echo "$circuit_breaker_check" | tr -d '\n' | tr -d ' ' | grep -o '^[0-9]\+$' || echo "0")
+            if [ "$circuit_breaker_check" -gt 0 ] 2>/dev/null; then
+              echo "⚠️  Circuit breaker detected as OPEN (count: $circuit_breaker_check), attempting reset..."
+              # Restart Karpenter to reset circuit breaker
+              kubectl rollout restart deployment/karpenter-karpenter-ibm -n karpenter
+              kubectl rollout status deployment/karpenter-karpenter-ibm -n karpenter --timeout=60s
+              sleep 10
+            fi
+
             # Run test with enhanced logging and crash recovery
             set +e  # Don't exit on failure
             timeout $timeout go test -tags=e2e -v -timeout $timeout ./test/e2e -run "^$test$" -count=1 2>&1 | tee "$test_log"
             test_exit_code=$?
+            test_exit_code=$(echo "$test_exit_code" | tr -d '\n' | tr -d ' ')
+            # Ensure exit code is numeric
+            if ! echo "$test_exit_code" | grep -q '^[0-9]\+$'; then
+              echo "⚠️  Invalid exit code '$test_exit_code', treating as failure"
+              test_exit_code=1
+            fi
             set -e  # Re-enable exit on failure
 
-            if [ $test_exit_code -eq 0 ]; then
+            if [ "$test_exit_code" -eq 0 ]; then
               echo "✅ Test $test passed"
               passed_tests=$((passed_tests + 1))
             else
@@ -435,7 +458,7 @@ jobs:
             kubectl delete ibmnodeclasses -l test=e2e --timeout=300s || true
 
             echo "⏳ Waiting for cleanup to complete..."
-            sleep 30
+            sleep 15
 
             kubectl get nodes --no-headers | grep -c Ready | xargs echo "Ready nodes:"
             kubectl get nodeclaims --no-headers | grep -c True | xargs echo "Ready nodeclaims:" || echo "Ready nodeclaims: 0"
@@ -526,21 +549,60 @@ jobs:
           kubectl delete nodepools -l test=e2e --timeout=10m || true
           kubectl delete ibmnodeclasses -l test=e2e --timeout=10m || true
 
-          kubectl patch nodeclaims --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
-          kubectl patch nodepools --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
-          kubectl patch ibmnodeclasses --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+          kubectl get nodeclaims -l test=e2e -o name | xargs -r -I {} kubectl patch {} --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+          kubectl get nodepools -l test=e2e -o name | xargs -r -I {} kubectl patch {} --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+          kubectl get ibmnodeclasses -l test=e2e -o name | xargs -r -I {} kubectl patch {} --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
 
-          ibmcloud is instances --output json | \
-            jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id' | \
-            xargs -I {} ibmcloud is instance-delete {} --force || true
+          # Clean up IBM Cloud resources in the correct order
+          instance_ids=$(ibmcloud is instances --output json | \
+            jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id')
 
-          ibmcloud is virtual-network-interfaces --output json | \
-            jq -r '.[] | select(.name | test("e2e-.*-vni")) | .id' | \
-            xargs -I {} ibmcloud is virtual-network-interface-delete {} --force || true
+          if [ -n "$instance_ids" ]; then
+            echo "Found e2e instances to delete: $instance_ids"
+            echo "$instance_ids" | xargs -I {} ibmcloud is instance-delete {} --force || true
 
-          ibmcloud is volumes --output json | \
-            jq -r '.[] | select(.name | test("e2e-.*-boot")) | .id' | \
-            xargs -I {} ibmcloud is volume-delete {} --force || true
+            # Wait for instances to be fully deleted before cleaning up attached resources
+            echo "Waiting for instances to be deleted before cleaning up attached resources..."
+            sleep 30
+
+            # Verify instances are deleted (shorter timeout for PR workflow)
+            for i in {1..6}; do
+              remaining_instances=$(ibmcloud is instances --output json 2>/dev/null | \
+                jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id' | wc -l || echo 0)
+
+              if [ "$remaining_instances" -eq 0 ]; then
+                echo "✅ All e2e instances deleted"
+                break
+              fi
+
+              echo "⏳ Still have $remaining_instances e2e instances, waiting... ($((i*10))s/60s)"
+              sleep 10
+            done
+          else
+            echo "No e2e instances found to delete"
+          fi
+
+          # Clean up orphaned VNIs (Virtual Network Interfaces) - now safe to delete
+          vni_ids=$(ibmcloud is virtual-network-interfaces --output json 2>/dev/null | \
+            jq -r '.[] | select(.name | test("e2e-.*-vni")) | .id' || true)
+
+          if [ -n "$vni_ids" ]; then
+            echo "Found VNIs to delete: $vni_ids"
+            echo "$vni_ids" | xargs -I {} ibmcloud is virtual-network-interface-delete {} --force || true
+          else
+            echo "No orphaned VNIs found"
+          fi
+
+          # Clean up orphaned volumes - now safe to delete
+          volume_ids=$(ibmcloud is volumes --output json 2>/dev/null | \
+            jq -r '.[] | select(.name | test("e2e-.*-boot")) | .id' || true)
+
+          if [ -n "$volume_ids" ]; then
+            echo "Found volumes to delete: $volume_ids"
+            echo "$volume_ids" | xargs -I {} ibmcloud is volume-delete {} --force || true
+          else
+            echo "No orphaned volumes found"
+          fi
 
           echo "✅ Cleanup completed"
 

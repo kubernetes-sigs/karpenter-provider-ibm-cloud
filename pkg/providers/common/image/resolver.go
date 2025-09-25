@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/go-logr/logr"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
@@ -32,13 +33,15 @@ import (
 type Resolver struct {
 	vpcClient *ibm.VPCClient
 	region    string
+	logger    logr.Logger
 }
 
 // NewResolver creates a new image resolver
-func NewResolver(vpcClient *ibm.VPCClient, region string) *Resolver {
+func NewResolver(vpcClient *ibm.VPCClient, region string, logger logr.Logger) *Resolver {
 	return &Resolver{
 		vpcClient: vpcClient,
 		region:    region,
+		logger:    logger,
 	}
 }
 
@@ -180,21 +183,62 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 		return "", fmt.Errorf("image selector cannot be nil")
 	}
 
+	r.logger.Info("Starting image resolution by selector",
+		"os", selector.OS,
+		"majorVersion", selector.MajorVersion,
+		"minorVersion", selector.MinorVersion,
+		"architecture", selector.Architecture,
+		"variant", selector.Variant)
+
 	// List all available images
 	images, err := r.ListAvailableImages(ctx, "")
 	if err != nil {
+		r.logger.Error(err, "Failed to list available images")
 		return "", fmt.Errorf("listing images: %w", err)
+	}
+
+	r.logger.Info("Retrieved images from VPC API", "totalImages", len(images))
+	if len(images) > 0 && r.logger.V(1).Enabled() {
+		// Log first few images for debugging
+		for i, img := range images {
+			if i >= 3 {
+				break
+			}
+			r.logger.V(1).Info("Sample image", "index", i, "id", img.ID, "name", img.Name, "os", img.OperatingSystem, "status", img.Status)
+		}
 	}
 
 	// Filter images by selector criteria
 	candidates := r.filterImagesBySelector(images, selector)
+	r.logger.Info("Filtered candidate images", "candidateCount", len(candidates))
+
+	if len(candidates) > 0 && r.logger.V(1).Enabled() {
+		r.logger.V(1).Info("First candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
+	}
+
 	if len(candidates) == 0 {
+		r.logger.Error(nil, "No images found matching selector criteria",
+			"os", selector.OS,
+			"majorVersion", selector.MajorVersion,
+			"minorVersion", selector.MinorVersion,
+			"architecture", selector.Architecture,
+			"variant", selector.Variant,
+			"totalImagesSearched", len(images))
 		return "", fmt.Errorf("no images found matching selector: os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s",
 			selector.OS, selector.MajorVersion, selector.MinorVersion, selector.Architecture, selector.Variant)
 	}
 
 	// Sort by semantic version and creation date (newest first)
 	sortedCandidates := r.sortImagesByVersion(candidates, selector)
+
+	r.logger.Info("Successfully resolved image using selector",
+		"selectedImageID", sortedCandidates[0].ID,
+		"selectedImageName", sortedCandidates[0].Name,
+		"os", selector.OS,
+		"majorVersion", selector.MajorVersion,
+		"minorVersion", selector.MinorVersion,
+		"architecture", selector.Architecture,
+		"variant", selector.Variant)
 
 	// Return the most recent matching image
 	return sortedCandidates[0].ID, nil
