@@ -634,12 +634,14 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 
 // validateImageConfiguration validates image configuration (either explicit image or imageSelector)
 func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha1.IBMNodeClass) error {
+	logger := log.FromContext(ctx)
+
 	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	imageResolver := image.NewResolver(vpcClient, nc.Spec.Region)
+	imageResolver := image.NewResolver(vpcClient, nc.Spec.Region, logger)
 
 	// Validate explicit image if specified
 	if nc.Spec.Image != "" {
@@ -672,13 +674,15 @@ func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha
 
 // validateImage checks if the image exists and is accessible (legacy method)
 func (c *Controller) validateImage(ctx context.Context, imageIdentifier, region string) error {
+	logger := log.FromContext(ctx)
+
 	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Use image resolver to handle both IDs and names
-	imageResolver := image.NewResolver(vpcClient, region)
+	imageResolver := image.NewResolver(vpcClient, region, logger)
 	_, err = imageResolver.ResolveImage(ctx, imageIdentifier)
 	if err != nil {
 		return fmt.Errorf("image %s not found or not accessible in region %s: %w", imageIdentifier, region, err)

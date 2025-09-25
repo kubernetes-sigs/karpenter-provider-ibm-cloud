@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/go-logr/logr"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
@@ -32,13 +33,15 @@ import (
 type Resolver struct {
 	vpcClient *ibm.VPCClient
 	region    string
+	logger    logr.Logger
 }
 
 // NewResolver creates a new image resolver
-func NewResolver(vpcClient *ibm.VPCClient, region string) *Resolver {
+func NewResolver(vpcClient *ibm.VPCClient, region string, logger logr.Logger) *Resolver {
 	return &Resolver{
 		vpcClient: vpcClient,
 		region:    region,
+		logger:    logger,
 	}
 }
 
@@ -180,21 +183,62 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 		return "", fmt.Errorf("image selector cannot be nil")
 	}
 
+	r.logger.Info("Starting image resolution by selector",
+		"os", selector.OS,
+		"majorVersion", selector.MajorVersion,
+		"minorVersion", selector.MinorVersion,
+		"architecture", selector.Architecture,
+		"variant", selector.Variant)
+
 	// List all available images
 	images, err := r.ListAvailableImages(ctx, "")
 	if err != nil {
+		r.logger.Error(err, "Failed to list available images")
 		return "", fmt.Errorf("listing images: %w", err)
+	}
+
+	r.logger.Info("Retrieved images from VPC API", "totalImages", len(images))
+	if len(images) > 0 && r.logger.V(1).Enabled() {
+		// Log first few images for debugging
+		for i, img := range images {
+			if i >= 3 {
+				break
+			}
+			r.logger.V(1).Info("Sample image", "index", i, "id", img.ID, "name", img.Name, "os", img.OperatingSystem, "status", img.Status)
+		}
 	}
 
 	// Filter images by selector criteria
 	candidates := r.filterImagesBySelector(images, selector)
+	r.logger.Info("Filtered candidate images", "candidateCount", len(candidates))
+
+	if len(candidates) > 0 && r.logger.V(1).Enabled() {
+		r.logger.V(1).Info("First candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
+	}
+
 	if len(candidates) == 0 {
+		r.logger.Error(nil, "No images found matching selector criteria",
+			"os", selector.OS,
+			"majorVersion", selector.MajorVersion,
+			"minorVersion", selector.MinorVersion,
+			"architecture", selector.Architecture,
+			"variant", selector.Variant,
+			"totalImagesSearched", len(images))
 		return "", fmt.Errorf("no images found matching selector: os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s",
 			selector.OS, selector.MajorVersion, selector.MinorVersion, selector.Architecture, selector.Variant)
 	}
 
 	// Sort by semantic version and creation date (newest first)
 	sortedCandidates := r.sortImagesByVersion(candidates, selector)
+
+	r.logger.Info("Successfully resolved image using selector",
+		"selectedImageID", sortedCandidates[0].ID,
+		"selectedImageName", sortedCandidates[0].Name,
+		"os", selector.OS,
+		"majorVersion", selector.MajorVersion,
+		"minorVersion", selector.MinorVersion,
+		"architecture", selector.Architecture,
+		"variant", selector.Variant)
 
 	// Return the most recent matching image
 	return sortedCandidates[0].ID, nil
@@ -216,8 +260,7 @@ func (r *Resolver) filterImagesBySelector(images []ImageInfo, selector *v1alpha1
 // imageMatchesSelector checks if an image matches the selector criteria
 func (r *Resolver) imageMatchesSelector(img ImageInfo, selector *v1alpha1.ImageSelector) bool {
 	// Parse image name to extract components
-	// Expected format: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
-	// Example: "ibm-ubuntu-22-04-minimal-amd64-1"
+	// Supports multiple IBM Cloud image naming formats
 	components := r.parseImageName(img.Name)
 	if components == nil {
 		return false
@@ -260,14 +303,33 @@ func (r *Resolver) imageMatchesSelector(img ImageInfo, selector *v1alpha1.ImageS
 }
 
 // parseImageName extracts components from IBM Cloud image names
-// Expected format: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
-// Alternative format: {os}-{major}-{minor} (for older images)
+// Expected formats:
+// - ibm-{os}-{major}-{minor}-{patch}-{variant}-{arch}-{build} (newer format)
+// - ibm-{os}-{major}-{minor}-{variant}-{arch}-{build} (standard format)
+// - ibm-{os}-{major}-{minor}-{arch}-{build} (alternative format)
+// - {os}-{major}-{minor} (legacy format)
 func (r *Resolver) parseImageName(imageName string) map[string]string {
 	components := make(map[string]string)
 
-	// Try IBM format first: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
+	// Try newer IBM format first: ibm-{os}-{major}-{minor}-{patch}-{variant}-{arch}-{build}
+	// Example: ibm-ubuntu-22-04-5-minimal-amd64-7
+	ibmNewPattern := regexp.MustCompile(`^ibm-([a-z]+)-([0-9]+)-([0-9]+)-([0-9]+)-([a-z]+)-([a-z0-9]+)-([0-9]+)$`)
+	matches := ibmNewPattern.FindStringSubmatch(imageName)
+	if len(matches) == 8 {
+		components["os"] = matches[1]
+		components["majorVersion"] = matches[2]
+		components["minorVersion"] = matches[3]
+		components["patchVersion"] = matches[4]
+		components["variant"] = matches[5]
+		components["architecture"] = matches[6]
+		components["build"] = matches[7]
+		return components
+	}
+
+	// Try standard IBM format: ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}
+	// Example: ibm-ubuntu-22-04-minimal-amd64-1
 	ibmPattern := regexp.MustCompile(`^ibm-([a-z]+)-([0-9]+)-([0-9]+)-([a-z]+)-([a-z0-9]+)-([0-9]+)$`)
-	matches := ibmPattern.FindStringSubmatch(imageName)
+	matches = ibmPattern.FindStringSubmatch(imageName)
 	if len(matches) == 7 {
 		components["os"] = matches[1]
 		components["majorVersion"] = matches[2]

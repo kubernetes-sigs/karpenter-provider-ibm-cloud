@@ -85,6 +85,7 @@ ibmcloud is images --visibility public --status available | grep ubuntu
 - **API Server Endpoint**: Get your cluster's API endpoint (e.g., `https://10.240.0.1:6443`)
 - **Region**: `us-south` (or your preferred region)
 - **Zone**: `us-south-1` (subnet's availability zone)
+  - 💡 **Multi-Zone Tip**: For production deployments, consider using `placementStrategy` instead of explicit zones for automatic multi-zone distribution. See [Multi-Zone VPC Setup with Placement Constraints](vpc-integration.md#multi-zone-vpc-setup-with-placement-constraints)
 
 ## Installation
 

@@ -22,6 +22,7 @@ import (
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/go-logr/logr"
 	"github.com/go-openapi/strfmt"
 	"github.com/stretchr/testify/assert"
 
@@ -191,12 +192,14 @@ func TestNewResolver(t *testing.T) {
 	mockSDKClient := &MockVPCSDKClient{}
 	vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
 	region := "us-south"
+	logger := logr.Discard()
 
-	resolver := NewResolver(vpcClient, region)
+	resolver := NewResolver(vpcClient, region, logger)
 
 	assert.NotNil(t, resolver)
 	assert.Equal(t, region, resolver.region)
 	assert.Equal(t, vpcClient, resolver.vpcClient)
+	assert.Equal(t, logger, resolver.logger)
 }
 
 func TestResolveImage_WithImageID(t *testing.T) {
@@ -243,7 +246,7 @@ func TestResolveImage_WithImageID(t *testing.T) {
 				getImageFunc: tt.mockFunc,
 			}
 			vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
-			resolver := NewResolver(vpcClient, "us-south")
+			resolver := NewResolver(vpcClient, "us-south", logr.Discard())
 
 			result, err := resolver.ResolveImage(context.Background(), tt.imageID)
 
@@ -324,7 +327,7 @@ func TestResolveImage_WithImageName(t *testing.T) {
 				listImagesFunc: tt.mockFunc,
 			}
 			vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
-			resolver := NewResolver(vpcClient, "us-south")
+			resolver := NewResolver(vpcClient, "us-south", logr.Discard())
 
 			result, err := resolver.ResolveImage(context.Background(), tt.imageName)
 
@@ -404,7 +407,7 @@ func TestListAvailableImages(t *testing.T) {
 				listImagesFunc: tt.mockFunc,
 			}
 			vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
-			resolver := NewResolver(vpcClient, "us-south")
+			resolver := NewResolver(vpcClient, "us-south", logr.Discard())
 
 			result, err := resolver.ListAvailableImages(context.Background(), tt.nameFilter)
 
@@ -567,7 +570,7 @@ func TestImageSorting(t *testing.T) {
 		},
 	}
 	vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
-	resolver := NewResolver(vpcClient, "us-south")
+	resolver := NewResolver(vpcClient, "us-south", logr.Discard())
 
 	// Test that the resolver returns the most recent image
 	result, err := resolver.ResolveImage(context.Background(), "ubuntu")
@@ -579,7 +582,7 @@ func TestEdgeCases(t *testing.T) {
 	t.Run("empty image name in ResolveImage", func(t *testing.T) {
 		mockSDKClient := &MockVPCSDKClient{}
 		vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
-		resolver := NewResolver(vpcClient, "us-south")
+		resolver := NewResolver(vpcClient, "us-south", logr.Discard())
 
 		result, err := resolver.ResolveImage(context.Background(), "")
 		assert.Error(t, err)
@@ -603,7 +606,7 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 		vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
-		resolver := NewResolver(vpcClient, "us-south")
+		resolver := NewResolver(vpcClient, "us-south", logr.Discard())
 
 		result, err := resolver.ResolveImage(context.Background(), "ubuntu")
 		assert.Error(t, err)
@@ -667,7 +670,7 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 
 		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
 
-		resolver := NewResolver(mockVPCClient, "us-south")
+		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
 
 		selector := &v1alpha1.ImageSelector{
 			OS:           "ubuntu",
@@ -707,7 +710,7 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 
 		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
 
-		resolver := NewResolver(mockVPCClient, "us-south")
+		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
 
 		selector := &v1alpha1.ImageSelector{
 			OS:           "ubuntu",
@@ -740,7 +743,7 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 
 		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
 
-		resolver := NewResolver(mockVPCClient, "us-south")
+		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
 
 		selector := &v1alpha1.ImageSelector{
 			OS:           "ubuntu",
@@ -757,7 +760,7 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 
 	t.Run("nil selector", func(t *testing.T) {
 		mockVPCClient := &ibm.VPCClient{}
-		resolver := NewResolver(mockVPCClient, "us-south")
+		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
 
 		_, err := resolver.ResolveImageBySelector(context.Background(), nil)
 		assert.Error(t, err)
@@ -776,7 +779,20 @@ func TestResolver_parseImageName(t *testing.T) {
 		shouldBeNil bool
 	}{
 		{
-			name:      "full IBM format",
+			name:      "newer IBM format with patch version",
+			imageName: "ibm-ubuntu-22-04-5-minimal-amd64-7",
+			expected: map[string]string{
+				"os":           "ubuntu",
+				"majorVersion": "22",
+				"minorVersion": "04",
+				"patchVersion": "5",
+				"variant":      "minimal",
+				"architecture": "amd64",
+				"build":        "7",
+			},
+		},
+		{
+			name:      "standard IBM format",
 			imageName: "ibm-ubuntu-22-04-minimal-amd64-1",
 			expected: map[string]string{
 				"os":           "ubuntu",

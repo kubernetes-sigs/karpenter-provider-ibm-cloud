@@ -453,6 +453,12 @@ additionalCAs:
 
 # Controller configuration
 controller:
+  # Orphan cleanup configuration
+  orphanCleanup:
+    # Enable cleanup of orphaned instances (instances without NodeClaims)
+    # This prevents resource leaks when NodeClaims are deleted before instances are cleaned up
+    enabled: true
+
   metrics:
     port: 8080
   healthProbe:

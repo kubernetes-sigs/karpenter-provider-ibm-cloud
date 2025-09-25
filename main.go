@@ -71,6 +71,7 @@ func main() {
 			op.UnavailableOfferings,
 			cloudProvider,
 			op.ProviderFactory.GetInstanceTypeProvider(),
+			op.ProviderFactory.GetSubnetProvider(),
 			op.ProviderFactory.GetClient(),
 		)...).
 		Start(ctx)
