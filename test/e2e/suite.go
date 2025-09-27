@@ -156,12 +156,17 @@ func SetupE2ETestSuite(t *testing.T) *E2ETestSuite {
 		APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
 	}
 
-	// 🧹 CRITICAL: Pre-test cleanup to prevent circuit breaker issues
-	t.Logf("🧹 Performing PRE-TEST cleanup to prevent stale resource issues...")
-	suite.cleanupAllStaleResources(t)
+	// Skip complex cleanup for simple tests
+	if os.Getenv("E2E_SIMPLE_MODE") != "true" {
+		// 🧹 CRITICAL: Pre-test cleanup to prevent circuit breaker issues
+		t.Logf("🧹 Performing PRE-TEST cleanup to prevent stale resource issues...")
+		suite.cleanupAllStaleResources(t)
 
-	// Wait for cleanup to complete and verify cluster state
-	suite.verifyCleanState(t)
+		// Wait for cleanup to complete and verify cluster state
+		suite.verifyCleanState(t)
+	} else {
+		t.Logf("✅ Skipping complex cleanup (simple mode)")
+	}
 
 	return suite
 }

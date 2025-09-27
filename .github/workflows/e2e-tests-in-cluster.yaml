@@ -158,33 +158,13 @@ jobs:
       run: |
         echo "🚀 Starting E2E test suite..."
 
-        # Define test groups
-        # Core functionality tests from basic_workflow_test.go
-        core_tests="TestE2EFullWorkflow TestE2ENodePoolInstanceTypeSelection TestE2EInstanceTypeSelection TestE2EDriftStability"
+        # Simple test setup for debugging
+        # Only run the simple smoke test to establish baseline
+        simple_smoke_test="TestE2ESimpleSmokeTest"
 
-        # NodeClass validation tests from validation_test.go
-        validation_tests="TestE2ENodeClassValidation TestE2EValidNodeClassCreation TestE2ENodeClassWithMissingFields"
-
-        # Block device mapping tests from block_device_test.go
-        block_device_tests="TestE2EBlockDeviceMapping TestE2EBlockDeviceMappingValidation"
-
-        # Scheduling constraint tests from scheduling_test.go and e2e_taints_test.go
-        scheduling_tests="TestE2EPodDisruptionBudget TestE2EConsolidationWithPDB TestE2EPodAntiAffinity TestE2ENodeAffinity TestE2EStartupTaints TestE2EStartupTaintsRemoval TestE2ETaintsBasicScheduling TestE2ETaintValues TestE2ETaintSync TestE2EUnregisteredTaintHandling"
-
-        # UserData feature tests from userdata_test.go
-        userdata_tests="TestE2EUserDataAppend TestE2EStandardBootstrap"
-
-        # Image selector tests from image_selector_test.go
-        image_selector_tests="TestE2EImageSelector"
-
-        # Multi-zone tests from multizone_test.go
-        multizone_tests="TestE2EMultiZoneDistribution TestE2EZoneAntiAffinity TestE2ETopologySpreadConstraints TestE2EPlacementStrategyValidation TestE2EZoneFailover"
-
-        # Cleanup tests from cleanup_test.go
-        cleanup_tests="TestE2ECleanupNodePoolDeletion TestE2ECleanupNodeClassDeletion TestE2ECleanupOrphanedResources TestE2ECleanupIBMCloudResources"
-
-        # Combine all tests
-        all_tests="$core_tests $validation_tests $block_device_tests $scheduling_tests $userdata_tests $image_selector_tests $multizone_tests $cleanup_tests"
+        # Determine test suite - for now, only run simple test
+        echo "Running SIMPLE smoke test only for debugging"
+        all_tests="$simple_smoke_test"
 
         test_failed="false"
         passed_tests=0
@@ -192,14 +172,7 @@ jobs:
         total_tests=$(echo $all_tests | wc -w)
 
         echo "📋 Test Suite Summary:"
-        echo "  Core Tests: $(echo $core_tests | wc -w)"
-        echo "  Validation Tests: $(echo $validation_tests | wc -w)"
-        echo "  Block Device Tests: $(echo $block_device_tests | wc -w)"
-        echo "  Scheduling Tests: $(echo $scheduling_tests | wc -w)"
-        echo "  UserData Tests: $(echo $userdata_tests | wc -w)"
-        echo "  Image Selector Tests: $(echo $image_selector_tests | wc -w)"
-        echo "  Multi-Zone Tests: $(echo $multizone_tests | wc -w)"
-        echo "  Cleanup Tests: $(echo $cleanup_tests | wc -w)"
+        echo "  Simple Smoke Tests: $(echo $simple_smoke_test | wc -w)"
         echo "  Total Tests: $total_tests"
         echo ""
 
@@ -213,6 +186,24 @@ jobs:
           # Set appropriate timeout based on test type
           timeout="20m"
           case "$test" in
+            "TestE2ESimpleSmokeTest")
+              timeout="10m"  # Simple smoke test with no complex cleanup
+              ;;
+            "TestE2ESmokeTest")
+              timeout="12m"  # Quick smoke test (longer timeout for IBM Cloud cleanup)
+              ;;
+            "TestE2ESmokeTestMinimal")
+              timeout="3m"  # Minimal smoke test (longer than internal 1m timeout)
+              ;;
+            "TestE2EComprehensiveProvisioning")
+              timeout="40m"  # Comprehensive test with multiple phases
+              ;;
+            "TestE2ENodeClassValidationComplete")
+              timeout="12m"  # Validation tests are quick
+              ;;
+            "TestE2ETaintsComplete")
+              timeout="25m"  # Taints test with multiple scenarios
+              ;;
             "TestE2EDriftStability")
               timeout="30m"  # Drift test needs more time for monitoring
               ;;

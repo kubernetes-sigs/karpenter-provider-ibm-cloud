@@ -439,37 +439,26 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		"selectedInstanceType-ptr", &selectedInstanceType.Name,
 		"availableTypes", len(instanceTypes))
 
-	// Create instance prototype with VNI using IBM VPC SDK constructor for proper oneOf discriminator handling
-	imageIdentity := &vpcv1.ImageIdentityByID{
-		ID: &imageID,
-	}
-	zoneIdentity := &vpcv1.ZoneIdentityByName{
-		Name: &zone,
-	}
-
-	// Use IBM VPC SDK constructor to ensure proper oneOf discriminator serialization
-	// Create a temporary VPC SDK client instance for accessing the constructor method
-	var vpcSDK vpcv1.VpcV1
-	instancePrototype, err := vpcSDK.NewInstancePrototypeInstanceByImageInstanceByImageInstanceByNetworkAttachment(
-		imageIdentity,
-		zoneIdentity,
-		primaryNetworkAttachment,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating instance prototype with VPC SDK constructor: %w", err)
-	}
-
-	// Set additional fields after construction
-	instancePrototype.VPC = &vpcv1.VPCIdentityByID{
-		ID: &nodeClass.Spec.VPC,
-	}
-	instancePrototype.Name = &nodeClaim.Name
-	instancePrototype.Profile = &vpcv1.InstanceProfileIdentityByName{
-		Name: &instanceProfile,
-	}
-	instancePrototype.BootVolumeAttachment = bootVolumeAttachment
-	instancePrototype.AvailabilityPolicy = &vpcv1.InstanceAvailabilityPolicyPrototype{
-		HostFailure: &[]string{"restart"}[0],
+	// Create instance prototype with VNI using specific concrete type for oneOf discriminator
+	instancePrototype := &vpcv1.InstancePrototypeInstanceByImageInstanceByImageInstanceByNetworkAttachment{
+		Image: &vpcv1.ImageIdentityByID{
+			ID: &imageID,
+		},
+		Zone: &vpcv1.ZoneIdentityByName{
+			Name: &zone,
+		},
+		PrimaryNetworkAttachment: primaryNetworkAttachment,
+		VPC: &vpcv1.VPCIdentityByID{
+			ID: &nodeClass.Spec.VPC,
+		},
+		Name: &nodeClaim.Name,
+		Profile: &vpcv1.InstanceProfileIdentityByName{
+			Name: &instanceProfile,
+		},
+		BootVolumeAttachment: bootVolumeAttachment,
+		AvailabilityPolicy: &vpcv1.InstanceAvailabilityPolicyPrototype{
+			HostFailure: &[]string{"restart"}[0],
+		},
 	}
 
 	// Add placement target if specified
