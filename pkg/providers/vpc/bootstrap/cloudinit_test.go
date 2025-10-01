@@ -579,3 +579,235 @@ func TestCloudInitTemplate_SecurityFeatures(t *testing.T) {
 		assert.Contains(t, script, "/etc/kubernetes/additional-ca.crt")
 	})
 }
+
+func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
+	client := &ibm.Client{}
+	provider := NewVPCBootstrapProvider(client, nil, nil)
+
+	t.Run("inject single BOOTSTRAP_ variable", func(t *testing.T) {
+		// Set test environment variable
+		require.NoError(t, os.Setenv("BOOTSTRAP_TEST_VAR", "test-value-123"))
+		defer func() {
+			_ = os.Unsetenv("BOOTSTRAP_TEST_VAR")
+		}()
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "test-ca",
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+
+		// Verify variable is injected near the top of the script
+		assert.Contains(t, script, `export BOOTSTRAP_TEST_VAR="test-value-123"`)
+
+		// Verify it comes after shebang but before main script logic
+		lines := strings.Split(script, "\n")
+		foundShebang := false
+		foundExport := false
+		foundMainLogic := false
+
+		for _, line := range lines {
+			if strings.Contains(line, "#!/bin/bash") {
+				foundShebang = true
+			}
+			if strings.Contains(line, "export BOOTSTRAP_TEST_VAR") {
+				foundExport = true
+				assert.True(t, foundShebang, "Export should come after shebang")
+				assert.False(t, foundMainLogic, "Export should come before main logic")
+			}
+			if strings.Contains(line, "===== Karpenter IBM Cloud Bootstrap") {
+				foundMainLogic = true
+			}
+		}
+
+		assert.True(t, foundExport, "BOOTSTRAP_ variable should be injected")
+	})
+
+	t.Run("inject multiple BOOTSTRAP_ variables", func(t *testing.T) {
+		// Set multiple test environment variables
+		require.NoError(t, os.Setenv("BOOTSTRAP_SERVER", "https://server:9345"))
+		require.NoError(t, os.Setenv("BOOTSTRAP_TOKEN", "secret-token-abc123"))
+		require.NoError(t, os.Setenv("BOOTSTRAP_VERSION", "v1.30.2"))
+		defer func() {
+			_ = os.Unsetenv("BOOTSTRAP_SERVER")
+			_ = os.Unsetenv("BOOTSTRAP_TOKEN")
+			_ = os.Unsetenv("BOOTSTRAP_VERSION")
+		}()
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "test-ca",
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+
+		// Verify all variables are injected
+		assert.Contains(t, script, `export BOOTSTRAP_SERVER="https://server:9345"`)
+		assert.Contains(t, script, `export BOOTSTRAP_TOKEN="secret-token-abc123"`)
+		assert.Contains(t, script, `export BOOTSTRAP_VERSION="v1.30.2"`)
+	})
+
+	t.Run("ignore non-BOOTSTRAP_ variables", func(t *testing.T) {
+		// Set variables without BOOTSTRAP_ prefix
+		require.NoError(t, os.Setenv("MY_VAR", "should-not-be-injected"))
+		require.NoError(t, os.Setenv("TEST_VAR", "also-should-not-be-injected"))
+		defer func() {
+			_ = os.Unsetenv("MY_VAR")
+			_ = os.Unsetenv("TEST_VAR")
+		}()
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "test-ca",
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+
+		// Verify non-BOOTSTRAP_ variables are NOT injected
+		assert.NotContains(t, script, "MY_VAR")
+		assert.NotContains(t, script, "TEST_VAR")
+		assert.NotContains(t, script, "should-not-be-injected")
+		assert.NotContains(t, script, "also-should-not-be-injected")
+	})
+
+	t.Run("handle variables with special characters", func(t *testing.T) {
+		// Set variable with special characters that need quoting
+		require.NoError(t, os.Setenv("BOOTSTRAP_SPECIAL", "value with spaces and $pecial chars!"))
+		defer func() {
+			_ = os.Unsetenv("BOOTSTRAP_SPECIAL")
+		}()
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "test-ca",
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+
+		// Verify variable is properly quoted
+		assert.Contains(t, script, `export BOOTSTRAP_SPECIAL="value with spaces and $pecial chars!"`)
+	})
+
+	t.Run("no BOOTSTRAP_ variables set", func(t *testing.T) {
+		// Ensure no BOOTSTRAP_ variables are set
+		for _, env := range os.Environ() {
+			if strings.HasPrefix(env, "BOOTSTRAP_") {
+				parts := strings.SplitN(env, "=", 2)
+				_ = os.Unsetenv(parts[0])
+			}
+		}
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "test-ca",
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+
+		// Script should still be generated successfully without BOOTSTRAP_ vars
+		assert.NotEmpty(t, script)
+		assert.Contains(t, script, "#!/bin/bash")
+		assert.Contains(t, script, "Karpenter IBM Cloud Bootstrap")
+	})
+
+	t.Run("RKE2 use case simulation", func(t *testing.T) {
+		// Simulate RKE2 bootstrap scenario
+		require.NoError(t, os.Setenv("BOOTSTRAP_RKE2_SERVER", "https://10.20.5.71:9345"))
+		require.NoError(t, os.Setenv("BOOTSTRAP_RKE2_TOKEN", "K1060b31293d57afc0eda682e6d097d21f7f21ad383318a3a49e1dacb9f635bfe93::server:6bd454f63cb03f1cdacc18b7a245bec3"))
+		require.NoError(t, os.Setenv("BOOTSTRAP_RKE2_VERSION", "v1.30.2+rke2r1"))
+		defer func() {
+			_ = os.Unsetenv("BOOTSTRAP_RKE2_SERVER")
+			_ = os.Unsetenv("BOOTSTRAP_RKE2_TOKEN")
+			_ = os.Unsetenv("BOOTSTRAP_RKE2_VERSION")
+		}()
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "test-ca",
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+
+		// Verify RKE2 variables are injected
+		assert.Contains(t, script, `export BOOTSTRAP_RKE2_SERVER="https://10.20.5.71:9345"`)
+		assert.Contains(t, script, `export BOOTSTRAP_RKE2_TOKEN="K1060b31293d57afc0eda682e6d097d21f7f21ad383318a3a49e1dacb9f635bfe93::server:6bd454f63cb03f1cdacc18b7a245bec3"`)
+		assert.Contains(t, script, `export BOOTSTRAP_RKE2_VERSION="v1.30.2+rke2r1"`)
+
+		// Verify they appear early in the script
+		shebangIndex := strings.Index(script, "#!/bin/bash")
+		serverIndex := strings.Index(script, "BOOTSTRAP_RKE2_SERVER")
+		tokenIndex := strings.Index(script, "BOOTSTRAP_RKE2_TOKEN")
+		mainLogicIndex := strings.Index(script, "Karpenter IBM Cloud Bootstrap")
+
+		assert.True(t, shebangIndex < serverIndex, "Shebang should come before SERVER export")
+		assert.True(t, serverIndex < mainLogicIndex, "SERVER export should come before main logic")
+		assert.True(t, tokenIndex < mainLogicIndex, "TOKEN export should come before main logic")
+	})
+}
