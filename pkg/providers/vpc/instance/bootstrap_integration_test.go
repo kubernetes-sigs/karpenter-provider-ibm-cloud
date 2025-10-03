@@ -83,10 +83,11 @@ func TestBootstrapIntegration(t *testing.T) {
 			)
 
 			if tt.expectManual {
-				// Should return the manual userData as-is
+				// Should return the manual userData with BOOTSTRAP_* variables injected if present
 				assert.NoError(t, err)
-				assert.Equal(t, tt.nodeClass.Spec.UserData, userData)
 				assert.Contains(t, userData, "Manual bootstrap script")
+				// Verify original content is preserved
+				assert.Contains(t, userData, "#!/bin/bash")
 			}
 
 			if tt.expectDynamic {
@@ -126,8 +127,9 @@ func TestBootstrapBehavior(t *testing.T) {
 		)
 
 		assert.NoError(t, err)
-		assert.Equal(t, nodeClass.Spec.UserData, userData)
+		// Verify original custom bootstrap content is preserved
 		assert.Contains(t, userData, "Custom bootstrap")
+		assert.Contains(t, userData, "#!/bin/bash")
 	})
 }
 

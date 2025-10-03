@@ -927,6 +927,41 @@ report_status "completed" "bootstrap-finished"
 echo "$(date): ===== Bootstrap completed ====="
 `
 
+// InjectBootstrapEnvVars injects BOOTSTRAP_* environment variables into a script
+// This function works with any bash script by inserting exports after the shebang
+func InjectBootstrapEnvVars(script string) string {
+	var bootstrapVars strings.Builder
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "BOOTSTRAP_") {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				varName := parts[0]
+				varValue := parts[1]
+				bootstrapVars.WriteString(fmt.Sprintf("export %s=%q\n", varName, varValue))
+			}
+		}
+	}
+
+	if bootstrapVars.Len() > 0 {
+		fmt.Printf("DEBUG: Injecting %d BOOTSTRAP_* environment variables into script\n",
+			strings.Count(bootstrapVars.String(), "\n"))
+
+		// Handle different shebang styles
+		if strings.HasPrefix(script, "#!/bin/bash\nset -euo pipefail\n") {
+			script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n",
+				"#!/bin/bash\nset -euo pipefail\n\n"+bootstrapVars.String(), 1)
+		} else if strings.HasPrefix(script, "#!/bin/bash\n") {
+			script = strings.Replace(script, "#!/bin/bash\n",
+				"#!/bin/bash\n\n"+bootstrapVars.String(), 1)
+		} else {
+			// If no shebang found, prepend to the script
+			script = bootstrapVars.String() + "\n" + script
+		}
+	}
+
+	return script
+}
+
 // generateCloudInitScript generates a cloud-init script for node bootstrapping
 func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, options types.Options) (string, error) {
 	// Create template
@@ -964,25 +999,8 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 		fmt.Printf("DEBUG: No ca_crt environment variable found\n")
 	}
 
-	// Inject BOOTSTRAP_* environment variables for custom bootstrap scenarios
-	var bootstrapVars strings.Builder
-	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "BOOTSTRAP_") {
-			parts := strings.SplitN(env, "=", 2)
-			if len(parts) == 2 {
-				varName := parts[0]
-				varValue := parts[1]
-				bootstrapVars.WriteString(fmt.Sprintf("export %s=%q\n", varName, varValue))
-			}
-		}
-	}
-
-	if bootstrapVars.Len() > 0 {
-		fmt.Printf("DEBUG: Injecting %d BOOTSTRAP_* environment variables into cloud-init script\n",
-			strings.Count(bootstrapVars.String(), "\n"))
-		script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n",
-			"#!/bin/bash\nset -euo pipefail\n\n"+bootstrapVars.String(), 1)
-	}
+	// Inject BOOTSTRAP_* environment variables
+	script = InjectBootstrapEnvVars(script)
 
 	return script, nil
 }

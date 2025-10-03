@@ -1433,7 +1433,8 @@ func (p *VPCInstanceProvider) generateBootstrapUserDataWithInstanceIDAndType(ctx
 	// Use manual userData if provided
 	if nodeClass.Spec.UserData != "" {
 		logger.Info("Using manual userData from IBMNodeClass")
-		return nodeClass.Spec.UserData, nil
+		// Inject BOOTSTRAP_* environment variables into custom userData
+		return bootstrap.InjectBootstrapEnvVars(nodeClass.Spec.UserData), nil
 	}
 
 	// Initialize bootstrap provider if not already done
