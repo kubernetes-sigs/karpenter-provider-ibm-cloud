@@ -161,10 +161,23 @@ func (c *Controller) processStartupTaintLifecycle(ctx context.Context, nodeClaim
 		return c.applyStartupTaints(ctx, nodeClaim, node)
 	}
 
-	// Phase 2: Wait for startup taints to be removed by system pods
+	// Phase 2: Remove startup taints when node is ready
 	if startupTaintsApplied && !startupTaintsRemoved {
-		logger.V(1).Info("waiting for system pods to remove startup taints")
-		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+		// Check if node is Ready
+		if !c.isNodeReady(node) {
+			logger.V(1).Info("waiting for node to become ready before removing startup taints")
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Check if other system startup taints (Cilium, etc.) are still present
+		hasOtherSystemTaints := c.hasOtherSystemStartupTaints(node)
+		if hasOtherSystemTaints {
+			logger.V(1).Info("waiting for system pods to remove their startup taints (Cilium, etc.)")
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Node is ready and system taints are gone - remove Karpenter startup taint
+		return c.removeKarpenterStartupTaint(ctx, node)
 	}
 
 	// Phase 3: Apply regular taints after startup taints are removed
@@ -380,7 +393,58 @@ func isSystemStartupTaint(key string) bool {
 		"node.kubernetes.io/disk-pressure",
 		"node.kubernetes.io/memory-pressure",
 		"node.kubernetes.io/pid-pressure",
+		"karpenter.sh/unregistered", // Karpenter startup taint
 	}
 
 	return lo.Contains(systemStartupTaints, key)
+}
+
+// isNodeReady checks if the node has a Ready condition with status True
+func (c *Controller) isNodeReady(node *corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
+
+// hasOtherSystemStartupTaints checks if node has system startup taints other than karpenter.sh/unregistered
+func (c *Controller) hasOtherSystemStartupTaints(node *corev1.Node) bool {
+	for _, taint := range node.Spec.Taints {
+		if isSystemStartupTaint(taint.Key) && taint.Key != "karpenter.sh/unregistered" {
+			return true
+		}
+	}
+	return false
+}
+
+// removeKarpenterStartupTaint removes the karpenter.sh/unregistered taint from the node
+func (c *Controller) removeKarpenterStartupTaint(ctx context.Context, node *corev1.Node) (reconcile.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("removing karpenter startup taint from node")
+
+	// Remove karpenter.sh/unregistered taint with retry on conflict
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		// Get fresh copy of node
+		fresh := &corev1.Node{}
+		if err := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(node), fresh); err != nil {
+			return err
+		}
+
+		// Remove the Karpenter startup taint
+		fresh.Spec.Taints = lo.Reject(fresh.Spec.Taints, func(t corev1.Taint, _ int) bool {
+			return t.Key == "karpenter.sh/unregistered"
+		})
+
+		return c.kubeClient.Update(ctx, fresh)
+	})
+
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("removing karpenter startup taint: %w", err)
+	}
+
+	logger.Info("successfully removed karpenter startup taint from node")
+	// Requeue to verify all taints are removed and proceed to next phase
+	return reconcile.Result{Requeue: true}, nil
 }

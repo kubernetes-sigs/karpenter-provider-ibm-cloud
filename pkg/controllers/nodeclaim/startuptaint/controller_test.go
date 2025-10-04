@@ -265,6 +265,7 @@ func TestIsSystemStartupTaint(t *testing.T) {
 		{"node.kubernetes.io/disk-pressure", true},
 		{"node.kubernetes.io/memory-pressure", true},
 		{"node.kubernetes.io/pid-pressure", true},
+		{"karpenter.sh/unregistered", true}, // Karpenter startup taint
 		{"example.com/custom-taint", false},
 		{"app-specific/taint", false},
 	}
@@ -668,4 +669,193 @@ func TestNodeUpdateRetryLogic(t *testing.T) {
 		assert.Contains(t, taintKeys, "existing")
 		assert.Contains(t, taintKeys, "new-taint")
 	})
+}
+
+func TestIsNodeReady(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	controller := NewController(kubeClient)
+
+	tests := []struct {
+		name       string
+		node       *corev1.Node
+		wantReady  bool
+	}{
+		{
+			name: "Node is Ready",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{
+							Type:   corev1.NodeReady,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			wantReady: true,
+		},
+		{
+			name: "Node is NotReady",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{
+							Type:   corev1.NodeReady,
+							Status: corev1.ConditionFalse,
+						},
+					},
+				},
+			},
+			wantReady: false,
+		},
+		{
+			name: "Node has no Ready condition",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{},
+				},
+			},
+			wantReady: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := controller.isNodeReady(tt.node)
+			assert.Equal(t, tt.wantReady, result)
+		})
+	}
+}
+
+func TestHasOtherSystemStartupTaints(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	controller := NewController(kubeClient)
+
+	tests := []struct {
+		name                  string
+		node                  *corev1.Node
+		wantOtherSystemTaints bool
+	}{
+		{
+			name: "Only Karpenter unregistered taint",
+			node: &corev1.Node{
+				Spec: corev1.NodeSpec{
+					Taints: []corev1.Taint{
+						{
+							Key:    "karpenter.sh/unregistered",
+							Effect: corev1.TaintEffectNoExecute,
+							Value:  "true",
+						},
+					},
+				},
+			},
+			wantOtherSystemTaints: false,
+		},
+		{
+			name: "Cilium not ready taint present",
+			node: &corev1.Node{
+				Spec: corev1.NodeSpec{
+					Taints: []corev1.Taint{
+						{
+							Key:    "karpenter.sh/unregistered",
+							Effect: corev1.TaintEffectNoExecute,
+							Value:  "true",
+						},
+						{
+							Key:    CiliumNotReadyTaint,
+							Effect: corev1.TaintEffectNoExecute,
+						},
+					},
+				},
+			},
+			wantOtherSystemTaints: true,
+		},
+		{
+			name: "Node not ready taint present",
+			node: &corev1.Node{
+				Spec: corev1.NodeSpec{
+					Taints: []corev1.Taint{
+						{
+							Key:    NodeNotReadyTaint,
+							Effect: corev1.TaintEffectNoExecute,
+						},
+					},
+				},
+			},
+			wantOtherSystemTaints: true,
+		},
+		{
+			name: "Only non-system taints",
+			node: &corev1.Node{
+				Spec: corev1.NodeSpec{
+					Taints: []corev1.Taint{
+						{
+							Key:    "custom-taint",
+							Effect: corev1.TaintEffectNoSchedule,
+						},
+					},
+				},
+			},
+			wantOtherSystemTaints: false,
+		},
+		{
+			name: "No taints",
+			node: &corev1.Node{
+				Spec: corev1.NodeSpec{
+					Taints: []corev1.Taint{},
+				},
+			},
+			wantOtherSystemTaints: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := controller.hasOtherSystemStartupTaints(tt.node)
+			assert.Equal(t, tt.wantOtherSystemTaints, result)
+		})
+	}
+}
+
+func TestRemoveKarpenterStartupTaint(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Spec: corev1.NodeSpec{
+			Taints: []corev1.Taint{
+				{
+					Key:    "karpenter.sh/unregistered",
+					Effect: corev1.TaintEffectNoExecute,
+					Value:  "true",
+				},
+				{
+					Key:    "other-taint",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+		},
+	}
+
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(node).Build()
+	controller := NewController(kubeClient)
+
+	result, err := controller.removeKarpenterStartupTaint(ctx, node)
+	assert.NoError(t, err)
+	assert.True(t, result.Requeue)
+
+	// Verify taint was removed
+	updatedNode := &corev1.Node{}
+	err = kubeClient.Get(ctx, client.ObjectKey{Name: "test-node"}, updatedNode)
+	assert.NoError(t, err)
+	assert.Len(t, updatedNode.Spec.Taints, 1)
+	assert.Equal(t, "other-taint", updatedNode.Spec.Taints[0].Key)
 }
