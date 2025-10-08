@@ -445,6 +445,6 @@ func (c *Controller) removeKarpenterStartupTaint(ctx context.Context, node *core
 	}
 
 	logger.Info("successfully removed karpenter startup taint from node")
-	// Requeue to verify all taints are removed and proceed to next phase
-	return reconcile.Result{Requeue: true}, nil
+	// Requeue immediately to verify all taints are removed and proceed to next phase
+	return reconcile.Result{RequeueAfter: time.Millisecond}, nil
 }

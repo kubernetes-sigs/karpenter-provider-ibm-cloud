@@ -215,6 +215,12 @@ func (c *Controller) markNodeAsInterrupted(ctx context.Context, node *v1.Node, r
 
 // checkNodeConditions examines standard Kubernetes node conditions for health issues
 func (c *Controller) checkNodeConditions(node *v1.Node) InterruptionReason {
+	// Skip interruption detection for nodes that have never been ready (startup phase)
+	// This prevents false positives from normal startup conditions like "network plugin not ready"
+	if !c.hasEverBeenReady(node) {
+		return ""
+	}
+
 	for _, condition := range node.Status.Conditions {
 		switch condition.Type {
 		case v1.NodeReady:
@@ -224,7 +230,10 @@ func (c *Controller) checkNodeConditions(node *v1.Node) InterruptionReason {
 					strings.Contains(strings.ToLower(condition.Reason), "capacity") {
 					return CapacityUnavailable
 				}
-				if strings.Contains(strings.ToLower(condition.Message), "network") {
+				// Only treat as network interruption if it's not a startup-related message
+				if strings.Contains(strings.ToLower(condition.Message), "network") &&
+					!strings.Contains(strings.ToLower(condition.Message), "plugin") &&
+					!strings.Contains(strings.ToLower(condition.Reason), "NetworkPluginNotReady") {
 					return NetworkResourceLimit
 				}
 				return InstanceHealthFailed
@@ -240,6 +249,32 @@ func (c *Controller) checkNodeConditions(node *v1.Node) InterruptionReason {
 		}
 	}
 	return ""
+}
+
+// hasEverBeenReady checks if the node has ever been in Ready state
+// by checking if the Ready condition has transitioned to True at least once
+func (c *Controller) hasEverBeenReady(node *v1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == v1.NodeReady {
+			// If the node is currently ready, it has been ready
+			if condition.Status == v1.ConditionTrue {
+				return true
+			}
+			// If LastTransitionTime is set and the node is not ready,
+			// check if it was ready before (transition happened from True to False)
+			// A node that has never been ready will have Status=False from creation
+			// and LastTransitionTime will be very recent (within a few minutes of creation)
+			if !condition.LastTransitionTime.IsZero() && !node.CreationTimestamp.IsZero() {
+				timeSinceCreation := condition.LastTransitionTime.Sub(node.CreationTimestamp.Time)
+				// If transition happened more than 2 minutes after creation,
+				// it likely transitioned from True to False (was ready, now not ready)
+				if timeSinceCreation > 2*time.Minute {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // getInstanceIDFromNode extracts IBM Cloud instance ID from node labels or annotations

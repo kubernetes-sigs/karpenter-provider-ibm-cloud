@@ -678,9 +678,9 @@ func TestIsNodeReady(t *testing.T) {
 	controller := NewController(kubeClient)
 
 	tests := []struct {
-		name       string
-		node       *corev1.Node
-		wantReady  bool
+		name      string
+		node      *corev1.Node
+		wantReady bool
 	}{
 		{
 			name: "Node is Ready",
@@ -850,7 +850,7 @@ func TestRemoveKarpenterStartupTaint(t *testing.T) {
 
 	result, err := controller.removeKarpenterStartupTaint(ctx, node)
 	assert.NoError(t, err)
-	assert.True(t, result.Requeue)
+	assert.True(t, result.RequeueAfter > 0)
 
 	// Verify taint was removed
 	updatedNode := &corev1.Node{}

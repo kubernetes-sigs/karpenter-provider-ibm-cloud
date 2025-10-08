@@ -182,15 +182,17 @@ func TestIsNodeInterrupted(t *testing.T) {
 			name: "node with ready=false should be interrupted",
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "unhealthy-node",
+					Name:              "unhealthy-node",
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-10 * time.Minute)},
 				},
 				Status: v1.NodeStatus{
 					Conditions: []v1.NodeCondition{
 						{
-							Type:    v1.NodeReady,
-							Status:  v1.ConditionFalse,
-							Reason:  "KubeletNotReady",
-							Message: "Kubelet stopped posting node status",
+							Type:               v1.NodeReady,
+							Status:             v1.ConditionFalse,
+							Reason:             "KubeletNotReady",
+							Message:            "Kubelet stopped posting node status",
+							LastTransitionTime: metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
 						},
 					},
 				},
@@ -202,15 +204,17 @@ func TestIsNodeInterrupted(t *testing.T) {
 			name: "node with capacity issues should be capacity-related interruption",
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "capacity-node",
+					Name:              "capacity-node",
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-10 * time.Minute)},
 				},
 				Status: v1.NodeStatus{
 					Conditions: []v1.NodeCondition{
 						{
-							Type:    v1.NodeReady,
-							Status:  v1.ConditionFalse,
-							Reason:  "CapacityUnavailable",
-							Message: "Not enough capacity available",
+							Type:               v1.NodeReady,
+							Status:             v1.ConditionFalse,
+							Reason:             "CapacityUnavailable",
+							Message:            "Not enough capacity available",
+							LastTransitionTime: metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
 						},
 					},
 				},
