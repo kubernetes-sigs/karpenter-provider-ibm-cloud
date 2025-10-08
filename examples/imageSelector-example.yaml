@@ -3,7 +3,7 @@
 
 ---
 # Example 1: Latest Ubuntu 22.04 minimal image for amd64 architecture
-apiVersion: karpenter.k8s.aws/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: ubuntu-2204-latest
@@ -23,7 +23,7 @@ spec:
 
 ---
 # Example 2: Specific Ubuntu 20.04 server image
-apiVersion: karpenter.k8s.aws/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: ubuntu-2004-server
@@ -42,7 +42,7 @@ spec:
 
 ---
 # Example 3: Latest RHEL 8.x for s390x (IBM Z) architecture
-apiVersion: karpenter.k8s.aws/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: rhel-8-s390x
@@ -61,7 +61,7 @@ spec:
 
 ---
 # Example 4: Traditional explicit image specification (still supported)
-apiVersion: karpenter.k8s.aws/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: explicit-image
@@ -95,7 +95,7 @@ spec:
           operator: In
           values: ["bx2-4x16", "bx2-8x32", "bx2-16x64"]
       nodeClassRef:
-        apiVersion: karpenter.k8s.aws/v1alpha1
+        apiVersion: karpenter-ibm.sh/v1alpha1
         kind: IBMNodeClass
         name: ubuntu-2204-latest  # References the semantic image selection NodeClass
       taints:

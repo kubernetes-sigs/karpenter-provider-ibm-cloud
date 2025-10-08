@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//go:generate mockgen -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
+
 package ibm
 
 import "context"
