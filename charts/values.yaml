@@ -8,7 +8,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller
-  tag: v0.3.69
+  tag: v0.4.0
   pullPolicy: IfNotPresent
   # digest: "sha256:98e1441aa5d15f6e23e58a466c2526942e853d49281eefffa64e22361f7a19ad"
   # Overrides the image tag whose default is the chart appVersion.

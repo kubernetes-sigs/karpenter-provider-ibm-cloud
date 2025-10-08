@@ -36,6 +36,16 @@ jobs:
         mkdir -p ~/.local/share/go/bin
         mv ~/go/bin/controller-gen ~/.local/share/go/bin/
 
+    - name: Install mockgen
+      run: |
+        go install github.com/golang/mock/mockgen@latest
+
+    - name: Generate mocks
+      run: make gen-mocks
+
+    - name: Verify generated mocks are up to date
+      run: make verify-mocks
+
     - name: Run tests
       run: |
         go test -v -race ./...
@@ -86,6 +96,13 @@ jobs:
 
         # Install golangci-lint using go install (safer than curl|sh)
         go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+
+    - name: Install mockgen
+      run: |
+        go install github.com/golang/mock/mockgen@latest
+
+    - name: Generate mocks
+      run: make gen-mocks
 
     - name: Run make lint
       run: |

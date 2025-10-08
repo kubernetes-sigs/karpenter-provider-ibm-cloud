@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -31,79 +31,22 @@ import (
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	mock_ibm "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm/mock"
 	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
-
-// MockIKSClient provides a mock implementation of the IKS client
-type MockIKSClient struct {
-	mock.Mock
-}
-
-func (m *MockIKSClient) GetClusterConfig(ctx context.Context, clusterID string) (string, error) {
-	args := m.Called(ctx, clusterID)
-	return args.String(0), args.Error(1)
-}
-
-// Implement other interface methods (not used in bootstrap provider but required for interface compliance)
-func (m *MockIKSClient) GetWorkerDetails(ctx context.Context, clusterID, workerID string) (*ibm.IKSWorkerDetails, error) {
-	args := m.Called(ctx, clusterID, workerID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ibm.IKSWorkerDetails), args.Error(1)
-}
-
-func (m *MockIKSClient) GetVPCInstanceIDFromWorker(ctx context.Context, clusterID, workerID string) (string, error) {
-	args := m.Called(ctx, clusterID, workerID)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockIKSClient) ListWorkerPools(ctx context.Context, clusterID string) ([]*ibm.WorkerPool, error) {
-	args := m.Called(ctx, clusterID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*ibm.WorkerPool), args.Error(1)
-}
-
-func (m *MockIKSClient) GetWorkerPool(ctx context.Context, clusterID, poolID string) (*ibm.WorkerPool, error) {
-	args := m.Called(ctx, clusterID, poolID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ibm.WorkerPool), args.Error(1)
-}
-
-func (m *MockIKSClient) ResizeWorkerPool(ctx context.Context, clusterID, poolID string, newSize int) error {
-	args := m.Called(ctx, clusterID, poolID, newSize)
-	return args.Error(0)
-}
 
 // IBMClientInterface defines the minimal interface needed by the bootstrap provider
 type IBMClientInterface interface {
 	GetIKSClient() ibm.IKSClientInterface
 }
 
-// MockIBMClient provides a mock implementation of the IBM client
-type MockIBMClient struct {
-	mock.Mock
-	mockIKSClient *MockIKSClient
+// mockIBMClientWrapper wraps the generated mock IKS client for testing
+type mockIBMClientWrapper struct {
+	iksClient ibm.IKSClientInterface
 }
 
-func (m *MockIBMClient) GetVPCClient() (*ibm.VPCClient, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ibm.VPCClient), args.Error(1)
-}
-
-func (m *MockIBMClient) GetIKSClient() ibm.IKSClientInterface {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ibm.IKSClientInterface)
+func (m *mockIBMClientWrapper) GetIKSClient() ibm.IKSClientInterface {
+	return m.iksClient
 }
 
 // TestableIKSBootstrapProvider allows injection of mock IBM client for testing
@@ -343,7 +286,7 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 	tests := []struct {
 		name           string
 		clusterID      string
-		setupMocks     func(*MockIBMClient, *MockIKSClient)
+		setupMocks     func(*gomock.Controller) IBMClientInterface
 		expectError    bool
 		errorContains  string
 		validateResult func(*testing.T, *commonTypes.ClusterInfo)
@@ -351,12 +294,14 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 		{
 			name:      "successful cluster config retrieval",
 			clusterID: "test-cluster-id",
-			setupMocks: func(ibmClient *MockIBMClient, iksClient *MockIKSClient) {
-				// Return the mock IKS client, not a real one
-				ibmClient.On("GetIKSClient").Return(iksClient)
-
+			setupMocks: func(ctrl *gomock.Controller) IBMClientInterface {
+				mockIKSClient := mock_ibm.NewMockIKSClientInterface(ctrl)
 				kubeconfig := getTestKubeconfig()
-				iksClient.On("GetClusterConfig", mock.Anything, "test-cluster-id").Return(kubeconfig, nil)
+				mockIKSClient.EXPECT().
+					GetClusterConfig(gomock.Any(), "test-cluster-id").
+					Return(kubeconfig, nil)
+
+				return &mockIBMClientWrapper{iksClient: mockIKSClient}
 			},
 			expectError: false,
 			validateResult: func(t *testing.T, info *commonTypes.ClusterInfo) {
@@ -372,8 +317,8 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 		{
 			name:      "IBM client not initialized",
 			clusterID: "test-cluster-id",
-			setupMocks: func(ibmClient *MockIBMClient, iksClient *MockIKSClient) {
-				// Provider will be created with nil IBM client
+			setupMocks: func(ctrl *gomock.Controller) IBMClientInterface {
+				return nil
 			},
 			expectError:   true,
 			errorContains: "IBM client not initialized",
@@ -381,8 +326,8 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 		{
 			name:      "IKS client not available",
 			clusterID: "test-cluster-id",
-			setupMocks: func(ibmClient *MockIBMClient, iksClient *MockIKSClient) {
-				ibmClient.On("GetIKSClient").Return(nil, nil) // Return nil client
+			setupMocks: func(ctrl *gomock.Controller) IBMClientInterface {
+				return &mockIBMClientWrapper{iksClient: nil}
 			},
 			expectError:   true,
 			errorContains: "IKS client not available",
@@ -390,9 +335,13 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 		{
 			name:      "get cluster config failure",
 			clusterID: "test-cluster-id",
-			setupMocks: func(ibmClient *MockIBMClient, iksClient *MockIKSClient) {
-				ibmClient.On("GetIKSClient").Return(iksClient)
-				iksClient.On("GetClusterConfig", mock.Anything, "test-cluster-id").Return("", fmt.Errorf("cluster not found"))
+			setupMocks: func(ctrl *gomock.Controller) IBMClientInterface {
+				mockIKSClient := mock_ibm.NewMockIKSClientInterface(ctrl)
+				mockIKSClient.EXPECT().
+					GetClusterConfig(gomock.Any(), "test-cluster-id").
+					Return("", fmt.Errorf("cluster not found"))
+
+				return &mockIBMClientWrapper{iksClient: mockIKSClient}
 			},
 			expectError:   true,
 			errorContains: "getting cluster config from IKS API",
@@ -400,12 +349,15 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 		{
 			name:      "invalid kubeconfig parsing",
 			clusterID: "test-cluster-id",
-			setupMocks: func(ibmClient *MockIBMClient, iksClient *MockIKSClient) {
-				ibmClient.On("GetIKSClient").Return(iksClient)
-
+			setupMocks: func(ctrl *gomock.Controller) IBMClientInterface {
+				mockIKSClient := mock_ibm.NewMockIKSClientInterface(ctrl)
 				// Return invalid kubeconfig
 				invalidKubeconfig := `invalid: yaml content without server`
-				iksClient.On("GetClusterConfig", mock.Anything, "test-cluster-id").Return(invalidKubeconfig, nil)
+				mockIKSClient.EXPECT().
+					GetClusterConfig(gomock.Any(), "test-cluster-id").
+					Return(invalidKubeconfig, nil)
+
+				return &mockIBMClientWrapper{iksClient: mockIKSClient}
 			},
 			expectError:   true,
 			errorContains: "parsing kubeconfig from IKS API",
@@ -415,32 +367,14 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-
-			// Create mock clients
-			var mockIBMClient *MockIBMClient
-			var mockIKSClient *MockIKSClient
-
-			if tt.name == "IBM client not initialized" {
-				// Create provider with nil IBM client
-				mockIBMClient = nil
-			} else {
-				mockIBMClient = &MockIBMClient{}
-				mockIKSClient = &MockIKSClient{}
-				mockIBMClient.mockIKSClient = mockIKSClient
-			}
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
 			// Setup mocks
-			if mockIBMClient != nil && mockIKSClient != nil {
-				tt.setupMocks(mockIBMClient, mockIKSClient)
-			}
+			mockIBMClient := tt.setupMocks(ctrl)
 
 			// Create testable IKS bootstrap provider with mock client
-			var provider *TestableIKSBootstrapProvider
-			if mockIBMClient != nil {
-				provider = NewTestableIKSBootstrapProvider(mockIBMClient, nil)
-			} else {
-				provider = NewTestableIKSBootstrapProvider(nil, nil)
-			}
+			provider := NewTestableIKSBootstrapProvider(mockIBMClient, nil)
 
 			// Test GetClusterConfig method
 			result, err := provider.GetClusterConfig(ctx, tt.clusterID)
@@ -458,14 +392,6 @@ func TestIKSBootstrapProvider_GetClusterConfig(t *testing.T) {
 				if tt.validateResult != nil {
 					tt.validateResult(t, result)
 				}
-			}
-
-			// Verify all expected calls were made
-			if mockIBMClient != nil {
-				mockIBMClient.AssertExpectations(t)
-			}
-			if mockIKSClient != nil {
-				mockIKSClient.AssertExpectations(t)
 			}
 		})
 	}
@@ -543,21 +469,19 @@ func TestIKSBootstrapProvider_getClusterName(t *testing.T) {
 func TestIKSBootstrapProvider_Integration(t *testing.T) {
 	tests := []struct {
 		name           string
-		setupProvider  func() *TestableIKSBootstrapProvider
+		setupProvider  func(*gomock.Controller) *TestableIKSBootstrapProvider
 		testOperations func(*testing.T, *TestableIKSBootstrapProvider)
 	}{
 		{
 			name: "full workflow with working IKS API",
-			setupProvider: func() *TestableIKSBootstrapProvider {
-				mockIBMClient := &MockIBMClient{}
-				mockIKSClient := &MockIKSClient{}
-				mockIBMClient.mockIKSClient = mockIKSClient
-
-				// Setup successful IKS API calls
-				mockIBMClient.On("GetIKSClient").Return(mockIKSClient)
+			setupProvider: func(ctrl *gomock.Controller) *TestableIKSBootstrapProvider {
+				mockIKSClient := mock_ibm.NewMockIKSClientInterface(ctrl)
 				kubeconfig := getTestKubeconfig()
-				mockIKSClient.On("GetClusterConfig", mock.Anything, "integration-cluster").Return(kubeconfig, nil)
+				mockIKSClient.EXPECT().
+					GetClusterConfig(gomock.Any(), "integration-cluster").
+					Return(kubeconfig, nil)
 
+				mockIBMClient := &mockIBMClientWrapper{iksClient: mockIKSClient}
 				fakeClient := fake.NewSimpleClientset()
 				return NewTestableIKSBootstrapProvider(mockIBMClient, fakeClient)
 			},
@@ -592,15 +516,13 @@ func TestIKSBootstrapProvider_Integration(t *testing.T) {
 		},
 		{
 			name: "graceful handling of IKS API failures",
-			setupProvider: func() *TestableIKSBootstrapProvider {
-				mockIBMClient := &MockIBMClient{}
-				mockIKSClient := &MockIKSClient{}
-				mockIBMClient.mockIKSClient = mockIKSClient
+			setupProvider: func(ctrl *gomock.Controller) *TestableIKSBootstrapProvider {
+				mockIKSClient := mock_ibm.NewMockIKSClientInterface(ctrl)
+				mockIKSClient.EXPECT().
+					GetClusterConfig(gomock.Any(), "failing-cluster").
+					Return("", fmt.Errorf("API error"))
 
-				// Setup IKS API failure
-				mockIBMClient.On("GetIKSClient").Return(mockIKSClient)
-				mockIKSClient.On("GetClusterConfig", mock.Anything, "failing-cluster").Return("", fmt.Errorf("API error"))
-
+				mockIBMClient := &mockIBMClientWrapper{iksClient: mockIKSClient}
 				fakeClient := fake.NewSimpleClientset()
 				return NewTestableIKSBootstrapProvider(mockIBMClient, fakeClient)
 			},
@@ -630,7 +552,10 @@ func TestIKSBootstrapProvider_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider := tt.setupProvider()
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			provider := tt.setupProvider(ctrl)
 			tt.testOperations(t, provider)
 		})
 	}

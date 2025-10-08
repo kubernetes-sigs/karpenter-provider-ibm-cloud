@@ -13,7 +13,7 @@ Traditionally, specifying node images required knowing exact image IDs or names,
 Use this method when you need to use a specific image ID or name:
 
 ```yaml
-apiVersion: karpenter.k8s.aws/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: explicit-image-example
@@ -43,7 +43,7 @@ spec:
 Use this method for automatic selection of the latest available image matching your requirements:
 
 ```yaml
-apiVersion: karpenter.k8s.aws/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: semantic-image-example
