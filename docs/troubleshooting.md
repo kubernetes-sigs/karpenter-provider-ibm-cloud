@@ -261,4 +261,4 @@ spec:
 
 ## Getting Help
 
-- [GitHub Issues](https://github.com/pfeifferj/karpenter-provider-ibm-cloud/issues)
+- [GitHub Issues](https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/issues)

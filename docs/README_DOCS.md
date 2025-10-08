@@ -65,7 +65,7 @@ Use fenced code blocks with language hints:
 
 ````markdown
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 ...
 ```

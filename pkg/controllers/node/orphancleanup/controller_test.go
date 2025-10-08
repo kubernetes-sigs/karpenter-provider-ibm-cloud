@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
 func TestOrphanCleanupController(t *testing.T) {
@@ -155,11 +155,11 @@ func TestIsNodeManagedByKarpenter(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "node with karpenter.ibm.sh/ibmnodeclass label",
+			name: "node with karpenter-ibm.sh/ibmnodeclass label",
 			node: corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"karpenter.ibm.sh/ibmnodeclass": "test-nodeclass",
+						"karpenter-ibm.sh/ibmnodeclass": "test-nodeclass",
 					},
 				},
 			},

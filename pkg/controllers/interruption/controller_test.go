@@ -31,8 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 )
 
 // InfrastructureFailure represents infrastructure-related interruption events
@@ -664,12 +664,12 @@ func TestGetNodeClassForNode(t *testing.T) {
 		expectedMode  string
 	}{
 		{
-			name: "node with karpenter.ibm.sh/nodeclass label",
+			name: "node with karpenter-ibm.sh/nodeclass label",
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/nodeclass": "test-nodeclass",
+						"karpenter-ibm.sh/nodeclass": "test-nodeclass",
 					},
 				},
 			},
@@ -728,7 +728,7 @@ func TestGetNodeClassForNode(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/nodeclass": "non-existent-nodeclass",
+						"karpenter-ibm.sh/nodeclass": "non-existent-nodeclass",
 					},
 				},
 			},
@@ -1122,7 +1122,7 @@ func TestHandleInterruption(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "vpc-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/nodeclass":       "vpc-nodeclass",
+						"karpenter-ibm.sh/nodeclass":       "vpc-nodeclass",
 						"node.kubernetes.io/instance-type": "bx2-2x8",
 						"topology.kubernetes.io/zone":      "us-south-1",
 					},
@@ -1151,7 +1151,7 @@ func TestHandleInterruption(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "iks-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/nodeclass":       "iks-nodeclass",
+						"karpenter-ibm.sh/nodeclass":       "iks-nodeclass",
 						"node.kubernetes.io/instance-type": "bx2-2x8",
 						"topology.kubernetes.io/zone":      "us-south-1",
 					},
@@ -1180,7 +1180,7 @@ func TestHandleInterruption(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "fallback-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/nodeclass":       "non-existent",
+						"karpenter-ibm.sh/nodeclass":       "non-existent",
 						"node.kubernetes.io/instance-type": "bx2-2x8",
 						"topology.kubernetes.io/zone":      "us-south-1",
 					},
@@ -1250,7 +1250,7 @@ func TestReconcileWithInterruptedNodes(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "interrupted-node",
 						Labels: map[string]string{
-							"karpenter.ibm.sh/nodeclass":       "test-nodeclass",
+							"karpenter-ibm.sh/nodeclass":       "test-nodeclass",
 							"node.kubernetes.io/instance-type": "bx2-2x8",
 							"topology.kubernetes.io/zone":      "us-south-1",
 						},
@@ -1285,7 +1285,7 @@ func TestReconcileWithInterruptedNodes(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "interrupted-node-1",
 						Labels: map[string]string{
-							"karpenter.ibm.sh/nodeclass":       "test-nodeclass",
+							"karpenter-ibm.sh/nodeclass":       "test-nodeclass",
 							"node.kubernetes.io/instance-type": "bx2-2x8",
 							"topology.kubernetes.io/zone":      "us-south-1",
 						},
@@ -1303,7 +1303,7 @@ func TestReconcileWithInterruptedNodes(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "interrupted-node-2",
 						Labels: map[string]string{
-							"karpenter.ibm.sh/nodeclass":       "test-nodeclass",
+							"karpenter-ibm.sh/nodeclass":       "test-nodeclass",
 							"node.kubernetes.io/instance-type": "bx2-4x16",
 							"topology.kubernetes.io/zone":      "us-south-2",
 						},

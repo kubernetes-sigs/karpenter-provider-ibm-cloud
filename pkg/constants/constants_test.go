@@ -24,7 +24,7 @@ import (
 
 func TestConstants(t *testing.T) {
 	t.Run("Group constant is correctly defined", func(t *testing.T) {
-		assert.Equal(t, "karpenter.ibm.sh", Group)
+		assert.Equal(t, "karpenter-ibm.sh", Group)
 		assert.NotEmpty(t, Group)
 	})
 

@@ -22,14 +22,14 @@ import (
 
 	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
 )
 
 type Controller struct {

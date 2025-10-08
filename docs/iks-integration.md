@@ -50,12 +50,12 @@ helm install karpenter karpenter-ibm/karpenter-ibm \
 
 ### Step 2: Create IKS NodeClass
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: iks-nodeclass
   annotations:
-    karpenter.ibm.sh/description: "IKS integration NodeClass"
+    karpenter-ibm.sh/description: "IKS integration NodeClass"
 spec:
   # REQUIRED: Replace with your actual values
   region: us-south                      # Your IBM Cloud region
@@ -90,7 +90,7 @@ spec:
         cluster-type: iks
     spec:
       nodeClassRef:
-        apiVersion: karpenter.ibm.sh/v1alpha1
+        apiVersion: karpenter-ibm.sh/v1alpha1
         kind: IBMNodeClass
         name: iks-nodeclass
 

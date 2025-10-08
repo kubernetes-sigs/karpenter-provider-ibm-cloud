@@ -30,15 +30,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	vpcProvider "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/instance"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	vpcProvider "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/instance"
 )
 
 // Controller reconciles NodeClaim objects to ensure proper tagging of IBM Cloud instances
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
-// +kubebuilder:rbac:groups=karpenter.ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch
 type Controller struct {
 	kubeClient client.Client
 	ibmClient  *ibm.Client
@@ -100,13 +100,13 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 
 		// Build tags map
 		tags := map[string]string{
-			"karpenter.ibm.sh/nodeclaim": nodeClaim.Name,
-			"karpenter.ibm.sh/nodepool":  nodeClaim.Labels["karpenter.sh/nodepool"],
+			"karpenter-ibm.sh/nodeclaim": nodeClaim.Name,
+			"karpenter-ibm.sh/nodepool":  nodeClaim.Labels["karpenter.sh/nodepool"],
 		}
 
 		// Add custom tags from nodeclaim requirements
 		for _, req := range nodeClaim.Spec.Requirements {
-			if req.Key == "karpenter.ibm.sh/tags" {
+			if req.Key == "karpenter-ibm.sh/tags" {
 				for _, value := range req.Values {
 					parts := strings.SplitN(value, "=", 2)
 					if len(parts) == 2 {

@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // Test helpers
@@ -63,7 +63,7 @@ func getTestNodeClaim(name, providerID string) *karpv1.NodeClaim {
 		},
 		Spec: karpv1.NodeClaimSpec{
 			NodeClassRef: &karpv1.NodeClassReference{
-				Group: "karpenter.ibm.sh",
+				Group: "karpenter-ibm.sh",
 				Kind:  "IBMNodeClass",
 				Name:  "test-nodeclass",
 			},

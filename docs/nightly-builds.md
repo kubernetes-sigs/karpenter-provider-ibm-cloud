@@ -19,19 +19,19 @@ Nightly builds are published with two tags:
 ### Pull the latest nightly build
 
 ```bash
-podman pull ghcr.io/pfeifferj/karpenter-provider-ibm-cloud/controller:nightly
+podman pull ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller:nightly
 ```
 
 ### Pull a specific nightly build
 
 ```bash
-podman pull ghcr.io/pfeifferj/karpenter-provider-ibm-cloud/controller:v0.5.0-2024-01-15-a1b2c3d-nightly
+podman pull ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller:v0.5.0-2024-01-15-a1b2c3d-nightly
 ```
 
 ### Deploy with Helm using nightly builds
 
 ```bash
-helm upgrade --install karpenter-ibm oci://ghcr.io/pfeifferj/karpenter-provider-ibm-cloud/charts/karpenter-provider-ibm-cloud \
+helm upgrade --install karpenter-ibm oci://ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/charts/karpenter-provider-ibm-cloud \
   --set controller.image.tag=nightly \
   --namespace karpenter \
   --create-namespace

@@ -39,8 +39,8 @@ const (
 	StartupTaintLifecycleFinalizer = "startuptaint.nodeclaim.ibm.sh/finalizer"
 
 	// Labels and annotations for tracking state
-	StartupTaintsAppliedLabel = "karpenter.ibm.sh/startup-taints-applied"
-	RegularTaintsAppliedLabel = "karpenter.ibm.sh/regular-taints-applied"
+	StartupTaintsAppliedLabel = "karpenter-ibm.sh/startup-taints-applied"
+	RegularTaintsAppliedLabel = "karpenter-ibm.sh/regular-taints-applied"
 
 	// Common startup taint keys to monitor
 	CiliumNotReadyTaint = "node.cilium.io/agent-not-ready"
@@ -98,7 +98,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		if nodeClaim.Labels == nil {
 			nodeClaim.Labels = make(map[string]string)
 		}
-		nodeClaim.Labels["karpenter.ibm.sh/startup-taint-lifecycle"] = "true"
+		nodeClaim.Labels["karpenter-ibm.sh/startup-taint-lifecycle"] = "true"
 
 		if err := c.kubeClient.Patch(ctx, nodeClaim, patch); err != nil {
 			return reconcile.Result{}, fmt.Errorf("adding finalizer and lifecycle label: %w", err)

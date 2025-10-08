@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: nodepool
     karpenter.sh/nodepool: {{ $pool.name | quote }}
     {{- if $.Values.customResources.mode }}
-    karpenter.ibm.sh/mode: {{ $.Values.customResources.mode }}
+    karpenter-ibm.sh/mode: {{ $.Values.customResources.mode }}
     {{- end }}
     {{- if $pool.labels }}
     {{- range $key, $value := $pool.labels }}
@@ -97,7 +97,7 @@ spec:
 
       # Node class reference
       nodeClassRef:
-        group: karpenter.ibm.sh
+        group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: {{ $pool.nodeClassRef | default $.Values.customResources.nodeClass.name | default "default" }}
 

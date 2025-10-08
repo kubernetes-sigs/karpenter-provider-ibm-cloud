@@ -14,14 +14,14 @@ This document outlines the current limitations, constraints, and known issues wi
 ```yaml
 # Required: Separate NodeClass per zone
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: nodeclass-us-south-1
 spec:
   zone: us-south-1
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: nodeclass-us-south-2
@@ -65,7 +65,7 @@ spec:
 ```yaml
 # Example: Multiple NodeClasses for different instance types in IKS mode
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: small-instances
@@ -73,7 +73,7 @@ spec:
   iksClusterID: "cluster-id"
   iksWorkerPoolID: "worker-pool-small"  # Pre-configured with small instances
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: large-instances
@@ -113,7 +113,7 @@ spec:
 ### Report New Limitations
 If you encounter limitations not documented here:
 
-1. **Check existing issues**: [GitHub Issues](https://github.com/pfeifferj/karpenter-provider-ibm-cloud/issues)
+1. **Check existing issues**: [GitHub Issues](https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/issues)
 2. **Create new issue**
 3. **Provide context**
 

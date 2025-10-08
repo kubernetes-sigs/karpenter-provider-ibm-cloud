@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
 )
 
 // MockPricingProvider implements pricing.Provider for testing

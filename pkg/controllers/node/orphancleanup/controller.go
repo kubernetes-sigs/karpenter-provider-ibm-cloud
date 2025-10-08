@@ -41,7 +41,7 @@ import (
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/platform-services-go-sdk/globaltaggingv1"
 	"github.com/go-logr/logr"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
 type Controller struct {
@@ -529,7 +529,7 @@ func (c *Controller) isNodeManagedByKarpenter(node corev1.Node) bool {
 			return true
 		}
 		// Additional check for IBM-specific Karpenter labels
-		if _, hasIBMNodeClass := nodeLabels["karpenter.ibm.sh/ibmnodeclass"]; hasIBMNodeClass {
+		if _, hasIBMNodeClass := nodeLabels["karpenter-ibm.sh/ibmnodeclass"]; hasIBMNodeClass {
 			return true
 		}
 	}

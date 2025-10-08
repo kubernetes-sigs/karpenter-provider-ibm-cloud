@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 func getTestScheme() *runtime.Scheme {
@@ -66,7 +66,7 @@ func getTestNode(nodeClassName string) *v1.Node {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
 			Labels: map[string]string{
-				"karpenter.ibm.sh/nodeclass": nodeClassName,
+				"karpenter-ibm.sh/nodeclass": nodeClassName,
 			},
 		},
 		Spec: v1.NodeSpec{
@@ -157,7 +157,7 @@ func TestController_Reconcile(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "another-test-node",
 						Labels: map[string]string{
-							"karpenter.ibm.sh/nodeclass": "test-nodeclass",
+							"karpenter-ibm.sh/nodeclass": "test-nodeclass",
 						},
 					},
 				},
@@ -222,7 +222,7 @@ func TestController_Reconcile(t *testing.T) {
 				// If we expected nodes to be deleted, verify they're gone
 				if tt.nodeClass != nil && tt.nodeClass.DeletionTimestamp != nil {
 					for _, node := range tt.nodes {
-						if node.Labels["karpenter.ibm.sh/nodeclass"] == tt.nodeClass.Name {
+						if node.Labels["karpenter-ibm.sh/nodeclass"] == tt.nodeClass.Name {
 							var deletedNode v1.Node
 							err := fakeClient.Get(ctx, types.NamespacedName{Name: node.Name}, &deletedNode)
 							assert.Error(t, err, "Node should have been deleted")

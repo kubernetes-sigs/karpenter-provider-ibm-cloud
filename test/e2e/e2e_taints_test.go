@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // TestE2EStartupTaints tests that startup taints are properly applied to new nodes
@@ -90,7 +90,7 @@ func TestE2EStartupTaints(t *testing.T) {
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -309,7 +309,7 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -508,7 +508,7 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -674,7 +674,7 @@ func TestE2ETaintValues(t *testing.T) {
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -840,7 +840,7 @@ func TestE2ETaintSync(t *testing.T) {
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -1011,7 +1011,7 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},

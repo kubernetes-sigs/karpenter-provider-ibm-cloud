@@ -29,7 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // TestE2EUserDataAppend tests that userDataAppend is correctly appended to the bootstrap script
@@ -45,7 +45,7 @@ func TestE2EUserDataAppend(t *testing.T) {
 
 	nodeClass := &v1alpha1.IBMNodeClass{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "karpenter.ibm.sh/v1alpha1",
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
 			Kind:       "IBMNodeClass",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -171,7 +171,7 @@ echo "USERDATA_APPEND_E2E_TEST_END" | tee -a /var/log/userdata-append-e2e.log
 	require.NoError(t, err, "Failed to get node")
 
 	require.Equal(t, "userdata-append-e2e", node.Labels["test-type"], "Node should have correct test-type label")
-	require.Equal(t, nodeClass.Name, node.Labels["karpenter.ibm.sh/ibmnodeclass"], "Node should have correct nodeclass label")
+	require.Equal(t, nodeClass.Name, node.Labels["karpenter-ibm.sh/ibmnodeclass"], "Node should have correct nodeclass label")
 
 	t.Logf("Node %s has correct labels, creating verification pod", nodeName)
 
@@ -361,7 +361,7 @@ func TestE2EStandardBootstrap(t *testing.T) {
 	// Verify node has correct labels indicating successful bootstrap
 	require.Equal(t, "standard-bootstrap-e2e", node.Labels["test-type"], "Node should have correct test-type label")
 	require.Equal(t, "true", node.Labels["karpenter.sh/initialized"], "Node should be initialized")
-	require.Equal(t, nodeClass.Name, node.Labels["karpenter.ibm.sh/ibmnodeclass"], "Node should have correct nodeclass label")
+	require.Equal(t, nodeClass.Name, node.Labels["karpenter-ibm.sh/ibmnodeclass"], "Node should have correct nodeclass label")
 
 	t.Logf("✅ Standard bootstrap E2E test completed successfully!")
 }

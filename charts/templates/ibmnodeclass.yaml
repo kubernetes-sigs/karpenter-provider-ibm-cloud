@@ -1,5 +1,5 @@
 {{- if and .Values.customResources.enabled .Values.customResources.nodeClass.enabled }}
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: {{ .Values.customResources.nodeClass.name | default "default" }}
@@ -7,7 +7,7 @@ metadata:
     {{- include "karpenter.labels" . | nindent 4 }}
     app.kubernetes.io/component: nodeclass
     {{- if .Values.customResources.mode }}
-    karpenter.ibm.sh/mode: {{ .Values.customResources.mode }}
+    karpenter-ibm.sh/mode: {{ .Values.customResources.mode }}
     {{- end }}
 spec:
   {{- if eq .Values.customResources.mode "vpc" }}

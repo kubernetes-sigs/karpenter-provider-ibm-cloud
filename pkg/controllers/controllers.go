@@ -19,8 +19,8 @@ package controllers
 //+kubebuilder:rbac:groups=karpenter.sh,resources=nodepools/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch;create;delete;update;patch
 //+kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=karpenter.ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;patch;update
-//+kubebuilder:rbac:groups=karpenter.ibm.sh,resources=ibmnodeclasses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;patch;update
+//+kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;create;delete;update;patch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
@@ -55,25 +55,25 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/bootstrap"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/interruption"
-	nodeorphancleanup "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/node/orphancleanup"
-	nodeclaimgc "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/garbagecollection"
-	nodeclaimloadbalancer "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/loadbalancer"
-	nodeclaimregistration "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/registration"
-	nodeclaimstartuptaint "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/startuptaint"
-	nodeclaimtagging "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/tagging"
-	nodeclassautoplacement "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/autoplacement"
-	nodeclasshash "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/hash"
-	nodeclaasstatus "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/status"
-	nodeclasstermination "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/termination"
-	providersinstancetype "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/providers/instancetype"
-	controllerspricing "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers/providers/pricing"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/bootstrap"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/interruption"
+	nodeorphancleanup "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/node/orphancleanup"
+	nodeclaimgc "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/garbagecollection"
+	nodeclaimloadbalancer "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/loadbalancer"
+	nodeclaimregistration "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/registration"
+	nodeclaimstartuptaint "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/startuptaint"
+	nodeclaimtagging "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/tagging"
+	nodeclassautoplacement "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/autoplacement"
+	nodeclasshash "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/hash"
+	nodeclaasstatus "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/status"
+	nodeclasstermination "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/termination"
+	providersinstancetype "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/providers/instancetype"
+	controllerspricing "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/providers/pricing"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
 )
 
 // RecorderAdapter adapts between events.Recorder and record.EventRecorder

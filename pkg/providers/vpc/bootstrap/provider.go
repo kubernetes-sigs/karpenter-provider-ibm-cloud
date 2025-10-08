@@ -33,10 +33,10 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 // VPCBootstrapProvider provides VPC-specific bootstrap functionality
@@ -213,8 +213,8 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 		if nodePool, exists := nodeClaimObj.Labels["karpenter.sh/nodepool"]; exists {
 			options.Labels["karpenter.sh/nodepool"] = nodePool
 		}
-		if nodeClass, exists := nodeClaimObj.Labels["karpenter.ibm.sh/ibmnodeclass"]; exists {
-			options.Labels["karpenter.ibm.sh/ibmnodeclass"] = nodeClass
+		if nodeClass, exists := nodeClaimObj.Labels["karpenter-ibm.sh/ibmnodeclass"]; exists {
+			options.Labels["karpenter-ibm.sh/ibmnodeclass"] = nodeClass
 		}
 
 		// Add taints from NodeClaim (including startup taints)

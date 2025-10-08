@@ -17,7 +17,7 @@ This document outlines the supported Container Network Interface (CNI) plugins a
 The Karpenter IBM Cloud Provider includes **automatic CNI detection** in cloud-init bootstrap mode:
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 spec:
   bootstrapMode: cloud-init  # Enables auto-detection
@@ -77,7 +77,7 @@ echo "CONTAINER_RUNTIME=containerd" >> /etc/environment
 
 ### Advanced CNI Configuration
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 spec:
   bootstrapMode: cloud-init

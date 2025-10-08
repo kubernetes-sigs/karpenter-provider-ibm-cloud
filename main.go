@@ -1,12 +1,12 @@
 package main
 
 import (
-	ibmcloud "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator/options"
+	ibmcloud "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
 
-	_ "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
+	_ "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"

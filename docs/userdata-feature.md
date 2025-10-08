@@ -13,7 +13,7 @@ The Karpenter IBM Cloud Provider supports multiple methods for customizing node 
 ### Example 1: Using UserDataAppend
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: example-append
@@ -35,7 +35,7 @@ spec:
 ### Example 2: Using UserData (Complete Override)
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: example-override
@@ -124,7 +124,7 @@ env:
 #### Step 3: Use in UserData
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: rke2-nodeclass

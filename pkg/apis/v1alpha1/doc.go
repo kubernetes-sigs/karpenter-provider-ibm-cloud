@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // +kubebuilder:object:generate=true
-// +groupName=karpenter.ibm.sh
+// +groupName=karpenter-ibm.sh
 package v1alpha1 // doc.go is discovered by codegen
 
 import (

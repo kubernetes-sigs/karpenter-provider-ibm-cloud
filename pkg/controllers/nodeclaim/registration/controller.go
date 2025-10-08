@@ -43,15 +43,15 @@ const (
 	RegisteredLabel  = "karpenter.sh/registered"
 	InitializedLabel = "karpenter.sh/initialized"
 	NodePoolLabel    = "karpenter.sh/nodepool"
-	NodeClassLabel   = "karpenter.ibm.sh/ibmnodeclass"
+	NodeClassLabel   = "karpenter-ibm.sh/ibmnodeclass"
 	ProvisionerLabel = "provisioner"
-	ProvisionedTaint = "karpenter.ibm.sh/provisioned"
+	ProvisionedTaint = "karpenter-ibm.sh/provisioned"
 )
 
 // Controller reconciles NodeClaim registration with corresponding Nodes
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=karpenter.ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch
 type Controller struct {
 	kubeClient client.Client
 }
@@ -296,7 +296,7 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 	for k, v := range requirementLabels {
 		// Skip system labels that are managed elsewhere (Karpenter core already filters restricted labels)
 		if strings.HasPrefix(k, "karpenter.sh/") ||
-			strings.HasPrefix(k, "karpenter.ibm.sh/") ||
+			strings.HasPrefix(k, "karpenter-ibm.sh/") ||
 			strings.HasPrefix(k, "kubernetes.io/") ||
 			strings.HasPrefix(k, "node.kubernetes.io/") ||
 			strings.HasPrefix(k, "topology.kubernetes.io/") ||
@@ -316,7 +316,7 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 	// Sync taints from NodeClaim to Node (unless do-not-sync label is set or startup taint lifecycle controller is handling it)
 	if _, skipSync := nodeClaim.Labels["karpenter.sh/do-not-sync-taints"]; !skipSync {
 		// Skip if startup taint lifecycle controller is managing taints
-		if _, lifecycleManaged := nodeClaim.Labels["karpenter.ibm.sh/startup-taint-lifecycle"]; !lifecycleManaged {
+		if _, lifecycleManaged := nodeClaim.Labels["karpenter-ibm.sh/startup-taint-lifecycle"]; !lifecycleManaged {
 			if c.syncTaintsToNode(nodeClaim, node) {
 				modified = true
 			}

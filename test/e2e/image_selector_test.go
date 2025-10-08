@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // TestE2EImageSelector tests the imageSelector functionality with Ubuntu images
@@ -201,7 +201,7 @@ func (s *E2ETestSuite) createImageSelectorNodeClass(t *testing.T, testName strin
 
 	nodeClass := &v1alpha1.IBMNodeClass{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "karpenter.ibm.sh/v1alpha1",
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
 			Kind:       "IBMNodeClass",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -245,7 +245,7 @@ func (s *E2ETestSuite) createImageSelectorNodeClassWithPlacementStrategy(t *test
 
 	nodeClass := &v1alpha1.IBMNodeClass{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "karpenter.ibm.sh/v1alpha1",
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
 			Kind:       "IBMNodeClass",
 		},
 		ObjectMeta: metav1.ObjectMeta{

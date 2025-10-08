@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/httpclient"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/httpclient"
 )
 
 // IKSClient handles IBM Kubernetes Service API operations

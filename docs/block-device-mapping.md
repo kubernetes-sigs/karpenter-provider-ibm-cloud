@@ -17,7 +17,7 @@ By default, Karpenter provisions instances with a 100GB general-purpose boot vol
 Block device mappings are configured in the `IBMNodeClass` specification using the `blockDeviceMappings` field:
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: custom-storage
@@ -79,7 +79,7 @@ IBM Cloud VPC offers different storage profiles optimized for various workloads:
 ### Basic Custom Boot Volume
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: large-boot-volume

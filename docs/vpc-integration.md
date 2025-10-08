@@ -64,12 +64,12 @@ helm install karpenter karpenter-ibm/karpenter-ibm \
 - **Bootstrap Mode** - Explicitly set
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-nodeclass
   annotations:
-    karpenter.ibm.sh/description: "VPC self-managed cluster NodeClass"
+    karpenter-ibm.sh/description: "VPC self-managed cluster NodeClass"
 spec:
   # REQUIRED: Replace with your actual resource IDs (NOT names!)
   region: us-south                                        # Your IBM Cloud region
@@ -172,7 +172,7 @@ spec:
         cluster-type: self-managed
     spec:
       nodeClassRef:
-        apiVersion: karpenter.ibm.sh/v1alpha1
+        apiVersion: karpenter-ibm.sh/v1alpha1
         kind: IBMNodeClass
         name: vpc-nodeclass
 
@@ -225,7 +225,7 @@ kubectl get svc kubernetes -o jsonpath='{.spec.clusterIP}'
 #### Configuring IBMNodeClass with Correct Endpoint
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-nodeclass
@@ -250,7 +250,7 @@ The VPC integration automatically discovers your cluster configuration:
 ### Zero Configuration Bootstrap
 ```yaml
 # Minimal configuration - everything else is automatic
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: minimal-vpc
@@ -275,12 +275,12 @@ Karpenter IBM Cloud Provider supports sophisticated multi-zone deployments with 
 **PlacementStrategy** provides intelligent multi-zone distribution with automatic subnet selection based on constraints:
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: production-multizone
   annotations:
-    karpenter.ibm.sh/description: "Production multi-zone with intelligent placement"
+    karpenter-ibm.sh/description: "Production multi-zone with intelligent placement"
 spec:
   region: us-south
   vpc: "r006-4225852b-4846-4a4a-88c4-9966471337c6"
@@ -311,7 +311,7 @@ spec:
   template:
     spec:
       nodeClassRef:
-        apiVersion: karpenter.ibm.sh/v1alpha1
+        apiVersion: karpenter-ibm.sh/v1alpha1
         kind: IBMNodeClass
         name: production-multizone
 
@@ -368,7 +368,7 @@ For cases requiring explicit control, you can still specify zones and subnets di
 ```yaml
 # Zone 1 NodeClass
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-us-south-1
@@ -383,7 +383,7 @@ spec:
   bootstrapMode: cloud-init
 ---
 # Zone 2 NodeClass
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-us-south-2
@@ -415,7 +415,7 @@ spec:
 
 ### GPU Workloads
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-gpu
@@ -447,7 +447,7 @@ spec:
 
 ### High-Performance Computing (HPC)
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-hpc
@@ -480,7 +480,7 @@ spec:
 
 ### Custom CNI Configuration
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-custom-cni
@@ -528,7 +528,7 @@ You can lock the NodeClass to a single instance type, though this limits flexibi
 
 ```yaml
 # NodeClass with NO instance specifications - lets NodePool control everything
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: flexible-nodeclass
@@ -559,7 +559,7 @@ spec:
           "cx2-2x4", "cx2-4x8", "cx2-8x16",     # Compute optimized
           "mx2-2x16", "mx2-4x32", "mx2-8x64"    # Memory optimized
         ]
-      - key: karpenter.ibm.sh/instance-family
+      - key: karpenter-ibm.sh/instance-family
         operator: In
         values: ["bx2", "cx2", "mx2"]
       # Resource-based selection

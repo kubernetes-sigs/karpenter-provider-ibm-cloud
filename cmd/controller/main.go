@@ -18,10 +18,10 @@ package main
 import (
 	"os"
 
-	ibmcloud "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator/options"
+	ibmcloud "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"

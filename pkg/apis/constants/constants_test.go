@@ -21,7 +21,7 @@ import (
 )
 
 func TestGroupConstant(t *testing.T) {
-	expected := "karpenter.ibm.sh"
+	expected := "karpenter-ibm.sh"
 	if Group != expected {
 		t.Errorf("Group constant = %v, want %v", Group, expected)
 	}

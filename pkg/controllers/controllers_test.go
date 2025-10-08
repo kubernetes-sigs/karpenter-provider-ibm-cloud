@@ -39,8 +39,8 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator/options"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
 )
 
 // Mock Manager for testing
@@ -242,7 +242,7 @@ func TestControllerRegistrationComponents(t *testing.T) {
 
 		// Verify scheme has our types
 		gvk := schema.GroupVersionKind{
-			Group:   "karpenter.ibm.sh",
+			Group:   "karpenter-ibm.sh",
 			Version: "v1alpha1",
 			Kind:    "IBMNodeClass",
 		}

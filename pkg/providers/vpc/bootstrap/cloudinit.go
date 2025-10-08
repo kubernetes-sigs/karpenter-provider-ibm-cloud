@@ -21,7 +21,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
 
 // cloudInitTemplate defines the cloud-init script template for IBM Cloud VPC using direct kubelet configuration
