@@ -24,6 +24,7 @@ import (
 
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -42,15 +43,15 @@ const (
 	RegisteredLabel  = "karpenter.sh/registered"
 	InitializedLabel = "karpenter.sh/initialized"
 	NodePoolLabel    = "karpenter.sh/nodepool"
-	NodeClassLabel   = "karpenter.ibm.sh/ibmnodeclass"
+	NodeClassLabel   = "karpenter-ibm.sh/ibmnodeclass"
 	ProvisionerLabel = "provisioner"
-	ProvisionedTaint = "karpenter.ibm.sh/provisioned"
+	ProvisionedTaint = "karpenter-ibm.sh/provisioned"
 )
 
 // Controller reconciles NodeClaim registration with corresponding Nodes
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=karpenter.ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch
 type Controller struct {
 	kubeClient client.Client
 }
@@ -72,13 +73,19 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Handle deletion
+	// Handle deletion first - critical for preventing finalizer race conditions
 	if !nodeClaim.DeletionTimestamp.IsZero() {
 		return c.handleDeletion(ctx, nodeClaim)
 	}
 
-	// Add finalizer if not present
+	// Add finalizer only if not present AND NodeClaim is NOT being deleted
 	if !controllerutil.ContainsFinalizer(nodeClaim, NodeClaimRegistrationFinalizer) {
+		// Double-check deletion timestamp hasn't changed during reconciliation
+		if !nodeClaim.DeletionTimestamp.IsZero() {
+			logger.V(1).Info("NodeClaim entered deletion during reconciliation, skipping finalizer addition")
+			return reconcile.Result{}, nil
+		}
+
 		patch := client.MergeFrom(nodeClaim.DeepCopy())
 		controllerutil.AddFinalizer(nodeClaim, NodeClaimRegistrationFinalizer)
 		if err := c.kubeClient.Patch(ctx, nodeClaim, patch); err != nil {
@@ -136,15 +143,37 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 		return reconcile.Result{}, nil
 	}
 
-	// Clean up any registration-specific resources if needed
-	// Remove the finalizer (no additional cleanup required)
-	patch := client.MergeFrom(nodeClaim.DeepCopy())
-	controllerutil.RemoveFinalizer(nodeClaim, NodeClaimRegistrationFinalizer)
-	if err := c.kubeClient.Patch(ctx, nodeClaim, patch); err != nil {
+	logger.V(1).Info("NodeClaim is being deleted, removing registration finalizer")
+
+	// Get fresh copy to avoid conflicts
+	fresh := &karpv1.NodeClaim{}
+	if err := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(nodeClaim), fresh); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("NodeClaim already deleted, nothing to do")
+			return reconcile.Result{}, nil
+		}
+		return reconcile.Result{}, fmt.Errorf("getting fresh NodeClaim: %w", err)
+	}
+
+	// Check again if finalizer is present in fresh copy
+	if !controllerutil.ContainsFinalizer(fresh, NodeClaimRegistrationFinalizer) {
+		logger.V(1).Info("registration finalizer already removed by another reconciliation")
+		return reconcile.Result{}, nil
+	}
+
+	// Remove finalizer using patch with conflict handling
+	patch := client.MergeFrom(fresh.DeepCopy())
+	controllerutil.RemoveFinalizer(fresh, NodeClaimRegistrationFinalizer)
+
+	if err := c.kubeClient.Patch(ctx, fresh, patch); err != nil {
+		if apierrors.IsConflict(err) {
+			logger.V(1).Info("conflict removing finalizer, will retry")
+			return reconcile.Result{Requeue: true}, nil
+		}
 		return reconcile.Result{}, fmt.Errorf("removing finalizer: %w", err)
 	}
 
-	logger.V(1).Info("removed registration finalizer from nodeclaim")
+	logger.Info("successfully removed registration finalizer, cleanup complete")
 	return reconcile.Result{}, nil
 }
 
@@ -267,7 +296,7 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 	for k, v := range requirementLabels {
 		// Skip system labels that are managed elsewhere (Karpenter core already filters restricted labels)
 		if strings.HasPrefix(k, "karpenter.sh/") ||
-			strings.HasPrefix(k, "karpenter.ibm.sh/") ||
+			strings.HasPrefix(k, "karpenter-ibm.sh/") ||
 			strings.HasPrefix(k, "kubernetes.io/") ||
 			strings.HasPrefix(k, "node.kubernetes.io/") ||
 			strings.HasPrefix(k, "topology.kubernetes.io/") ||
@@ -287,7 +316,7 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 	// Sync taints from NodeClaim to Node (unless do-not-sync label is set or startup taint lifecycle controller is handling it)
 	if _, skipSync := nodeClaim.Labels["karpenter.sh/do-not-sync-taints"]; !skipSync {
 		// Skip if startup taint lifecycle controller is managing taints
-		if _, lifecycleManaged := nodeClaim.Labels["karpenter.ibm.sh/startup-taint-lifecycle"]; !lifecycleManaged {
+		if _, lifecycleManaged := nodeClaim.Labels["karpenter-ibm.sh/startup-taint-lifecycle"]; !lifecycleManaged {
 			if c.syncTaintsToNode(nodeClaim, node) {
 				modified = true
 			}

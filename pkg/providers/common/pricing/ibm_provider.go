@@ -23,10 +23,10 @@ import (
 
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/logging"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/logging"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
 )
 
 // IBMPricingProvider implements the Provider interface for IBM Cloud pricing

@@ -24,10 +24,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/operator"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cache"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/operator/options"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
 )
 
 // Operator wraps the core Karpenter operator with IBM-specific providers

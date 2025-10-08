@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/httpclient"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/httpclient"
 )
 
 func TestNewIKSClient(t *testing.T) {

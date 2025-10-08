@@ -36,9 +36,9 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
 
 // MockIKSClient provides a mock implementation of the IKS client
@@ -113,11 +113,11 @@ func (p *testIKSWorkerPoolProvider) Create(ctx context.Context, nodeClaim *karpv
 			Name: nodeClaim.Name,
 			Labels: map[string]string{
 				"karpenter.sh/managed":             "true",
-				"karpenter.ibm.sh/cluster-id":      clusterID,
-				"karpenter.ibm.sh/worker-pool-id":  "test-pool-id",
-				"karpenter.ibm.sh/zone":            nodeClass.Spec.Zone,
-				"karpenter.ibm.sh/region":          nodeClass.Spec.Region,
-				"karpenter.ibm.sh/instance-type":   nodeClass.Spec.InstanceProfile,
+				"karpenter-ibm.sh/cluster-id":      clusterID,
+				"karpenter-ibm.sh/worker-pool-id":  "test-pool-id",
+				"karpenter-ibm.sh/zone":            nodeClass.Spec.Zone,
+				"karpenter-ibm.sh/region":          nodeClass.Spec.Region,
+				"karpenter-ibm.sh/instance-type":   nodeClass.Spec.InstanceProfile,
 				"node.kubernetes.io/instance-type": nodeClass.Spec.InstanceProfile,
 				"topology.kubernetes.io/zone":      nodeClass.Spec.Zone,
 				"topology.kubernetes.io/region":    nodeClass.Spec.Region,
@@ -138,8 +138,8 @@ func (p *testIKSWorkerPoolProvider) Create(ctx context.Context, nodeClaim *karpv
 
 // Delete implements the Delete method for testing
 func (p *testIKSWorkerPoolProvider) Delete(ctx context.Context, node *corev1.Node) error {
-	clusterID := node.Labels["karpenter.ibm.sh/cluster-id"]
-	poolID := node.Labels["karpenter.ibm.sh/worker-pool-id"]
+	clusterID := node.Labels["karpenter-ibm.sh/cluster-id"]
+	poolID := node.Labels["karpenter-ibm.sh/worker-pool-id"]
 
 	if clusterID == "" || poolID == "" {
 		return fmt.Errorf("cluster ID or pool ID not found in node labels")
@@ -320,8 +320,8 @@ func TestIKSWorkerPoolProvider_Create(t *testing.T) {
 				assert.NotNil(t, node)
 				assert.Equal(t, "test-nodeclaim", node.Name)
 				assert.Equal(t, "ibm:///us-south/test-nodeclaim", node.Spec.ProviderID)
-				assert.Equal(t, "test-cluster-id", node.Labels["karpenter.ibm.sh/cluster-id"])
-				assert.Equal(t, "pool-1", node.Labels["karpenter.ibm.sh/worker-pool-id"])
+				assert.Equal(t, "test-cluster-id", node.Labels["karpenter-ibm.sh/cluster-id"])
+				assert.Equal(t, "pool-1", node.Labels["karpenter-ibm.sh/worker-pool-id"])
 				assert.Equal(t, "bx2-4x16", node.Labels["node.kubernetes.io/instance-type"])
 				assert.Equal(t, corev1.NodePending, node.Status.Phase)
 			},
@@ -347,7 +347,7 @@ func TestIKSWorkerPoolProvider_Create(t *testing.T) {
 			},
 			expectError: false,
 			validateResult: func(t *testing.T, node *corev1.Node) {
-				assert.Equal(t, "env-cluster-id", node.Labels["karpenter.ibm.sh/cluster-id"])
+				assert.Equal(t, "env-cluster-id", node.Labels["karpenter-ibm.sh/cluster-id"])
 			},
 		},
 		{
@@ -411,7 +411,7 @@ func TestIKSWorkerPoolProvider_Create(t *testing.T) {
 			},
 			expectError: false,
 			validateResult: func(t *testing.T, node *corev1.Node) {
-				assert.Equal(t, "specific-pool-id", node.Labels["karpenter.ibm.sh/worker-pool-id"])
+				assert.Equal(t, "specific-pool-id", node.Labels["karpenter-ibm.sh/worker-pool-id"])
 				assert.Equal(t, "cx2-4x8", node.Labels["node.kubernetes.io/instance-type"])
 			},
 		},
@@ -506,8 +506,8 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/cluster-id":     "test-cluster-id",
-						"karpenter.ibm.sh/worker-pool-id": "test-pool-id",
+						"karpenter-ibm.sh/cluster-id":     "test-cluster-id",
+						"karpenter-ibm.sh/worker-pool-id": "test-pool-id",
 					},
 				},
 			},
@@ -532,8 +532,8 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/cluster-id":     "test-cluster-id",
-						"karpenter.ibm.sh/worker-pool-id": "test-pool-id",
+						"karpenter-ibm.sh/cluster-id":     "test-cluster-id",
+						"karpenter-ibm.sh/worker-pool-id": "test-pool-id",
 					},
 				},
 			},
@@ -558,7 +558,7 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/worker-pool-id": "test-pool-id",
+						"karpenter-ibm.sh/worker-pool-id": "test-pool-id",
 						// Missing cluster ID
 					},
 				},
@@ -575,7 +575,7 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/cluster-id": "test-cluster-id",
+						"karpenter-ibm.sh/cluster-id": "test-cluster-id",
 						// Missing pool ID
 					},
 				},
@@ -592,8 +592,8 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/cluster-id":     "test-cluster-id",
-						"karpenter.ibm.sh/worker-pool-id": "test-pool-id",
+						"karpenter-ibm.sh/cluster-id":     "test-cluster-id",
+						"karpenter-ibm.sh/worker-pool-id": "test-pool-id",
 					},
 				},
 			},
@@ -609,8 +609,8 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/cluster-id":     "test-cluster-id",
-						"karpenter.ibm.sh/worker-pool-id": "test-pool-id",
+						"karpenter-ibm.sh/cluster-id":     "test-cluster-id",
+						"karpenter-ibm.sh/worker-pool-id": "test-pool-id",
 					},
 				},
 			},
@@ -627,8 +627,8 @@ func TestIKSWorkerPoolProvider_Delete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Labels: map[string]string{
-						"karpenter.ibm.sh/cluster-id":     "test-cluster-id",
-						"karpenter.ibm.sh/worker-pool-id": "test-pool-id",
+						"karpenter-ibm.sh/cluster-id":     "test-cluster-id",
+						"karpenter-ibm.sh/worker-pool-id": "test-pool-id",
 					},
 				},
 			},

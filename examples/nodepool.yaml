@@ -6,7 +6,7 @@ spec:
   template:
     spec:
       nodeClassRef:
-        group: karpenter.ibm.sh
+        group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: auto-placement
       requirements:

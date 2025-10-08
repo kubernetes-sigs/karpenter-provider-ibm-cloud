@@ -123,8 +123,8 @@ kubectl logs -n karpenter deployment/karpenter -f
 ```
 Starting Controller {"controller": "nodepool", "controllerGroup": "karpenter.sh"}
 Starting Controller {"controller": "nodeclaim", "controllerGroup": "karpenter.sh"}
-Starting Controller {"controller": "nodeclass.hash", "controllerGroup": "karpenter.ibm.sh"}
-Starting Controller {"controller": "pricing", "controllerGroup": "karpenter.ibm.sh"}
+Starting Controller {"controller": "nodeclass.hash", "controllerGroup": "karpenter-ibm.sh"}
+Starting Controller {"controller": "pricing", "controllerGroup": "karpenter-ibm.sh"}
 ```
 
 ### Step 3: Create Your First NodeClass

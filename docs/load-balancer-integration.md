@@ -18,7 +18,7 @@ Load balancer integration is configured in the `IBMNodeClass` specification unde
 ### Basic Configuration
 
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: lb-integrated-nodeclass

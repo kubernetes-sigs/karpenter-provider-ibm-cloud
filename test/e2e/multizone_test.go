@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // TestE2EMultiZoneDistribution tests that nodes are distributed across multiple zones
@@ -498,7 +498,7 @@ func (s *E2ETestSuite) createMultiZoneNodePool(t *testing.T, testName, nodeClass
 						},
 					},
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},

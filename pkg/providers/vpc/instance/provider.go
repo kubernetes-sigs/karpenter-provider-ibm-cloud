@@ -38,14 +38,14 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/metrics"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/image"
-	commonTypes "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/bootstrap"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/image"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/bootstrap"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 type QuotaInfo struct {
@@ -779,10 +779,10 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 			Name: nodeClaim.Name,
 			Labels: map[string]string{
 				"karpenter.sh/managed":             "true",
-				"karpenter.ibm.sh/vpc-id":          nodeClass.Spec.VPC,
-				"karpenter.ibm.sh/zone":            zone,
-				"karpenter.ibm.sh/region":          nodeClass.Spec.Region,
-				"karpenter.ibm.sh/instance-type":   instanceProfile,
+				"karpenter-ibm.sh/vpc-id":          nodeClass.Spec.VPC,
+				"karpenter-ibm.sh/zone":            zone,
+				"karpenter-ibm.sh/region":          nodeClass.Spec.Region,
+				"karpenter-ibm.sh/instance-type":   instanceProfile,
 				"node.kubernetes.io/instance-type": instanceProfile,
 				"topology.kubernetes.io/zone":      zone,
 				"topology.kubernetes.io/region":    nodeClass.Spec.Region,

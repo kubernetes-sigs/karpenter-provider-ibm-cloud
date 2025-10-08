@@ -5,9 +5,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: ibmnodeclasses.karpenter.ibm.sh
+  name: ibmnodeclasses.karpenter-ibm.sh
 spec:
-  group: karpenter.ibm.sh
+  group: karpenter-ibm.sh
   names:
     categories:
     - karpenter

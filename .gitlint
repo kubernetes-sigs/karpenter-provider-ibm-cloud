@@ -1,4 +1,4 @@
-# .gitlint configuration for karpenter-provider-ibm-cloud
+# .gitlint configuration for kubernetes-sigs/karpenter-provider-ibm-cloud
 
 [general]
 # Ignore merge commits, revert commits, fixup commits, and squash commits

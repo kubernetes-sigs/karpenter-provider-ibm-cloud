@@ -26,7 +26,7 @@ kind: ClusterRole
 metadata:
   name: ibmnodeclass-admin
 rules:
-- apiGroups: ["karpenter.ibm.sh"]
+- apiGroups: ["karpenter-ibm.sh"]
   resources: ["ibmnodeclasses"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---

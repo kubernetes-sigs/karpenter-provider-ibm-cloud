@@ -27,11 +27,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // Controller reconciles IBMNodeClass deletion by terminating associated nodes
-// +kubebuilder:rbac:groups=karpenter.ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -69,7 +69,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// List all nodes using this nodeclass
 	nodes := &v1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodes, client.MatchingLabels{
-		"karpenter.ibm.sh/nodeclass": nc.Name,
+		"karpenter-ibm.sh/nodeclass": nc.Name,
 	}); err != nil {
 		return reconcile.Result{}, err
 	}

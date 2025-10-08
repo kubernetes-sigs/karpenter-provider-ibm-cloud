@@ -22,7 +22,7 @@ import (
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/logging"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/logging"
 )
 
 // vpcClientInterface defines the interface for the VPC client

@@ -3,11 +3,11 @@
 <div>
   <h2>Automatic Node Provisioning for Kubernetes on IBM Cloud VPC</h2>
   <p>
-    <a href="https://github.com/pfeifferj/karpenter-provider-ibm-cloud/releases">
-      <img src="https://img.shields.io/github/v/release/pfeifferj/karpenter-provider-ibm-cloud?style=flat-square" alt="Release">
+    <a href="https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/releases">
+      <img src="https://img.shields.io/github/v/release/kubernetes-sigs/karpenter-provider-ibm-cloud?style=flat-square" alt="Release">
     </a>
-    <a href="https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/pfeifferj/karpenter-provider-ibm-cloud?style=flat-square" alt="License">
+    <a href="https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/LICENSE">
+      <img src="https://img.shields.io/github/license/kubernetes-sigs/karpenter-provider-ibm-cloud?style=flat-square" alt="License">
     </a>
   </p>
 </div>
@@ -101,9 +101,9 @@ graph TB
 
 ## Community
 
-- **GitHub**: [Report issues and contribute](https://github.com/pfeifferj/karpenter-provider-ibm-cloud)
+- **GitHub**: [Report issues and contribute](https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud)
 - **Slack**: [Join #karpenter-ibm on CNCF Slack](https://cloud-native.slack.com/archives/C094SDPCVLN)
 
 ## License
 
-This project is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/LICENSE) file for details.
+This project is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/LICENSE) file for details.

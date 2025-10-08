@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
 func TestIKSWorkerPoolProvider_NewProvider(t *testing.T) {
@@ -281,11 +281,11 @@ func TestNodeLabelGeneration(t *testing.T) {
 	// Test the expected labels that would be generated
 	expectedLabels := map[string]string{
 		"karpenter.sh/managed":             "true",
-		"karpenter.ibm.sh/cluster-id":      "test-cluster",
-		"karpenter.ibm.sh/worker-pool-id":  "test-pool-id",
-		"karpenter.ibm.sh/zone":            "us-south-1",
-		"karpenter.ibm.sh/region":          "us-south",
-		"karpenter.ibm.sh/instance-type":   "bx2-4x16",
+		"karpenter-ibm.sh/cluster-id":      "test-cluster",
+		"karpenter-ibm.sh/worker-pool-id":  "test-pool-id",
+		"karpenter-ibm.sh/zone":            "us-south-1",
+		"karpenter-ibm.sh/region":          "us-south",
+		"karpenter-ibm.sh/instance-type":   "bx2-4x16",
 		"node.kubernetes.io/instance-type": "bx2-4x16",
 		"topology.kubernetes.io/zone":      "us-south-1",
 		"topology.kubernetes.io/region":    "us-south",
@@ -302,7 +302,7 @@ func TestNodeLabelGeneration(t *testing.T) {
 	}
 
 	// Validate the labels
-	assert.Equal(t, "test-cluster", node.Labels["karpenter.ibm.sh/cluster-id"])
+	assert.Equal(t, "test-cluster", node.Labels["karpenter-ibm.sh/cluster-id"])
 	assert.Equal(t, "us-south-1", node.Labels["topology.kubernetes.io/zone"])
 	assert.Equal(t, "bx2-4x16", node.Labels["node.kubernetes.io/instance-type"])
 	assert.Equal(t, "test-nodepool", node.Labels["karpenter.sh/nodepool"])

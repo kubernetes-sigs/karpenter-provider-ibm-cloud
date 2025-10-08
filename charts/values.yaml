@@ -7,8 +7,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/pfeifferj/karpenter-provider-ibm-cloud/controller
-  tag: v0.3.69
+  repository: ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller
+  tag: v0.4.0
   pullPolicy: IfNotPresent
   # digest: "sha256:98e1441aa5d15f6e23e58a466c2526942e853d49281eefffa64e22361f7a19ad"
   # Overrides the image tag whose default is the chart appVersion.
@@ -500,7 +500,7 @@ metrics:
     # Rule evaluation interval
     interval: 30s
     # URL for runbook documentation
-    runbookUrl: "https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md"
+    runbookUrl: "https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md"
 
     # Alert configuration with customizable thresholds and timing
     alerts:

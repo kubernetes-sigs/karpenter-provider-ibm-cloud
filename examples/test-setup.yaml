@@ -1,5 +1,5 @@
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: test-nodeclass
@@ -31,15 +31,15 @@ spec:
         - key: kubernetes.io/os
           operator: In
           values: ["linux"]
-        - key: karpenter.ibm.sh/ibmnodeclass
+        - key: karpenter-ibm.sh/ibmnodeclass
           operator: In
           values: ["test-nodeclass"]
       nodeClassRef:
-        group: karpenter.ibm.sh
+        group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: test-nodeclass
       taints:
-        - key: karpenter.ibm.sh/provisioned
+        - key: karpenter-ibm.sh/provisioned
           value: "true"
           effect: NoSchedule
   limits:
@@ -55,7 +55,7 @@ metadata:
   name: karpenter-test-pod
 spec:
   tolerations:
-    - key: karpenter.ibm.sh/provisioned
+    - key: karpenter-ibm.sh/provisioned
       operator: Equal
       value: "true"
       effect: NoSchedule

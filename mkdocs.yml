@@ -4,14 +4,14 @@ site_author: Karpenter IBM Contributors
 site_url: https://karpenter-ibm.sh/
 
 # Repository
-repo_name: pfeifferj/karpenter-provider-ibm-cloud
-repo_url: https://github.com/pfeifferj/karpenter-provider-ibm-cloud
+repo_name: kubernetes-sigs/karpenter-provider-ibm-cloud
+repo_url: https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 edit_uri: edit/main/docs/
 
 # Copyright
 copyright: |
   Copyright &copy; 2025 Karpenter IBM Cloud Provider Contributors<br>
-  <a href="https://github.com/pfeifferj/karpenter-provider-ibm-cloud/blob/main/LICENSE">Apache License 2.0</a>
+  <a href="https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/LICENSE">Apache License 2.0</a>
 
 # Configuration
 docs_dir: docs/
@@ -155,9 +155,9 @@ extra:
   generator: false
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/pfeifferj/karpenter-provider-ibm-cloud
+      link: https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
     - icon: fontawesome/brands/docker
-      link: https://github.com/pfeifferj/karpenter-provider-ibm-cloud/pkgs/container/karpenter-provider-ibm-cloud
+      link: https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkgs/container/karpenter-provider-ibm-cloud
     - icon: fontawesome/brands/slack
       link: https://cloud-native.slack.com/archives/C094SDPCVLN
       name: CNCF Slack #karpenter

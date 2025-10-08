@@ -28,8 +28,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	fakedata "github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/fake"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	fakedata "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/fake"
 )
 
 func TestPricingProviderStructure(t *testing.T) {

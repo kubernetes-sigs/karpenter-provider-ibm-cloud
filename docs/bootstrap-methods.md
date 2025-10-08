@@ -25,7 +25,7 @@ Auto Bootstrap should select the right bootstrap method based on your configurat
 
 ### Configuration
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: auto-bootstrap-nodeclass
@@ -73,7 +73,7 @@ subjects:
 
 ### Configuration
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: vpc-bootstrap-nodeclass
@@ -157,7 +157,7 @@ export DEBUG=true
 
 ### Configuration
 ```yaml
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: iks-bootstrap-nodeclass
@@ -195,7 +195,7 @@ spec:
 ```yaml
 # Example: Multiple NodeClasses for different instance types
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: iks-small-instances
@@ -203,7 +203,7 @@ spec:
   iksClusterID: "cluster-12345678"
   iksWorkerPoolID: "pool-small"     # Pre-configured with bx2-2x8
 ---
-apiVersion: karpenter.ibm.sh/v1alpha1
+apiVersion: karpenter-ibm.sh/v1alpha1
 kind: IBMNodeClass
 metadata:
   name: iks-large-instances

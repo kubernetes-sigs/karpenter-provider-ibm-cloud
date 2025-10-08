@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
 
 func TestIKSWorkerRequestStruct(t *testing.T) {
@@ -187,8 +187,8 @@ func TestIKSWorkerRequestDefaultLabels(t *testing.T) {
 	// Simulate the label creation logic from AddWorkerToIKSCluster
 	expectedLabels := map[string]string{
 		"karpenter.sh/managed":         "true",
-		"karpenter.ibm.sh/zone":        options.Zone,
-		"karpenter.ibm.sh/provisioner": "karpenter-ibm",
+		"karpenter-ibm.sh/zone":        options.Zone,
+		"karpenter-ibm.sh/provisioner": "karpenter-ibm",
 	}
 
 	request := IKSWorkerRequest{
@@ -202,11 +202,11 @@ func TestIKSWorkerRequestDefaultLabels(t *testing.T) {
 	if request.Labels["karpenter.sh/managed"] != "true" {
 		t.Errorf("Expected karpenter.sh/managed label to be 'true', got %v", request.Labels["karpenter.sh/managed"])
 	}
-	if request.Labels["karpenter.ibm.sh/zone"] != "us-south-1" {
-		t.Errorf("Expected karpenter.ibm.sh/zone label to be 'us-south-1', got %v", request.Labels["karpenter.ibm.sh/zone"])
+	if request.Labels["karpenter-ibm.sh/zone"] != "us-south-1" {
+		t.Errorf("Expected karpenter-ibm.sh/zone label to be 'us-south-1', got %v", request.Labels["karpenter-ibm.sh/zone"])
 	}
-	if request.Labels["karpenter.ibm.sh/provisioner"] != "karpenter-ibm" {
-		t.Errorf("Expected karpenter.ibm.sh/provisioner label to be 'karpenter-ibm', got %v", request.Labels["karpenter.ibm.sh/provisioner"])
+	if request.Labels["karpenter-ibm.sh/provisioner"] != "karpenter-ibm" {
+		t.Errorf("Expected karpenter-ibm.sh/provisioner label to be 'karpenter-ibm', got %v", request.Labels["karpenter-ibm.sh/provisioner"])
 	}
 }
 
@@ -270,8 +270,8 @@ func TestIKSWorkerRequestStructureForHTTPClient(t *testing.T) {
 		Zone:          options.Zone,
 		Labels: map[string]string{
 			"karpenter.sh/managed":         "true",
-			"karpenter.ibm.sh/zone":        options.Zone,
-			"karpenter.ibm.sh/provisioner": "karpenter-ibm",
+			"karpenter-ibm.sh/zone":        options.Zone,
+			"karpenter-ibm.sh/provisioner": "karpenter-ibm",
 		},
 	}
 

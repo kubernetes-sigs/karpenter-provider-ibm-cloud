@@ -1,19 +1,19 @@
-module github.com/pfeifferj/karpenter-provider-ibm-cloud
+module github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 
 go 1.24.6
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.0
-	github.com/IBM/platform-services-go-sdk v0.87.0
-	github.com/IBM/vpc-go-sdk v0.73.0
+	github.com/IBM/platform-services-go-sdk v0.88.0
+	github.com/IBM/vpc-go-sdk v0.74.0
 	github.com/awslabs/operatorpkg v0.0.0-20250909182303-e8e550b6f339
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-openapi/strfmt v0.24.0
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis v0.0.0-20250718142453-c2e324ac0173
 	github.com/mitchellh/hashstructure/v2 v2.0.2
-	github.com/onsi/ginkgo/v2 v2.25.3
+	github.com/onsi/ginkgo/v2 v2.26.0
 	github.com/onsi/gomega v1.38.2
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis v0.0.0-20250718142453-c2e324ac0173
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/lo v1.51.0
 	github.com/stretchr/testify v1.11.1
@@ -24,7 +24,7 @@ require (
 	k8s.io/client-go v0.35.0-alpha.0
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
-	sigs.k8s.io/controller-runtime v0.22.1
+	sigs.k8s.io/controller-runtime v0.22.2
 	sigs.k8s.io/controller-tools v0.19.0
 	sigs.k8s.io/karpenter v1.7.1
 )
@@ -67,7 +67,6 @@ require (
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -118,12 +117,12 @@ require (
 )
 
 replace (
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis => ./pkg/apis
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/cloudprovider => ./pkg/cloudprovider
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/constants => ./pkg/constants
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/controllers => ./pkg/controllers
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/instance => ./pkg/providers/instance
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/instancetype => ./pkg/providers/instancetype
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/providers/subnet => ./pkg/providers/subnet
-	github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/utils => ./pkg/utils
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis => ./pkg/apis
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider => ./pkg/cloudprovider
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants => ./pkg/constants
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers => ./pkg/controllers
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/instance => ./pkg/providers/instance
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/instancetype => ./pkg/providers/instancetype
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/subnet => ./pkg/providers/subnet
+	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils => ./pkg/utils
 )

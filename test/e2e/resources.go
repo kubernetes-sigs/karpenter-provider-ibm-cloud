@@ -30,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/pfeifferj/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
 // createTestNodeClass creates a standard test NodeClass
@@ -51,7 +51,7 @@ func (s *E2ETestSuite) createTestNodeClass(t *testing.T, testName string) *v1alp
 
 	nodeClass := &v1alpha1.IBMNodeClass{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "karpenter.ibm.sh/v1alpha1",
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
 			Kind:       "IBMNodeClass",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -91,7 +91,7 @@ func (s *E2ETestSuite) createTestNodeClassWithoutInstanceProfile(t *testing.T, t
 
 	nodeClass := &v1alpha1.IBMNodeClass{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "karpenter.ibm.sh/v1alpha1",
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
 			Kind:       "IBMNodeClass",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -141,7 +141,7 @@ func (s *E2ETestSuite) createTestNodePool(t *testing.T, testName, nodeClassName 
 			Template: karpv1.NodeClaimTemplate{
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -184,7 +184,7 @@ func (s *E2ETestSuite) createTestNodePoolObject(t *testing.T, testName, nodeClas
 			Template: karpv1.NodeClaimTemplate{
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -234,7 +234,7 @@ func (s *E2ETestSuite) createTestNodePoolWithMultipleInstanceTypes(t *testing.T,
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -296,7 +296,7 @@ func (s *E2ETestSuite) createDriftStabilityNodePool(t *testing.T, testName, node
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Group: "karpenter.ibm.sh",
+						Group: "karpenter-ibm.sh",
 						Kind:  "IBMNodeClass",
 						Name:  nodeClassName,
 					},
@@ -348,7 +348,7 @@ func (s *E2ETestSuite) createTestNodeClaim(t *testing.T, testName, nodeClassName
 		},
 		Spec: karpv1.NodeClaimSpec{
 			NodeClassRef: &karpv1.NodeClassReference{
-				Group: "karpenter.ibm.sh",
+				Group: "karpenter-ibm.sh",
 				Kind:  "IBMNodeClass",
 				Name:  nodeClassName,
 			},

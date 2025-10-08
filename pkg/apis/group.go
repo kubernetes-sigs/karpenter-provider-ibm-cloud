@@ -18,5 +18,5 @@ package apis
 
 const (
 	// Group is the API group for IBM Cloud provider
-	Group = "karpenter.ibm.sh"
+	Group = "karpenter-ibm.sh"
 )
