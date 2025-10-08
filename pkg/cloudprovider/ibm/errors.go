@@ -17,8 +17,10 @@ limitations under the License.
 package ibm
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/IBM/go-sdk-core/v5/core"
@@ -105,12 +107,12 @@ func (e *IBMError) IsRateLimit() bool {
 
 // IsServerError returns true if the error is a server error
 func (e *IBMError) IsServerError() bool {
-	return e.Type == ErrorTypeServerError || (e.StatusCode >= 500 && e.StatusCode < 600)
+	return e.Type == ErrorTypeServerError || (e.StatusCode >= http.StatusInternalServerError && e.StatusCode < 600)
 }
 
 // IsClientError returns true if the error is a client error
 func (e *IBMError) IsClientError() bool {
-	return e.Type == ErrorTypeClientError || (e.StatusCode >= 400 && e.StatusCode < 500)
+	return e.Type == ErrorTypeClientError || (e.StatusCode >= http.StatusBadRequest && e.StatusCode < http.StatusInternalServerError)
 }
 
 // IsTimeout returns true if the error indicates a timeout
@@ -136,23 +138,21 @@ func ParseError(err error) *IBMError {
 		return nil
 	}
 
-	// Check if it's already an IBMError
-	if ibmErr, ok := err.(*IBMError); ok {
+	// If it's already (or wraps) an IBMError, return it directly
+	var ibmErr *IBMError
+	if errors.As(err, &ibmErr) {
 		return ibmErr
 	}
 
-	// Skip DetailedResponse as it's not an error type - it's a response wrapper
-
-	// Check for standard HTTP response errors
-	if httpErr, ok := err.(*core.SDKProblem); ok {
-		return parseSDKProblem(httpErr)
+	// If it's (or wraps) an IBM SDKProblem, parse that
+	var sp *core.SDKProblem
+	if errors.As(err, &sp) {
+		return parseSDKProblem(sp)
 	}
 
-	// Parse error string for common patterns
+	// Fallback: parse the error string
 	return parseErrorString(err)
 }
-
-// parseDetailedResponse is removed - DetailedResponse is not an error type
 
 // parseSDKProblem parses an IBM SDK problem
 func parseSDKProblem(problem *core.SDKProblem) *IBMError {
@@ -167,15 +167,15 @@ func parseSDKProblem(problem *core.SDKProblem) *IBMError {
 		message = problem.Error()
 		// Use default status code mapping based on error patterns
 		errorStr := strings.ToLower(message)
-		if strings.Contains(errorStr, "404") || strings.Contains(errorStr, "not found") {
+		if strings.Contains(errorStr, strconv.Itoa(http.StatusNotFound)) || strings.Contains(errorStr, "not found") {
 			statusCode = http.StatusNotFound
-		} else if strings.Contains(errorStr, "401") || strings.Contains(errorStr, "unauthorized") {
+		} else if strings.Contains(errorStr, strconv.Itoa(http.StatusUnauthorized)) || strings.Contains(errorStr, "unauthorized") {
 			statusCode = http.StatusUnauthorized
-		} else if strings.Contains(errorStr, "403") || strings.Contains(errorStr, "forbidden") {
+		} else if strings.Contains(errorStr, strconv.Itoa(http.StatusForbidden)) || strings.Contains(errorStr, "forbidden") {
 			statusCode = http.StatusForbidden
-		} else if strings.Contains(errorStr, "429") || strings.Contains(errorStr, "rate limit") {
+		} else if strings.Contains(errorStr, strconv.Itoa(http.StatusTooManyRequests)) || strings.Contains(errorStr, "rate limit") {
 			statusCode = http.StatusTooManyRequests
-		} else if strings.Contains(errorStr, "500") || strings.Contains(errorStr, "internal") {
+		} else if strings.Contains(errorStr, strconv.Itoa(http.StatusInternalServerError)) || strings.Contains(errorStr, "internal") {
 			statusCode = http.StatusInternalServerError
 		} else {
 			statusCode = http.StatusInternalServerError // Default to server error
@@ -188,7 +188,7 @@ func parseSDKProblem(problem *core.SDKProblem) *IBMError {
 		Message:    message,
 		MoreInfo:   moreInfo,
 		wrapped:    problem,
-		Retryable:  statusCode >= 500 || statusCode == http.StatusTooManyRequests,
+		Retryable:  statusCode >= http.StatusInternalServerError || statusCode == http.StatusTooManyRequests,
 	}
 
 	// Set error type based on status code
@@ -208,9 +208,9 @@ func parseSDKProblem(problem *core.SDKProblem) *IBMError {
 	case http.StatusRequestTimeout:
 		ibmErr.Type = ErrorTypeTimeout
 	default:
-		if statusCode >= 500 {
+		if statusCode >= http.StatusInternalServerError {
 			ibmErr.Type = ErrorTypeServerError
-		} else if statusCode >= 400 {
+		} else if statusCode >= http.StatusBadRequest {
 			ibmErr.Type = ErrorTypeClientError
 		} else {
 			ibmErr.Type = ErrorTypeUnknown
@@ -218,6 +218,55 @@ func parseSDKProblem(problem *core.SDKProblem) *IBMError {
 	}
 
 	return ibmErr
+}
+
+// extractStatusCodeFromString safely extracts HTTP status codes from error strings
+func extractStatusCodeFromString(errStr string) int {
+	// Prefer phrase → code mappings first so we work without digits too.
+	switch {
+	case strings.Contains(errStr, "bad gateway"):
+		return http.StatusBadGateway // 502
+	case strings.Contains(errStr, "service unavailable"):
+		return http.StatusServiceUnavailable // 503
+	case strings.Contains(errStr, "gateway timeout"):
+		return http.StatusGatewayTimeout // 504
+	case strings.Contains(errStr, "request timeout"):
+		return http.StatusRequestTimeout // 408
+	case strings.Contains(errStr, "too many requests") || strings.Contains(errStr, "rate limit"):
+		return http.StatusTooManyRequests // 429
+	case strings.Contains(errStr, "permission denied") || strings.Contains(errStr, "forbidden"):
+		return http.StatusForbidden // 403
+	case strings.Contains(errStr, "authentication failed") || strings.Contains(errStr, "unauthorized"):
+		return http.StatusUnauthorized // 401
+	case strings.Contains(errStr, "already exists") || strings.Contains(errStr, "conflict"):
+		return http.StatusConflict // 409
+	case strings.Contains(errStr, "validation") || strings.Contains(errStr, "invalid"):
+		return http.StatusBadRequest // 400
+	case strings.Contains(errStr, "not found") || strings.Contains(errStr, "not_found"):
+		return http.StatusNotFound // 404
+	}
+
+	// Then look for explicit digits.
+	digitToStatus := map[string]int{
+		"400": http.StatusBadRequest,
+		"401": http.StatusUnauthorized,
+		"403": http.StatusForbidden,
+		"404": http.StatusNotFound,
+		"408": http.StatusRequestTimeout,
+		"409": http.StatusConflict,
+		"422": http.StatusUnprocessableEntity,
+		"429": http.StatusTooManyRequests,
+		"500": http.StatusInternalServerError,
+		"502": http.StatusBadGateway,
+		"503": http.StatusServiceUnavailable,
+		"504": http.StatusGatewayTimeout,
+	}
+	for k, v := range digitToStatus {
+		if strings.Contains(errStr, k) {
+			return v
+		}
+	}
+	return 0
 }
 
 // parseErrorString parses a generic error string
@@ -228,66 +277,104 @@ func parseErrorString(err error) *IBMError {
 		wrapped: err,
 	}
 
-	// Try to detect error type from string patterns
+	// First, try phrase/digit extraction
+	if sc := extractStatusCodeFromString(errStr); sc != 0 {
+		ibmErr.StatusCode = sc
+	}
+
+	// Then set type/flags from phrases
 	switch {
 	case strings.Contains(errStr, "not found") || strings.Contains(errStr, "not_found"):
 		ibmErr.Type = ErrorTypeNotFound
-		ibmErr.StatusCode = http.StatusNotFound
-	case strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "authentication"):
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusNotFound
+		}
+	case strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "authentication failed") || strings.Contains(errStr, "authentication"):
 		ibmErr.Type = ErrorTypeUnauthorized
-		ibmErr.StatusCode = http.StatusUnauthorized
-	case strings.Contains(errStr, "forbidden") || strings.Contains(errStr, "permission"):
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusUnauthorized
+		}
+	case strings.Contains(errStr, "permission denied") || strings.Contains(errStr, "forbidden") || strings.Contains(errStr, "permission"):
 		ibmErr.Type = ErrorTypeForbidden
-		ibmErr.StatusCode = http.StatusForbidden
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusForbidden
+		}
 	case strings.Contains(errStr, "rate limit") || strings.Contains(errStr, "too many requests"):
 		ibmErr.Type = ErrorTypeRateLimit
-		ibmErr.StatusCode = http.StatusTooManyRequests
 		ibmErr.Retryable = true
-	case strings.Contains(errStr, "timeout"):
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusTooManyRequests
+		}
+	case strings.Contains(errStr, "gateway timeout"):
+		ibmErr.Type = ErrorTypeServerError
+		ibmErr.Retryable = true
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusGatewayTimeout
+		}
+	case strings.Contains(errStr, "service unavailable"):
+		ibmErr.Type = ErrorTypeServerError
+		ibmErr.Retryable = true
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusServiceUnavailable
+		}
+	case strings.Contains(errStr, "bad gateway"):
+		ibmErr.Type = ErrorTypeServerError
+		ibmErr.Retryable = true
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusBadGateway
+		}
+	case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "request timeout"):
 		ibmErr.Type = ErrorTypeTimeout
-		ibmErr.StatusCode = http.StatusRequestTimeout
 		ibmErr.Retryable = true
-	case strings.Contains(errStr, "conflict") || strings.Contains(errStr, "already exists"):
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusRequestTimeout
+		}
+	case strings.Contains(errStr, "already exists") || strings.Contains(errStr, "conflict"):
 		ibmErr.Type = ErrorTypeConflict
-		ibmErr.StatusCode = http.StatusConflict
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusConflict
+		}
 	case strings.Contains(errStr, "invalid") || strings.Contains(errStr, "validation"):
 		ibmErr.Type = ErrorTypeValidation
-		ibmErr.StatusCode = http.StatusBadRequest
-	case strings.Contains(errStr, "internal server error") || strings.Contains(errStr, "500"):
-		ibmErr.Type = ErrorTypeServerError
-		ibmErr.StatusCode = http.StatusInternalServerError
-		ibmErr.Retryable = true
-	default:
-		ibmErr.Type = ErrorTypeUnknown
-		ibmErr.StatusCode = 0
-	}
-
-	// Extract status code from string if present
-	if strings.Contains(errStr, "404") {
-		ibmErr.StatusCode = http.StatusNotFound
-		ibmErr.Type = ErrorTypeNotFound
-	} else if strings.Contains(errStr, "401") {
-		ibmErr.StatusCode = http.StatusUnauthorized
-		ibmErr.Type = ErrorTypeUnauthorized
-	} else if strings.Contains(errStr, "403") {
-		ibmErr.StatusCode = http.StatusForbidden
-		ibmErr.Type = ErrorTypeForbidden
-	} else if strings.Contains(errStr, "429") {
-		ibmErr.StatusCode = http.StatusTooManyRequests
-		ibmErr.Type = ErrorTypeRateLimit
-		ibmErr.Retryable = true
-	} else if strings.Contains(errStr, "500") || strings.Contains(errStr, "502") ||
-		strings.Contains(errStr, "503") || strings.Contains(errStr, "504") {
+		if ibmErr.StatusCode == 0 {
+			ibmErr.StatusCode = http.StatusBadRequest
+		}
+	case strings.Contains(errStr, "internal server error"):
 		ibmErr.Type = ErrorTypeServerError
 		ibmErr.Retryable = true
-		if strings.Contains(errStr, "502") {
-			ibmErr.StatusCode = http.StatusBadGateway
-		} else if strings.Contains(errStr, "503") {
-			ibmErr.StatusCode = http.StatusServiceUnavailable
-		} else if strings.Contains(errStr, "504") {
-			ibmErr.StatusCode = http.StatusGatewayTimeout
-		} else {
+		if ibmErr.StatusCode == 0 {
 			ibmErr.StatusCode = http.StatusInternalServerError
+		}
+	default:
+		// Final classification by numeric status (if any)
+		if ibmErr.StatusCode != 0 {
+			switch {
+			case ibmErr.StatusCode == http.StatusNotFound:
+				ibmErr.Type = ErrorTypeNotFound
+			case ibmErr.StatusCode == http.StatusUnauthorized:
+				ibmErr.Type = ErrorTypeUnauthorized
+			case ibmErr.StatusCode == http.StatusForbidden:
+				ibmErr.Type = ErrorTypeForbidden
+			case ibmErr.StatusCode == http.StatusTooManyRequests:
+				ibmErr.Type = ErrorTypeRateLimit
+				ibmErr.Retryable = true
+			case ibmErr.StatusCode == http.StatusRequestTimeout:
+				ibmErr.Type = ErrorTypeTimeout
+				ibmErr.Retryable = true
+			case ibmErr.StatusCode == http.StatusConflict:
+				ibmErr.Type = ErrorTypeConflict
+			case ibmErr.StatusCode == http.StatusBadRequest || ibmErr.StatusCode == http.StatusUnprocessableEntity:
+				ibmErr.Type = ErrorTypeValidation
+			case ibmErr.StatusCode >= 500:
+				ibmErr.Type = ErrorTypeServerError
+				ibmErr.Retryable = true
+			case ibmErr.StatusCode >= 400:
+				ibmErr.Type = ErrorTypeClientError
+			default:
+				ibmErr.Type = ErrorTypeUnknown
+			}
+		} else {
+			ibmErr.Type = ErrorTypeUnknown
 		}
 	}
 

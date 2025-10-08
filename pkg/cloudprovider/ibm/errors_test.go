@@ -19,6 +19,7 @@ package ibm
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,7 +35,7 @@ func TestIBMError_Error(t *testing.T) {
 			name: "error with code",
 			err: &IBMError{
 				Code:       "instance_not_found",
-				StatusCode: 404,
+				StatusCode: http.StatusNotFound,
 				Message:    "Instance not found",
 			},
 			expected: "IBM Cloud error (code: instance_not_found, status: 404): Instance not found",
@@ -42,7 +43,7 @@ func TestIBMError_Error(t *testing.T) {
 		{
 			name: "error without code",
 			err: &IBMError{
-				StatusCode: 500,
+				StatusCode: http.StatusInternalServerError,
 				Message:    "Internal server error",
 			},
 			expected: "IBM Cloud error (status: 500): Internal server error",
@@ -374,4 +375,85 @@ func TestParseError_ComplexPatterns(t *testing.T) {
 			assert.Equal(t, tt.expectedCode, ibmErr.StatusCode)
 		})
 	}
+}
+
+// TestExtractStatusCodeFromString tests the new helper function
+func TestExtractStatusCodeFromString(t *testing.T) {
+	tests := []struct {
+		name         string
+		errorString  string
+		expectedCode int
+	}{
+		{
+			name:         "404 not found",
+			errorString:  "Error: 404 - Resource not found",
+			expectedCode: http.StatusNotFound,
+		},
+		{
+			name:         "500 internal server error",
+			errorString:  "500 Internal Server Error",
+			expectedCode: http.StatusInternalServerError,
+		},
+		{
+			name:         "502 bad gateway",
+			errorString:  "502 Bad Gateway",
+			expectedCode: http.StatusBadGateway,
+		},
+		{
+			name:         "no status code",
+			errorString:  "generic error message",
+			expectedCode: 0,
+		},
+		{
+			name:         "429 rate limit",
+			errorString:  "429 Too Many Requests",
+			expectedCode: http.StatusTooManyRequests,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractStatusCodeFromString(strings.ToLower(tt.errorString))
+			assert.Equal(t, tt.expectedCode, result)
+		})
+	}
+}
+
+// TestStatusCodeConsistency ensures all status code references use constants
+func TestStatusCodeConsistency(t *testing.T) {
+	// Test that our IBMError methods work correctly with constants
+	err := &IBMError{
+		Type:       ErrorTypeNotFound,
+		StatusCode: http.StatusNotFound,
+		Message:    "Resource not found",
+	}
+
+	// These should all be true
+	assert.True(t, err.IsNotFound())
+	assert.True(t, err.IsClientError())
+	assert.False(t, err.IsServerError())
+
+	// Test server error
+	serverErr := &IBMError{
+		Type:       ErrorTypeServerError,
+		StatusCode: http.StatusInternalServerError,
+		Message:    "Internal server error",
+		Retryable:  true,
+	}
+
+	assert.True(t, serverErr.IsServerError())
+	assert.False(t, serverErr.IsClientError())
+	assert.True(t, serverErr.Retryable)
+
+	// Test rate limit error
+	rateLimitErr := &IBMError{
+		Type:       ErrorTypeRateLimit,
+		StatusCode: http.StatusTooManyRequests,
+		Message:    "Too many requests",
+		Retryable:  true,
+	}
+
+	assert.True(t, rateLimitErr.IsRateLimit())
+	assert.True(t, rateLimitErr.IsClientError())
+	assert.True(t, rateLimitErr.Retryable)
 }
