@@ -179,6 +179,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 	options := commonTypes.Options{
 		ClusterEndpoint:   clusterEndpoint,
 		BootstrapToken:    bootstrapToken,
+		KubeletConfig:     nodeClass.Spec.Kubelet,
 		CustomUserData:    nodeClass.Spec.UserDataAppend,
 		ContainerRuntime:  containerRuntime,
 		CNIPlugin:         cniPlugin,
@@ -237,13 +238,6 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 
 		// Still add the unregistered taint even without NodeClaim for safety
 		options.Taints = []corev1.Taint{karpv1.UnregisteredNoExecuteTaint}
-	}
-
-	// Add kubelet extra args if needed
-	if options.KubeletConfig == nil {
-		options.KubeletConfig = &commonTypes.KubeletConfig{
-			ExtraArgs: make(map[string]string),
-		}
 	}
 
 	logger.Info("Generated bootstrap configuration",
@@ -484,31 +478,6 @@ func (p *VPCBootstrapProvider) getLatestCNIVersion(ctx context.Context, cniPlugi
 
 	logger.Info("Successfully fetched latest CNI version", "plugin", cniPlugin, "version", release.TagName)
 	return release.TagName, nil
-}
-
-// buildKubeletConfig builds kubelet configuration for VPC mode
-func (p *VPCBootstrapProvider) buildKubeletConfig(clusterConfig *commonTypes.ClusterConfig) *commonTypes.KubeletConfig {
-	config := &commonTypes.KubeletConfig{
-		ClusterDNS: []string{clusterConfig.DNSClusterIP},
-		ExtraArgs:  make(map[string]string),
-	}
-
-	// Add provider ID configuration for VPC mode
-	config.ExtraArgs["provider-id"] = "ibm://$(curl -s -H 'Authorization: Bearer TOKEN' https://api.metadata.cloud.ibm.com/metadata/v1/instance | jq -r '.id')"
-
-	// Add network configuration based on CNI
-	switch clusterConfig.CNIPlugin {
-	case "calico":
-		config.ExtraArgs["network-plugin"] = "cni"
-		config.ExtraArgs["cni-conf-dir"] = "/etc/cni/net.d"
-		config.ExtraArgs["cni-bin-dir"] = "/opt/cni/bin"
-	case "cilium":
-		config.ExtraArgs["network-plugin"] = "cni"
-		config.ExtraArgs["cni-conf-dir"] = "/etc/cni/net.d"
-		config.ExtraArgs["cni-bin-dir"] = "/opt/cni/bin"
-	}
-
-	return config
 }
 
 // getClusterName gets the cluster name from environment or defaults
