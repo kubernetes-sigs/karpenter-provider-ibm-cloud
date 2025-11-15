@@ -81,7 +81,7 @@ type Options struct {
 	BootstrapToken string
 
 	// KubeletConfig contains kubelet configuration
-	KubeletConfig *KubeletConfig
+	KubeletConfig *v1alpha1.KubeletConfiguration
 
 	// ContainerRuntime is the container runtime to use (containerd, cri-o)
 	ContainerRuntime string
@@ -118,21 +118,6 @@ type Options struct {
 
 	// Labels to apply to the node
 	Labels map[string]string
-}
-
-// KubeletConfig contains kubelet-specific configuration
-type KubeletConfig struct {
-	// ClusterDNS is the list of DNS server IPs
-	ClusterDNS []string
-
-	// MaxPods is the maximum number of pods per node
-	MaxPods *int32
-
-	// ExtraArgs are additional kubelet arguments
-	ExtraArgs map[string]string
-
-	// FeatureGates are kubelet feature gates
-	FeatureGates map[string]bool
 }
 
 // IKSWorkerPoolOptions contains configuration for IKS API-based node provisioning

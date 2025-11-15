@@ -87,35 +87,6 @@ func TestOptionsStruct(t *testing.T) {
 	}
 }
 
-func TestKubeletConfigStruct(t *testing.T) {
-	maxPods := int32(110)
-	kubeletConfig := KubeletConfig{
-		ClusterDNS:   []string{"172.21.0.10", "8.8.8.8"},
-		MaxPods:      &maxPods,
-		ExtraArgs:    map[string]string{"arg1": "value1"},
-		FeatureGates: map[string]bool{"gate1": true, "gate2": false},
-	}
-
-	if len(kubeletConfig.ClusterDNS) != 2 {
-		t.Errorf("KubeletConfig.ClusterDNS length = %v, want 2", len(kubeletConfig.ClusterDNS))
-	}
-	if kubeletConfig.ClusterDNS[0] != "172.21.0.10" {
-		t.Errorf("KubeletConfig.ClusterDNS[0] = %v, want 172.21.0.10", kubeletConfig.ClusterDNS[0])
-	}
-	if kubeletConfig.MaxPods == nil || *kubeletConfig.MaxPods != 110 {
-		t.Errorf("KubeletConfig.MaxPods = %v, want 110", kubeletConfig.MaxPods)
-	}
-	if kubeletConfig.ExtraArgs["arg1"] != "value1" {
-		t.Errorf("KubeletConfig.ExtraArgs[arg1] = %v, want value1", kubeletConfig.ExtraArgs["arg1"])
-	}
-	if !kubeletConfig.FeatureGates["gate1"] {
-		t.Errorf("KubeletConfig.FeatureGates[gate1] = %v, want true", kubeletConfig.FeatureGates["gate1"])
-	}
-	if kubeletConfig.FeatureGates["gate2"] {
-		t.Errorf("KubeletConfig.FeatureGates[gate2] = %v, want false", kubeletConfig.FeatureGates["gate2"])
-	}
-}
-
 func TestIKSWorkerPoolOptionsStruct(t *testing.T) {
 	options := IKSWorkerPoolOptions{
 		ClusterID:     "cluster-123",

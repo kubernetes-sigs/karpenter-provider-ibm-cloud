@@ -121,7 +121,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	zone := node.Labels["topology.kubernetes.io/zone"]
 	log.Info("Found instance", "type", instanceTypeName, "zone", zone)
 
-	instanceTypes, err := c.instanceTypeProvider.List(ctx)
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		log.Error(err, "Failed to list instance types")
 		return nil, fmt.Errorf("listing instance types, %w", err)
@@ -283,7 +283,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	log.Info("Resolving instance types")
-	instanceTypes, err := c.instanceTypeProvider.List(ctx)
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		log.Error(err, "Failed to resolve instance types")
 		return nil, fmt.Errorf("resolving instance types, %w", err)
@@ -514,7 +514,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	}
 	log.Info("Resolved NodeClass", "name", nodeClass.Name)
 
-	instanceTypes, err := c.instanceTypeProvider.List(ctx)
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		log.Error(err, "Failed to list instance types")
 		return nil, err

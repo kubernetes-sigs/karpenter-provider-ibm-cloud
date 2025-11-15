@@ -109,7 +109,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		c.log.Info("Starting instance type selection", "nodeclass", req.Name)
 
 		// Get instance types matching requirements
-		instanceTypes, err := c.instanceTypes.FilterInstanceTypes(ctx, nodeClass.Spec.InstanceRequirements)
+		instanceTypes, err := c.instanceTypes.FilterInstanceTypes(ctx, nodeClass.Spec.InstanceRequirements, nodeClass)
 		if err != nil {
 			c.log.Error(err, "failed to select instance types", "nodeclass", req.Name)
 			InstanceTypeSelections.WithLabelValues(nodeClass.Name, "failure").Inc()
