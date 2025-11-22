@@ -41,7 +41,7 @@ import (
 // mockInstanceTypeProvider implements instancetype.Provider interface
 type mockInstanceTypeProvider struct{}
 
-func (m *mockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements) ([]*cloudprovider.InstanceType, error) {
+func (m *mockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	instanceTypes := []*cloudprovider.InstanceType{
 		{
 			Name: "test-instance-type",
@@ -66,7 +66,7 @@ func (m *mockInstanceTypeProvider) Delete(ctx context.Context, instanceType *clo
 	return nil
 }
 
-func (m *mockInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudprovider.InstanceType, error) {
+func (m *mockInstanceTypeProvider) Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error) {
 	return &cloudprovider.InstanceType{
 		Name: name,
 		Capacity: corev1.ResourceList{
@@ -80,7 +80,7 @@ func (m *mockInstanceTypeProvider) Get(ctx context.Context, name string) (*cloud
 	}, nil
 }
 
-func (m *mockInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
+func (m *mockInstanceTypeProvider) List(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	return []*cloudprovider.InstanceType{
 		{
 			Name: "test-instance-type",

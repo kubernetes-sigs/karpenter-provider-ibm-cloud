@@ -121,6 +121,78 @@ spec:
 
 ### Customization Options
 
+### Kubelet Configuration Overrides
+
+For VPC bootstrap, you can override a subset of kubelet configuration directly from the `IBMNodeClass`. These settings are rendered into the kubelet `config.yaml` on the node and validated by the CRD.
+
+```yaml
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: vpc-bootstrap-kubelet
+spec:
+  region: us-south
+  zone: us-south-1
+  vpc: "r006-a8efb117-fd5e-4f63-ae16-4fb9faafa4ff"
+  image: ubuntu-24-04-amd64
+  apiServerEndpoint: "https://10.240.0.1:6443"
+  bootstrapMode: cloud-init
+  securityGroups:
+    - "r006-12345678-1234-1234-1234-123456789012"
+
+  kubelet:
+    clusterDNS:
+      - 10.96.0.10
+      - 10.96.0.11
+
+    maxPods: 150
+    podsPerCore: 10
+
+    kubeReserved:
+      cpu: "200m"
+      memory: "512Mi"
+
+    systemReserved:
+      cpu: "100m"
+      memory: "256Mi"
+
+    evictionHard:
+      memory.available: "500Mi"
+
+    evictionSoft:
+      memory.available: "1Gi"
+
+    evictionSoftGracePeriod:
+      memory.available: "1m0s"
+
+    evictionMaxPodGracePeriod: 120
+
+    imageGCHighThresholdPercent: 85
+    imageGCLowThresholdPercent: 70
+
+    cpuCFSQuota: true
+
+```
+* **Reserved resources**
+    * `systemReserved` and `kubeReserved` keys must be one of:
+      `cpu`, `memory`, `ephemeral-storage`, `pid`.
+    * Values must not be negative (strings starting with `-` are rejected).
+
+* **Eviction settings**
+    * `evictionHard`, `evictionSoft`, and `evictionSoftGracePeriod` may only use:
+      `memory.available`, `nodefs.available`, `nodefs.inodesFree`,
+      `imagefs.available`, `imagefs.inodesFree`, `pid.available`.
+    * Every key in `evictionSoft` must exist in `evictionSoftGracePeriod`.
+    * Every key in `evictionSoftGracePeriod` must exist in `evictionSoft`.
+
+* **Image garbage collection**
+    * `imageGCHighThresholdPercent` and `imageGCLowThresholdPercent` must be in
+      the range `[0, 100]`.
+    * If both are set, `imageGCLowThresholdPercent` must be **less than**
+      `imageGCHighThresholdPercent`.
+
+For a complete reference, see `examples/kubelet-configuration.yaml`.
+
 #### **Custom User Data**
 ```yaml
 spec:
