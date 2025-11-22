@@ -1,0 +1,96 @@
+---
+# Example: IBMNodeClass with kubelet configuration overrides
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: kubelet-config-nodeclass
+spec:
+  # Basic VPC-backed configuration
+  region: us-south
+  zone: us-south-1
+  vpc: "r006-a8efb117-fd5e-4f63-ae16-4fb9faafa4ff"
+  subnet: "0717-197e06f4-b500-426c-bc0f-900b215f996c"
+
+  apiServerEndpoint: "https://10.240.0.1:6443"
+  bootstrapMode: cloud-init
+
+  securityGroups:
+    - "r006-12345678-1234-1234-1234-123456789012"
+
+  image: "r006-dd3c20fa-71d3-4dc0-913f-2f097bf3e500"
+
+  sshKeys:
+    - "r006-82091c89-68e4-4b3f-bd2b-4e63ca2f67da"
+
+  resourceGroup: "88427352321742ef8cfac50b0ee6cc26"
+
+  # Kubelet configuration (subset of upstream KubeletConfiguration)
+  kubelet:
+    # DNS for the cluster (overrides CLUSTER_DNS from bootstrap)
+    clusterDNS:
+      - 10.96.0.10
+
+    # Pod density settings
+    maxPods: 150
+    podsPerCore: 10
+
+    # Reserved resources for Kubernetes components
+    kubeReserved:
+      cpu: "200m"
+      memory: "512Mi"
+
+    # Reserved resources for OS/system daemons
+    systemReserved:
+      cpu: "100m"
+      memory: "256Mi"
+
+    # Eviction thresholds
+    evictionHard:
+      memory.available: "500Mi"
+
+    evictionSoft:
+      memory.available: "1Gi"
+
+    evictionSoftGracePeriod:
+      memory.available: 1m0s
+
+    evictionMaxPodGracePeriod: 120
+
+    # Image garbage collection thresholds
+    # Validation enforces 0 <= low < high <= 100
+    imageGCHighThresholdPercent: 85
+    imageGCLowThresholdPercent: 70
+
+    # Enforce CPU CFS quota for pods that specify CPU limits
+    cpuCFSQuota: true
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: kubelet-config-nodepool
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: karpenter
+        example: kubelet-config
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter-ibm.sh/v1alpha1
+        kind: IBMNodeClass
+        name: kubelet-config-nodeclass
+      requirements:
+        - key: "kubernetes.io/arch"
+          operator: In
+          values: ["amd64"]
+        - key: "kubernetes.io/os"
+          operator: In
+          values: ["linux"]
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values: ["bx2-4x16", "bx2-8x32"]
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+  limits:
+    cpu: "1000"

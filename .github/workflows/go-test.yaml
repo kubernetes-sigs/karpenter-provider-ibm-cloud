@@ -1,0 +1,109 @@
+name: Go Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'charts/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'charts/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Install controller-gen
+      run: |
+        go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+        mkdir -p ~/.local/share/go/bin
+        mv ~/go/bin/controller-gen ~/.local/share/go/bin/
+
+    - name: Install mockgen
+      run: |
+        go install github.com/golang/mock/mockgen@v1.6.0
+
+    - name: Verify mocks are up to date
+      run: |
+        make gen-mocks
+        git diff --exit-code pkg/providers/common/types/mock/ pkg/cloudprovider/ibm/mock/ pkg/providers/common/pricing/mock/ || \
+          (echo "Error: Generated mocks are out of date. Run 'make gen-mocks' and commit the changes." && exit 1)
+
+    - name: Run tests
+      run: |
+        go test -v -race ./...
+
+    - name: Run tests with coverage
+      run: |
+        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install pre-commit and dependencies
+      run: |
+        # Install pre-commit
+        pip install pre-commit
+
+        # Install shellcheck (already available in ubuntu-latest)
+        which shellcheck || sudo apt-get install -y shellcheck
+
+        # Install markdownlint-cli
+        npm install -g markdownlint-cli
+
+        # Install golangci-lint using go install (safer than curl|sh)
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+
+    - name: Install mockgen
+      run: |
+        go install github.com/golang/mock/mockgen@latest
+
+    - name: Generate mocks
+      run: make gen-mocks
+
+    - name: Run make lint
+      run: |
+        # Ensure golangci-lint is available in PATH for pre-commit
+        export PATH="$(go env GOPATH)/bin:${PATH}"
+        which golangci-lint
+        golangci-lint version
+        make lint

@@ -1,0 +1,85 @@
+# GitLeaks Configuration for Karpenter IBM Cloud Provider
+# This file configures GitLeaks to scan for secrets while allowing legitimate test data
+
+[allowlist]
+  description = "Global Allowlist for Karpenter IBM Cloud Provider"
+
+  # Ignore based on file paths
+  paths = [
+    # Ignore test certificates and keys in test files
+    '''.*_test\.go$''',
+
+    # Ignore example certificates in documentation
+    '''\/docs\/.*\.pem$''',
+    '''\/examples\/.*\.pem$''',
+    '''\/charts\/.*\.pem$''',
+
+    # Ignore test fixtures and mock data
+    '''\/test\/fixtures\/.*''',
+    '''\/testdata\/.*''',
+
+    # Ignore vendor dependencies
+    '''\/vendor\/.*''',
+
+    # Ignore generated files
+    '''\/.*\.pb\.go$''',
+    '''zz_generated\.deepcopy\.go$''',
+  ]
+
+  # Ignore based on line content patterns
+  regexes = [
+    # Ignore base64-encoded test certificates in test files
+    '''LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t.*test''',
+    '''LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0t.*test''',
+
+    # Ignore placeholder API keys in documentation
+    '''your-ibm-api-key''',
+    '''your-vpc-api-key''',
+    '''test-api-key''',
+    '''example-api-key''',
+
+    # Ignore placeholder resource IDs
+    '''r006-your-vpc-id''',
+    '''0717-your-subnet-id''',
+    '''test-cluster-id''',
+    '''your-cluster-id''',
+
+    # Ignore kubeconfig test data with base64 certs
+    '''certificate-authority-data: LS0tLS1CRUdJTi.*kubeconfig''',
+    '''client-certificate-data: LS0tLS1CRUdJTi.*kubeconfig''',
+    '''client-key-data: LS0tLS1CRUdJTi.*kubeconfig''',
+
+    # Ignore test data comments
+    '''# Test certificate data''',
+    '''# Fake certificate for testing''',
+    '''# Mock private key''',
+  ]
+
+  # Ignore specific commits (if needed for historical data)
+  commits = [
+    # Add commit hashes here if you need to ignore specific commits
+    # "abc123def456",
+  ]
+
+# Note: We rely on GitLeaks' default rules to catch real secrets.
+# The allowlist above only excludes known test data and documentation placeholders.
+
+# File type specific configurations
+[extend]
+  # Use default GitLeaks rules as base
+  useDefault = true
+
+  # Additional file extensions to scan
+  paths = [
+    "*.go",
+    "*.yaml",
+    "*.yml",
+    "*.json",
+    "*.sh",
+    "*.bash",
+    "*.env",
+    "*.toml",
+    "*.md",
+    "Dockerfile*",
+    "*.dockerfile",
+  ]

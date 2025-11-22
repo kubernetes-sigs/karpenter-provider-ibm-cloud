@@ -1,0 +1,427 @@
+name: E2E Tests (In-Cluster Runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_benchmarks:
+        description: 'Run performance benchmarks'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  pull_request:
+    types: [labeled]
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' && contains(github.event.label.name, 'run-e2e'))
+
+    # Prevent concurrent e2e runs
+    concurrency:
+      group: e2e-tests
+      cancel-in-progress: false
+
+    timeout-minutes: 210
+
+    container:
+      # Run in a container with necessary tools
+      image: golang:1.24.6
+      options: --user 0
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update && apt-get install -y curl jq
+
+        # Install kubectl
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        mv kubectl /usr/local/bin/
+
+        # Install IBM Cloud CLI
+        curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
+        ibmcloud plugin install vpc-infrastructure
+
+    - name: Setup kubeconfig
+      env:
+        KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+      run: |
+        # Create kubeconfig from secret
+        printf '%s' "$KUBECONFIG_CONTENT" | base64 -d > /tmp/kubeconfig
+        chmod 600 /tmp/kubeconfig
+        export KUBECONFIG=/tmp/kubeconfig
+
+        # Verify the kubeconfig works
+        kubectl version --client
+
+    - name: Verify cluster access
+      env:
+        KUBECONFIG: /tmp/kubeconfig
+      run: |
+        # Verify cluster access with provided kubeconfig
+        kubectl cluster-info
+        kubectl auth can-i create nodeclaims --all-namespaces
+        kubectl auth can-i create nodepools --all-namespaces
+        kubectl auth can-i create ibmnodeclasses --all-namespaces
+
+    - name: Configure IBM Cloud CLI
+      env:
+        IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
+      run: |
+        ibmcloud login --apikey "${{ secrets.IBMCLOUD_API_KEY }}" -r "${{ secrets.IBMCLOUD_REGION }}"
+
+    - name: Deploy latest version
+      env:
+        KUBECONFIG: /tmp/kubeconfig
+      run: |
+        # Install or update Karpenter CRDs
+        kubectl apply -f charts/crds/
+
+        # Restart operator pods to pull latest upstream image tag
+        kubectl rollout restart deployment/karpenter-karpenter-ibm -n karpenter
+
+    - name: Pre-test cleanup
+      env:
+        KUBECONFIG: /tmp/kubeconfig
+      run: |
+        echo "🧹 Cleaning up any existing e2e test resources..."
+
+        # Clean up any leftover resources from previous runs
+        kubectl delete pods -l test=e2e --all-namespaces --timeout=300s || true
+        kubectl delete deployments -l test=e2e --all-namespaces --timeout=300s || true
+        kubectl delete nodeclaims -l test=e2e --timeout=300s || true
+        kubectl delete nodepools -l test=e2e --timeout=300s || true
+        kubectl delete ibmnodeclasses -l test=e2e --timeout=300s || true
+
+        # Wait for cluster stabilization
+        echo "⏳ Waiting for cluster stabilization..."
+
+        # Wait for no pending e2e pods
+        for i in {1..30}; do
+          pending_pods=$(kubectl get pods -l test=e2e --all-namespaces --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l)
+          if [ "$pending_pods" -eq 0 ]; then
+            echo "✅ No pending e2e pods found"
+            break
+          fi
+          echo "⏳ Still have $pending_pods pending e2e pods, waiting..."
+          sleep 10
+        done
+
+        # Wait for no disrupted nodes
+        for i in {1..30}; do
+          disrupted_nodes=$(kubectl get nodes --no-headers -o custom-columns="NAME:.metadata.name,TAINTS:.spec.taints[*].key" | grep -c "karpenter.sh/disrupted" 2>/dev/null || echo "0")
+          disrupted_nodes=$(echo "$disrupted_nodes" | tr -d '\n' | grep -o '[0-9]*' || echo "0")
+          if [ "$disrupted_nodes" -eq 0 ]; then
+            echo "✅ No disrupted nodes found"
+            break
+          fi
+          echo "⏳ Still have $disrupted_nodes disrupted nodes, waiting..."
+          sleep 10
+        done
+
+        # Brief pause for final cleanup
+        sleep 30
+        echo "✅ Pre-test cleanup completed"
+
+    - name: Run E2E tests (Sequential)
+      env:
+        RUN_E2E_TESTS: "true"
+        IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
+        VPC_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
+        IBMCLOUD_REGION: ${{ secrets.IBMCLOUD_REGION }}
+        TEST_VPC_ID: ${{ secrets.E2E_TEST_VPC_ID }}
+        TEST_SUBNET_ID: ${{ secrets.E2E_TEST_SUBNET_ID }}
+        TEST_IMAGE_ID: ${{ secrets.E2E_TEST_IMAGE_ID }}
+        TEST_ZONE: ${{ secrets.E2E_TEST_ZONE }}
+        TEST_SECURITY_GROUP_ID: ${{ secrets.E2E_TEST_SECURITY_GROUP_ID }}
+        VPC_URL: ${{ secrets.VPC_URL }}
+        KUBERNETES_API_SERVER_ENDPOINT: ${{ secrets.KUBERNETES_API_SERVER_ENDPOINT }}
+        IBM_RESOURCE_GROUP_ID: ${{ secrets.IBM_RESOURCE_GROUP_ID }}
+        IBM_SSH_KEY_ID: ${{ secrets.IBM_SSH_KEY_ID }}
+        RUN_E2E_BENCHMARKS: ${{ inputs.run_benchmarks }}
+        # Use the kubeconfig we set up
+        KUBECONFIG: /tmp/kubeconfig
+        # Configure e2e test behavior
+        E2E_SEQUENTIAL: "true"
+        E2E_CLEANUP_TIMEOUT: "300s"
+        E2E_STABILIZATION_WAIT: "60s"
+      run: |
+        echo "🚀 Starting E2E test suite..."
+
+        # Define test groups
+        # Core functionality tests from basic_workflow_test.go
+        core_tests="TestE2EFullWorkflow TestE2ENodePoolInstanceTypeSelection TestE2EInstanceTypeSelection TestE2EDriftStability"
+
+        # NodeClass validation tests from validation_test.go
+        validation_tests="TestE2ENodeClassValidation TestE2EValidNodeClassCreation TestE2ENodeClassWithMissingFields"
+
+        # Block device mapping tests from block_device_test.go
+        block_device_tests="TestE2EBlockDeviceMapping TestE2EBlockDeviceMappingValidation"
+
+        # Scheduling constraint tests from scheduling_test.go and e2e_taints_test.go
+        scheduling_tests="TestE2EPodDisruptionBudget TestE2EConsolidationWithPDB TestE2EPodAntiAffinity TestE2ENodeAffinity TestE2EStartupTaints TestE2EStartupTaintsRemoval TestE2ETaintsBasicScheduling TestE2ETaintValues TestE2ETaintSync TestE2EUnregisteredTaintHandling"
+
+        # UserData feature tests from userdata_test.go
+        userdata_tests="TestE2EUserDataAppend TestE2EStandardBootstrap"
+
+        # Image selector tests from image_selector_test.go
+        image_selector_tests="TestE2EImageSelector"
+
+        # Multi-zone tests from multizone_test.go
+        multizone_tests="TestE2EMultiZoneDistribution TestE2EZoneAntiAffinity TestE2ETopologySpreadConstraints TestE2EPlacementStrategyValidation TestE2EZoneFailover"
+
+        # Cleanup tests from cleanup_test.go
+        cleanup_tests="TestE2ECleanupNodePoolDeletion TestE2ECleanupNodeClassDeletion TestE2ECleanupOrphanedResources TestE2ECleanupIBMCloudResources"
+
+        # Combine all tests
+        all_tests="$core_tests $validation_tests $block_device_tests $scheduling_tests $userdata_tests $image_selector_tests $multizone_tests $cleanup_tests"
+
+        test_failed="false"
+        passed_tests=0
+        failed_tests=0
+        total_tests=$(echo $all_tests | wc -w)
+
+        echo "📋 Test Suite Summary:"
+        echo "  Core Tests: $(echo $core_tests | wc -w)"
+        echo "  Validation Tests: $(echo $validation_tests | wc -w)"
+        echo "  Block Device Tests: $(echo $block_device_tests | wc -w)"
+        echo "  Scheduling Tests: $(echo $scheduling_tests | wc -w)"
+        echo "  UserData Tests: $(echo $userdata_tests | wc -w)"
+        echo "  Image Selector Tests: $(echo $image_selector_tests | wc -w)"
+        echo "  Multi-Zone Tests: $(echo $multizone_tests | wc -w)"
+        echo "  Cleanup Tests: $(echo $cleanup_tests | wc -w)"
+        echo "  Total Tests: $total_tests"
+        echo ""
+
+        # Run each test individually with cleanup between
+        for test in $all_tests; do
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🧪 Running test: $test"
+          echo "Progress: $((passed_tests + failed_tests + 1))/$total_tests"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Set appropriate timeout based on test type
+          timeout="20m"
+          case "$test" in
+            "TestE2EDriftStability")
+              timeout="30m"  # Drift test needs more time for monitoring
+              ;;
+            "TestE2EMultiZone"*|"TestE2EZone"*|"TestE2ETopology"*|"TestE2EPlacementStrategy"*)
+              timeout="25m"  # Multi-zone tests need extra time for cross-zone provisioning
+              ;;
+            "TestE2ECleanup"*)
+              timeout="15m"  # Cleanup tests are typically faster
+              ;;
+            "TestE2EValidation"*|"TestE2ENodeClass"*)
+              timeout="10m"  # Validation tests are quick
+              ;;
+            *)
+              timeout="20m"  # Default timeout for other tests
+              ;;
+          esac
+
+          # Create test-specific log file to capture all output
+          test_log="test-artifacts/${test}-$(date +%s).log"
+          mkdir -p test-artifacts
+
+          # Run test with enhanced logging and crash recovery
+          set +e  # Don't exit on failure
+          timeout $timeout go test -tags=e2e -v -timeout $timeout ./test/e2e -run "^$test$" -count=1 2>&1 | tee "$test_log"
+          test_exit_code=$?
+          set -e  # Re-enable exit on failure
+
+          if [ $test_exit_code -eq 0 ]; then
+            echo "✅ Test $test passed"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ Test $test failed (exit code: $test_exit_code)"
+            failed_tests=$((failed_tests + 1))
+
+            # Enhanced debug information on failure
+            echo "📊 Debug information for failed test $test:"
+            echo "  Exit code: $test_exit_code"
+            echo "  Log file: $test_log"
+
+            # Collect system state
+            kubectl get nodes --no-headers | wc -l | xargs echo "  Total nodes:"
+            kubectl get nodeclaims --no-headers 2>/dev/null | wc -l | xargs echo "  Total nodeclaims:" || echo "  Total nodeclaims: 0"
+            kubectl get pods -l test=e2e --all-namespaces --no-headers 2>/dev/null | wc -l | xargs echo "  Total e2e pods:" || echo "  Total e2e pods: 0"
+
+            # Collect Karpenter pod status
+            echo "  Karpenter pod status:"
+            kubectl get pods -n karpenter -l app.kubernetes.io/name=karpenter --no-headers 2>/dev/null || echo "    No Karpenter pods found"
+
+            # Collect recent events (errors and warnings)
+            echo "  Recent warning events:"
+            kubectl get events -A --field-selector type=Warning --sort-by='.lastTimestamp' 2>/dev/null | tail -5 || echo "    No warning events"
+
+            # Check for panic or crash indicators in test log
+            if grep -i "panic\|fatal\|segmentation\|killed" "$test_log" >/dev/null 2>&1; then
+              echo "  ⚠️  Test appears to have crashed (panic/fatal error detected)"
+            fi
+
+            # Collect Karpenter logs immediately after failure
+            kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter --tail=100 > "test-artifacts/karpenter-logs-${test}-$(date +%s).txt" 2>/dev/null || echo "  Failed to collect Karpenter logs"
+
+            test_failed="true"
+          fi
+
+          # Inter-test cleanup and stabilization
+          echo "🧹 Cleaning up after test: $test"
+
+          # Delete test-specific resources
+          kubectl delete pods -l test=e2e --all-namespaces --timeout=300s || true
+          kubectl delete deployments -l test=e2e --all-namespaces --timeout=300s || true
+          kubectl delete nodeclaims -l test=e2e --timeout=300s || true
+          kubectl delete nodepools -l test=e2e --timeout=300s || true
+          kubectl delete ibmnodeclasses -l test=e2e --timeout=300s || true
+
+          # Wait for cleanup to complete
+          echo "⏳ Waiting for cleanup to complete..."
+
+          # Extended cleanup wait for drift stability test due to NodeClaim deletion timeouts
+          if [ "$test" = "TestE2EDriftStability" ]; then
+            echo "⏳ Extended cleanup wait for drift stability test..."
+            sleep 120  # 2 minutes for NodeClaim finalizers to complete
+          else
+            sleep 30   # Standard cleanup wait
+          fi
+
+          # Check cluster health before next test
+          kubectl get nodes --no-headers | grep -c Ready | xargs echo "Ready nodes:"
+          kubectl get nodeclaims --no-headers | grep -c True | xargs echo "Ready nodeclaims:" || echo "Ready nodeclaims: 0"
+
+          echo "✅ Completed test: $test"
+          echo ""
+        done
+
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📊 Test Suite Results:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Total Tests: $total_tests"
+        echo "  ✅ Passed: $passed_tests"
+        echo "  ❌ Failed: $failed_tests"
+        echo "  Success Rate: $((passed_tests * 100 / total_tests))%"
+        echo ""
+
+        # Check if any test failed
+        if [ "$test_failed" = "true" ]; then
+          echo "❌ Test suite failed with $failed_tests failures"
+          exit 1
+        fi
+
+        echo "✅ All E2E tests completed successfully!"
+
+        # Run benchmarks if requested
+        if [ "$RUN_E2E_BENCHMARKS" = "true" ]; then
+          echo "📊 Running performance benchmarks..."
+          go test -tags=e2e -v -timeout 30m ./test/e2e/... -run=^$ -bench=.
+        fi
+
+    - name: Collect test artifacts
+      if: always()
+      env:
+        KUBECONFIG: /tmp/kubeconfig
+      run: |
+        echo "📦 Collecting comprehensive test artifacts..."
+        mkdir -p test-artifacts
+
+        # Collect Karpenter logs with different tail sizes for completeness
+        echo "  Collecting Karpenter logs..."
+        kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter --tail=2000 > test-artifacts/karpenter-logs.txt 2>/dev/null || echo "Failed to collect current Karpenter logs" > test-artifacts/karpenter-logs.txt
+        kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter --previous --tail=1000 > test-artifacts/karpenter-logs-previous.txt 2>/dev/null || echo "No previous Karpenter logs available" > test-artifacts/karpenter-logs-previous.txt
+
+        # Collect events with different filters
+        echo "  Collecting events..."
+        kubectl get events -A --sort-by='.lastTimestamp' > test-artifacts/events.txt 2>/dev/null || echo "Failed to collect events" > test-artifacts/events.txt
+        kubectl get events -A --field-selector type=Warning --sort-by='.lastTimestamp' > test-artifacts/events-warnings.txt 2>/dev/null || echo "No warning events" > test-artifacts/events-warnings.txt
+        kubectl get events -A --field-selector type=Normal --sort-by='.lastTimestamp' | tail -50 > test-artifacts/events-normal-recent.txt 2>/dev/null || echo "No normal events" > test-artifacts/events-normal-recent.txt
+
+        # Collect resource states
+        echo "  Collecting resource states..."
+        kubectl get nodes -o wide > test-artifacts/nodes.txt 2>/dev/null || echo "Failed to collect nodes" > test-artifacts/nodes.txt
+        kubectl get nodeclaims -o yaml > test-artifacts/nodeclaims.yaml 2>/dev/null || echo "apiVersion: v1\nitems: []\nkind: List" > test-artifacts/nodeclaims.yaml
+        kubectl get nodepools -o yaml > test-artifacts/nodepools.yaml 2>/dev/null || echo "apiVersion: v1\nitems: []\nkind: List" > test-artifacts/nodepools.yaml
+        kubectl get ibmnodeclasses -o yaml > test-artifacts/ibmnodeclasses.yaml 2>/dev/null || echo "apiVersion: v1\nitems: []\nkind: List" > test-artifacts/ibmnodeclasses.yaml
+
+        # Collect Karpenter deployment status
+        echo "  Collecting Karpenter deployment status..."
+        kubectl describe deployment -n karpenter karpenter-karpenter-ibm > test-artifacts/karpenter-deployment.txt 2>/dev/null || echo "Failed to describe Karpenter deployment" > test-artifacts/karpenter-deployment.txt
+        kubectl get pods -n karpenter -o wide > test-artifacts/karpenter-pods.txt 2>/dev/null || echo "Failed to get Karpenter pods" > test-artifacts/karpenter-pods.txt
+
+        # Collect any crash dumps or additional logs
+        echo "  Collecting additional diagnostics..."
+        kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded > test-artifacts/problematic-pods.txt 2>/dev/null || echo "No problematic pods found" > test-artifacts/problematic-pods.txt
+
+        # Create summary of artifacts
+        echo "  Creating artifact summary..."
+        {
+          echo "E2E Test Artifacts Summary"
+          echo "========================="
+          echo "Generated: $(date)"
+          echo "Test run ID: ${{ github.run_id }}"
+          echo ""
+          echo "Files collected:"
+          ls -la test-artifacts/ 2>/dev/null || echo "No artifacts directory"
+        } > test-artifacts/README.txt
+
+        echo "✅ Test artifact collection completed"
+
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-test-artifacts-${{ github.run_id }}
+        path: test-artifacts/
+        retention-days: 7
+
+    - name: Cleanup test resources
+      if: always()
+      env:
+        IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
+        KUBECONFIG: /tmp/kubeconfig
+      run: |
+        echo "🧹 Starting comprehensive cleanup..."
+
+        # Clean up Kubernetes resources with extended timeouts
+        echo "Cleaning up Kubernetes resources..."
+        kubectl delete pods -l test=e2e --all-namespaces --timeout=10m || true
+        kubectl delete deployments -l test=e2e --all-namespaces --timeout=10m || true
+        kubectl delete nodeclaims -l test=e2e --timeout=10m || true
+        kubectl delete nodepools -l test=e2e --timeout=10m || true
+        kubectl delete ibmnodeclasses -l test=e2e --timeout=10m || true
+
+        # Force cleanup any stuck resources with direct patching
+        echo "Force cleaning up any stuck resources..."
+        kubectl patch nodeclaims --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+        kubectl patch nodepools --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+        kubectl patch ibmnodeclasses --selector test=e2e --type='merge' -p='{"metadata":{"finalizers":[]}}' || true
+
+        # Clean up IBM Cloud instances created by e2e tests
+        echo "Cleaning up IBM Cloud instances..."
+        ibmcloud is instances --output json | \
+          jq -r '.[] | select(.tags | index("karpenter-e2e")) | .id' | \
+          xargs -I {} ibmcloud is instance-delete {} --force || true
+
+        # Clean up orphaned VNIs (Virtual Network Interfaces)
+        echo "Cleaning up orphaned VNIs..."
+        ibmcloud is virtual-network-interfaces --output json | \
+          jq -r '.[] | select(.name | test("e2e-.*-vni")) | .id' | \
+          xargs -I {} ibmcloud is virtual-network-interface-delete {} --force || true
+
+        # Clean up orphaned volumes
+        echo "Cleaning up orphaned volumes..."
+        ibmcloud is volumes --output json | \
+          jq -r '.[] | select(.name | test("e2e-.*-boot")) | .id' | \
+          xargs -I {} ibmcloud is volume-delete {} --force || true
+
+        echo "✅ Cleanup completed"

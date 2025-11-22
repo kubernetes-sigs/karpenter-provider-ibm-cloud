@@ -1,0 +1,101 @@
+name: Deploy Documentation and Helm Charts to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'charts/**'
+      - '.github/workflows/pages-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.12.0'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mkdocs
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install MkDocs and dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Build documentation
+        run: |
+          mkdocs build
+
+      - name: Package Helm charts
+        run: |
+          mkdir -p _helm-repo
+
+          # Download existing index if it exists
+          echo "Downloading existing index.yaml..."
+          curl -s https://karpenter-ibm.sh/index.yaml > _helm-repo/old-index.yaml || echo "No existing index found"
+
+          # Package the current chart
+          if [ -f "charts/Chart.yaml" ]; then
+            echo "Packaging chart: charts/"
+            helm package charts/ --destination _helm-repo
+          fi
+
+          # Merge with existing index (preserves all versions)
+          if [ -f "_helm-repo/old-index.yaml" ] && [ -s "_helm-repo/old-index.yaml" ]; then
+            echo "Merging with existing index..."
+            helm repo index _helm-repo --url https://karpenter-ibm.sh --merge _helm-repo/old-index.yaml
+          else
+            echo "Creating new index..."
+            helm repo index _helm-repo --url https://karpenter-ibm.sh
+          fi
+
+      - name: Combine site content
+        run: |
+          # Put docs at root (since we build with root URL)
+          cp -r site/* .
+
+          # Keep charts at root (existing customer configs)
+          cp -r _helm-repo/* .
+
+          # Preserve custom domain configuration
+          cp docs/CNAME .
+
+          # Clean up build directories
+          rm -rf site _helm-repo
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          publish_branch: gh-pages
+          force_orphan: false
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'

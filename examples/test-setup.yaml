@@ -1,0 +1,68 @@
+---
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: test-nodeclass
+spec:
+  region: us-south
+  vpc: "r006-a8efb117-fd5e-4f63-ae16-4fb9faafa4ff"  # Replace with your VPC ID
+  instanceProfile: bx2-4x16  # Required field - start with small instance
+  image: ubuntu-24-04-amd64
+  # Optional: zone and subnet will be auto-selected if not specified
+  instanceRequirements:
+    architecture: amd64
+    minimumCPU: 2
+    minimumMemory: 4
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: test-nodepool
+spec:
+  template:
+    metadata:
+      labels:
+        provisioner: karpenter-ibm
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter-ibm.sh/ibmnodeclass
+          operator: In
+          values: ["test-nodeclass"]
+      nodeClassRef:
+        group: karpenter-ibm.sh
+        kind: IBMNodeClass
+        name: test-nodeclass
+      taints:
+        - key: karpenter-ibm.sh/provisioned
+          value: "true"
+          effect: NoSchedule
+  limits:
+    cpu: 1000
+    memory: 1000Gi
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: karpenter-test-pod
+spec:
+  tolerations:
+    - key: karpenter-ibm.sh/provisioned
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        cpu: 1
+        memory: 1Gi

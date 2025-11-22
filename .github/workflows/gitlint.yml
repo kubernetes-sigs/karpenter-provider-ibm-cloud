@@ -1,0 +1,75 @@
+# .github/workflows/gitlint.yml
+# GitHub Actions workflow to validate commit messages in PRs
+
+name: Gitlint
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  gitlint:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history to access all commits in the PR
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install gitlint
+        run: |
+          pip install gitlint==0.19.1
+
+      - name: Get PR commit range
+        id: get-range
+        run: |
+          # Get the commit range for this PR
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "base-sha=${BASE_SHA}" >> $GITHUB_OUTPUT
+          echo "head-sha=${HEAD_SHA}" >> $GITHUB_OUTPUT
+          echo "Commit range: ${BASE_SHA}..${HEAD_SHA}"
+
+      - name: List commits to be validated
+        run: |
+          echo "📝 Commits in this PR:"
+          git log --oneline ${{ steps.get-range.outputs.base-sha }}..${{ steps.get-range.outputs.head-sha }}
+
+      - name: Validate commit messages
+        run: |
+          echo "🔍 Validating commit messages with gitlint..."
+
+          # Validate each commit in the PR
+          gitlint --commits ${{ steps.get-range.outputs.base-sha }}..${{ steps.get-range.outputs.head-sha }}
+
+          echo "✅ All commit messages are valid!"
+
+      - name: Provide feedback on failure
+        if: failure()
+        run: |
+          echo ""
+          echo "❌ Some commit messages don't follow our guidelines!"
+          echo ""
+          echo "📖 Please check our commit message format:"
+          echo "   type(scope): description"
+          echo ""
+          echo "🏷️  Valid types: feat, fix, docs, style, refactor, test, chore, ci, perf, build"
+          echo ""
+          echo "✅ Good examples:"
+          echo "   feat(nodepool): add support for spot instances"
+          echo "   fix(errors): replace HTTP status literals with constants"
+          echo "   docs: update installation instructions"
+          echo "   test(provider): add unit tests for instance creation"
+          echo ""
+          echo "🔗 See CONTRIBUTING.md for detailed guidelines."
+          echo ""
+          exit 1

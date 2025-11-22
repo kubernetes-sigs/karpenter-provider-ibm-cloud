@@ -1,0 +1,187 @@
+# Example values for VPC mode deployment
+# This configures Karpenter IBM Cloud Provider for self-managed Kubernetes clusters on IBM Cloud VPC
+
+# Required IBM Cloud credentials - these should be under credentials section
+credentials:
+  ibmApiKey: ""  # Set via --set credentials.ibmApiKey=<key> or external secret
+  vpcApiKey: ""  # Set via --set credentials.vpcApiKey=<key> or external secret
+  region: "us-south"
+
+# Cluster identification
+clusterName: "my-vpc-cluster"
+bootstrapMode: "cloud-init"
+
+# Custom Resource Configuration for VPC mode
+customResources:
+  enabled: true
+  mode: "vpc"
+
+  # Global settings
+  global:
+    instanceTypes:
+      - "bx2-2x8"
+      - "bx2-4x16"
+      - "bx2-8x32"
+    capacityType: "on-demand"
+    architecture: "amd64"
+
+    disruption:
+      consolidationPolicy: WhenUnderutilized
+      consolidateAfter: 30s
+      expireAfter: 720h
+
+    limits:
+      cpu: 1000
+      memory: 1000Gi
+
+  # NodeClass configuration
+  nodeClass:
+    enabled: true
+    name: "vpc-nodeclass"
+
+    vpc:
+      # Required: Your VPC ID
+      vpcId: "r010-12345678-1234-5678-9abc-def012345678"
+
+      subnetSelection:
+        strategy: "zone-balanced"
+        # Optional: specific subnet IDs
+        # subnetIds:
+        #   - "subnet-12345"
+        #   - "subnet-67890"
+
+        # Optional: specific zones
+        zones:
+          - "us-south-1"
+          - "us-south-2"
+          - "us-south-3"
+
+      securityGroups:
+        strategy: "auto"  # Uses discovery tags
+
+      bootVolume:
+        volumeType: "general-purpose"
+        size: 100
+        encrypted: true
+
+      networkInterface:
+        allowIpSpoofing: false
+        primaryInterfaceSubnetStrategy: "zone-balanced"
+
+    common:
+      image:
+        strategy: "latest"
+        family: "ubuntu-minimal"
+        operatingSystem: "ubuntu"
+        architecture: "amd64"
+
+      tags:
+        Environment: "production"
+        Team: "platform"
+        ManagedBy: "karpenter"
+
+  # Multiple NodePools for different workload types
+  nodePools:
+    # General purpose workloads
+    - name: "general-purpose"
+      enabled: true
+
+      requirements:
+        instanceTypes:
+          - "bx2-2x8"
+          - "bx2-4x16"
+        capacityType: "on-demand"
+        architecture: "amd64"
+
+      limits:
+        cpu: 100
+        memory: 100Gi
+
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 30s
+        expireAfter: 720h
+
+      labels:
+        nodepool: "general-purpose"
+        workload-type: "general"
+
+    # Spot instances for batch workloads
+    - name: "spot-batch"
+      enabled: true
+
+      requirements:
+        instanceTypes:
+          - "bx2-4x16"
+          - "bx2-8x32"
+        capacityType: "spot"
+        architecture: "amd64"
+
+      limits:
+        cpu: 200
+        memory: 200Gi
+
+      disruption:
+        consolidationPolicy: WhenUnderutilized
+        consolidateAfter: 10s
+        expireAfter: 12h
+
+      taints:
+        - key: "node.kubernetes.io/instance-type"
+          value: "spot"
+          effect: "NoSchedule"
+
+      labels:
+        nodepool: "spot-batch"
+        workload-type: "batch"
+        cost-optimization: "enabled"
+
+    # High-memory instances for data processing
+    - name: "high-memory"
+      enabled: false  # Enable when needed
+
+      requirements:
+        instanceTypes:
+          - "mx2-8x64"
+          - "mx2-16x128"
+        capacityType: "on-demand"
+        architecture: "amd64"
+
+      limits:
+        cpu: 50
+        memory: 500Gi
+
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 60s
+        expireAfter: 168h
+
+      taints:
+        - key: "workload-type"
+          value: "high-memory"
+          effect: "NoSchedule"
+
+      labels:
+        nodepool: "high-memory"
+        workload-type: "memory-intensive"
+
+# Controller configuration
+controller:
+  metrics:
+    port: 8080
+  healthProbe:
+    port: 8081
+
+# Metrics and monitoring
+metrics:
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      monitoring: "prometheus"
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
