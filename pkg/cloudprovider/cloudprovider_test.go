@@ -59,7 +59,7 @@ type mockInstanceTypeProvider struct {
 	listError     error
 }
 
-func (m *mockInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudprovider.InstanceType, error) {
+func (m *mockInstanceTypeProvider) Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error) {
 	if m.getError != nil {
 		return nil, m.getError
 	}
@@ -71,7 +71,7 @@ func (m *mockInstanceTypeProvider) Get(ctx context.Context, name string) (*cloud
 	return nil, fmt.Errorf("instance type %s not found", name)
 }
 
-func (m *mockInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
+func (m *mockInstanceTypeProvider) List(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	if m.listError != nil {
 		return nil, m.listError
 	}
@@ -86,7 +86,7 @@ func (m *mockInstanceTypeProvider) Delete(ctx context.Context, instanceType *clo
 	return nil
 }
 
-func (m *mockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements) ([]*cloudprovider.InstanceType, error) {
+func (m *mockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	return m.instanceTypes, nil
 }
 

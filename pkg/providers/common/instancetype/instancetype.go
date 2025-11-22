@@ -105,7 +105,7 @@ func getArchitecture(it *cloudprovider.InstanceType) string {
 	return "amd64" // default to amd64 if not specified
 }
 
-func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudprovider.InstanceType, error) {
+func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error) {
 	logger := log.FromContext(ctx)
 
 	if p.client == nil {
@@ -173,7 +173,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudp
 		// Find the requested profile
 		for _, profile := range profiles.Profiles {
 			if profile.Name != nil && *profile.Name == name {
-				it, err := p.convertVPCProfileToInstanceType(ctx, profile)
+				it, err := p.convertVPCProfileToInstanceType(ctx, profile, nodeClass)
 				if err != nil {
 					lastErr = fmt.Errorf("failed to convert profile %s: %w", name, err)
 					return false, lastErr // Don't retry conversion errors
@@ -204,7 +204,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudp
 	return instanceType, nil
 }
 
-func (p *IBMInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
+func (p *IBMInstanceTypeProvider) List(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Listing instance types")
 
@@ -215,7 +215,7 @@ func (p *IBMInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.In
 	}
 
 	// Use VPC API - this is the only source of truth
-	instanceTypes, err := p.listFromVPC(ctx)
+	instanceTypes, err := p.listFromVPC(ctx, nodeClass)
 	if err != nil {
 		logger.Error(err, "Failed to list instance types from VPC API")
 		return nil, fmt.Errorf("failed to list instance types from VPC API: %w", err)
@@ -242,12 +242,12 @@ func (p *IBMInstanceTypeProvider) Delete(ctx context.Context, instanceType *clou
 }
 
 // FilterInstanceTypes returns instance types that meet requirements
-func (p *IBMInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements) ([]*cloudprovider.InstanceType, error) {
+func (p *IBMInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client not initialized")
 	}
 	// Get all instance types
-	allTypes, err := p.List(ctx)
+	allTypes, err := p.List(ctx, nodeClass)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +416,7 @@ func (p *IBMInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovid
 }
 
 // listFromVPC lists instance types using VPC API with exponential backoff retry
-func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
+func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	logger := log.FromContext(ctx)
 
 	var instanceTypes []*cloudprovider.InstanceType
@@ -483,7 +483,7 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context) ([]*cloudprov
 				profileName = *profile.Name
 			}
 
-			instanceType, err := p.convertVPCProfileToInstanceType(ctx, profile)
+			instanceType, err := p.convertVPCProfileToInstanceType(ctx, profile, nodeClass)
 			if err != nil {
 				logger.Error(err, "Failed to convert VPC profile",
 					"profile_name", profileName,
@@ -638,7 +638,7 @@ func (p *IBMInstanceTypeProvider) GetRegion() string {
 }
 
 // convertVPCProfileToInstanceType converts VPC instance profile to Karpenter instance type
-func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Context, profile vpcv1.InstanceProfile) (*cloudprovider.InstanceType, error) {
+func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Context, profile vpcv1.InstanceProfile, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error) {
 	if profile.Name == nil {
 		return nil, fmt.Errorf("instance profile name is nil")
 	}
@@ -733,6 +733,9 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 		},
 	}
 
+	// Calculate overhead from kubelet configuration
+	overhead := p.calculateOverhead(ctx, nodeClass)
+
 	return &cloudprovider.InstanceType{
 		Name: *profile.Name,
 		Capacity: corev1.ResourceList{
@@ -741,22 +744,78 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 			corev1.ResourcePods:   *podResource,
 			"nvidia.com/gpu":      *gpuResource, // Standard Kubernetes GPU resource name
 		},
-		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			},
-			SystemReserved: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			},
-			EvictionThreshold: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("500Mi"),
-			},
-		},
+		Overhead:     overhead,
 		Requirements: requirements,
 		Offerings:    offerings,
 	}, nil
+}
+
+func (p *IBMInstanceTypeProvider) calculateOverhead(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) *cloudprovider.InstanceTypeOverhead {
+	logger := log.FromContext(ctx)
+
+	// Default values if kubelet config not specified
+	kubeReservedCPU := resource.MustParse("100m")
+	kubeReservedMemory := resource.MustParse("1Gi")
+	systemReservedCPU := resource.MustParse("100m")
+	systemReservedMemory := resource.MustParse("1Gi")
+	evictionThreshold := resource.MustParse("500Mi")
+
+	if nodeClass != nil && nodeClass.Spec.Kubelet != nil {
+		if cpu, ok := nodeClass.Spec.Kubelet.KubeReserved["cpu"]; ok {
+			if parsed, err := resource.ParseQuantity(cpu); err == nil {
+				kubeReservedCPU = parsed
+			} else {
+				logger.Error(err, "Invalid kubeReserved.cpu quantity, using default",
+					"value", cpu)
+			}
+		}
+		if mem, ok := nodeClass.Spec.Kubelet.KubeReserved["memory"]; ok {
+			if parsed, err := resource.ParseQuantity(mem); err == nil {
+				kubeReservedMemory = parsed
+			} else {
+				logger.Error(err, "Invalid kubeReserved.memory quantity, using default",
+					"value", mem)
+			}
+		}
+		if cpu, ok := nodeClass.Spec.Kubelet.SystemReserved["cpu"]; ok {
+			if parsed, err := resource.ParseQuantity(cpu); err == nil {
+				systemReservedCPU = parsed
+			} else {
+				logger.Error(err, "Invalid systemReserved.cpu quantity, using default",
+					"value", cpu)
+			}
+		}
+		if mem, ok := nodeClass.Spec.Kubelet.SystemReserved["memory"]; ok {
+			if parsed, err := resource.ParseQuantity(mem); err == nil {
+				systemReservedMemory = parsed
+			} else {
+				logger.Error(err, "Invalid systemReserved.memory quantity, using default",
+					"value", mem)
+			}
+		}
+		if mem, ok := nodeClass.Spec.Kubelet.EvictionHard["memory.available"]; ok {
+			if parsed, err := resource.ParseQuantity(mem); err == nil {
+				evictionThreshold = parsed
+			} else {
+				logger.Error(err, "Invalid evictionHard.memory.available quantity, using default",
+					"value", mem)
+			}
+		}
+	}
+
+	return &cloudprovider.InstanceTypeOverhead{
+		KubeReserved: corev1.ResourceList{
+			corev1.ResourceCPU:    kubeReservedCPU,
+			corev1.ResourceMemory: kubeReservedMemory,
+		},
+		SystemReserved: corev1.ResourceList{
+			corev1.ResourceCPU:    systemReservedCPU,
+			corev1.ResourceMemory: systemReservedMemory,
+		},
+		EvictionThreshold: corev1.ResourceList{
+			corev1.ResourceMemory: evictionThreshold,
+		},
+	}
 }
 
 // getInstanceFamily extracts family from instance type name (e.g., "bx2" from "bx2-2x8")

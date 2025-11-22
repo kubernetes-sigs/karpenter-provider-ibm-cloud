@@ -253,6 +253,77 @@ type BlockDeviceMapping struct {
 	RootVolume bool `json:"rootVolume,omitempty"`
 }
 
+// KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
+type KubeletConfiguration struct {
+	// ClusterDNS is a list of IP addresses for the cluster DNS server.
+	// +optional
+	ClusterDNS []string `json:"clusterDNS,omitempty"`
+
+	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	MaxPods *int32 `json:"maxPods,omitempty"`
+
+	// PodsPerCore is an override for the number of pods that can run on a worker node
+	// instance based on the number of cpu cores.
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	PodsPerCore *int32 `json:"podsPerCore,omitempty"`
+
+	// SystemReserved contains resources reserved for OS system daemons and kernel memory.
+	// +kubebuilder:validation:XValidation:message="valid keys for systemReserved are ['cpu','memory','ephemeral-storage','pid']",rule="self.all(x, x=='cpu' || x=='memory' || x=='ephemeral-storage' || x=='pid')"
+	// +kubebuilder:validation:XValidation:message="systemReserved value cannot be a negative resource quantity",rule="self.all(x, !self[x].startsWith('-'))"
+	// +optional
+	SystemReserved map[string]string `json:"systemReserved,omitempty"`
+
+	// KubeReserved contains resources reserved for Kubernetes system components.
+	// +kubebuilder:validation:XValidation:message="valid keys for kubeReserved are ['cpu','memory','ephemeral-storage','pid']",rule="self.all(x, x=='cpu' || x=='memory' || x=='ephemeral-storage' || x=='pid')"
+	// +kubebuilder:validation:XValidation:message="kubeReserved value cannot be a negative resource quantity",rule="self.all(x, !self[x].startsWith('-'))"
+	// +optional
+	KubeReserved map[string]string `json:"kubeReserved,omitempty"`
+
+	// EvictionHard is the map of signal names to quantities that define hard eviction thresholds
+	// +kubebuilder:validation:XValidation:message="valid keys for evictionHard are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
+	// +kubebuilder:validation:XValidation:message="evictionHard value cannot be a negative resource quantity",rule="self.all(x, !self[x].startsWith('-'))"
+	// +optional
+	EvictionHard map[string]string `json:"evictionHard,omitempty"`
+
+	// EvictionSoft is the map of signal names to quantities that define soft eviction thresholds
+	// +kubebuilder:validation:XValidation:message="valid keys for evictionSoft are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
+	// +kubebuilder:validation:XValidation:message="evictionSoft value cannot be a negative resource quantity",rule="self.all(x, !self[x].startsWith('-'))"
+	// +optional
+	EvictionSoft map[string]string `json:"evictionSoft,omitempty"`
+
+	// EvictionSoftGracePeriod is the map of signal names to quantities that define grace periods for each eviction signal
+	// +kubebuilder:validation:XValidation:message="valid keys for evictionSoftGracePeriod are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
+	// +optional
+	EvictionSoftGracePeriod map[string]metav1.Duration `json:"evictionSoftGracePeriod,omitempty"`
+
+	// EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in
+	// response to soft eviction thresholds being met.
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
+
+	// ImageGCHighThresholdPercent is the percent of disk usage after which image
+	// garbage collection is always run.
+	// +kubebuilder:validation:Minimum:=0
+	// +kubebuilder:validation:Maximum:=100
+	// +optional
+	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent,omitempty"`
+
+	// ImageGCLowThresholdPercent is the percent of disk usage before which image
+	// garbage collection is never run.
+	// +kubebuilder:validation:Minimum:=0
+	// +kubebuilder:validation:Maximum:=100
+	// +optional
+	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent,omitempty"`
+
+	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+	// +optional
+	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
+}
+
 // VolumeSpec defines IBM Cloud volume configuration
 type VolumeSpec struct {
 	// Capacity is the volume size in gigabytes
@@ -507,6 +578,15 @@ type IBMNodeClassSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	BlockDeviceMappings []BlockDeviceMapping `json:"blockDeviceMappings,omitempty"`
+
+	// Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+	// They are a subset of the upstream types, recognizing not all options may be supported.
+	// Wherever possible, the types and names should reflect the upstream kubelet types.
+	// +optional
+	// +kubebuilder:validation:XValidation:message="imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent",rule="has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent) ? self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent : true"
+	// +kubebuilder:validation:XValidation:message="evictionSoft key does not have a matching evictionSoftGracePeriod",rule="has(self.evictionSoft) ? self.evictionSoft.all(e, e in self.evictionSoftGracePeriod) : true"
+	// +kubebuilder:validation:XValidation:message="evictionSoftGracePeriod key does not have a matching evictionSoft",rule="has(self.evictionSoftGracePeriod) ? self.evictionSoftGracePeriod.all(e, e in self.evictionSoft) : true"
+	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
 }
 
 // IBMNodeClassStatus defines the observed state of IBMNodeClass

@@ -20,13 +20,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-
-	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
-	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGenerateCloudInitScript(t *testing.T) {
@@ -283,88 +285,193 @@ func TestGenerateCloudInitScript(t *testing.T) {
 		assert.Contains(t, script, "export KARPENTER_ADDITIONAL_CA=")
 		assert.Contains(t, script, "Additional CA")
 	})
-}
 
-func TestBuildKubeletExtraArgs(t *testing.T) {
-	client := &ibm.Client{}
-	provider := NewVPCBootstrapProvider(client, nil, nil)
-
-	t.Run("No extra args", func(t *testing.T) {
-		result := provider.buildKubeletExtraArgs(nil)
-		assert.Empty(t, result)
-
-		config := &commonTypes.KubeletConfig{}
-		result = provider.buildKubeletExtraArgs(config)
-		assert.Empty(t, result)
-	})
-
-	t.Run("Single extra arg", func(t *testing.T) {
-		config := &commonTypes.KubeletConfig{
-			ExtraArgs: map[string]string{
-				"max-pods": "110",
+	t.Run("With KubeletConfig", func(t *testing.T) {
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token-123",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node-001",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+			KubeletConfig: &v1alpha1.KubeletConfiguration{
+				ClusterDNS: []string{
+					"10.100.0.10",
+					"10.101.0.10",
+				},
+				MaxPods:     int32Ptr(150),
+				PodsPerCore: int32Ptr(10),
+				KubeReserved: map[string]string{
+					"cpu":    "200m",
+					"memory": "512Mi",
+				},
+				SystemReserved: map[string]string{
+					"cpu":    "100m",
+					"memory": "256Mi",
+				},
+				EvictionHard: map[string]string{
+					"memory.available": "500Mi",
+				},
+				EvictionSoft: map[string]string{
+					"memory.available": "1Gi",
+				},
+				EvictionSoftGracePeriod: map[string]metav1.Duration{
+					"memory.available": {Duration: time.Minute},
+				},
+				EvictionMaxPodGracePeriod:   int32Ptr(120),
+				ImageGCHighThresholdPercent: int32Ptr(85),
+				ImageGCLowThresholdPercent:  int32Ptr(70),
+				CPUCFSQuota:                 boolPtr(true),
 			},
 		}
 
-		result := provider.buildKubeletExtraArgs(config)
-		assert.Equal(t, "--max-pods=110", result)
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+		assert.NotEmpty(t, script)
+
+		// ClusterDNS should use KubeletConfig.ClusterDNS, not ${CLUSTER_DNS}
+		assert.Contains(t, script, "clusterDNS:")
+		assert.Contains(t, script, "10.100.0.10")
+		assert.Contains(t, script, "10.101.0.10")
+		assert.NotContains(t, script, "  - ${CLUSTER_DNS}")
+
+		// Scalar fields
+		assert.Contains(t, script, "maxPods: 150")
+		assert.Contains(t, script, "podsPerCore: 10")
+
+		// kubeReserved block
+		assert.Contains(t, script, "kubeReserved:")
+		assert.Contains(t, script, `"cpu": "200m"`)
+		assert.Contains(t, script, `"memory": "512Mi"`)
+
+		// systemReserved block
+		assert.Contains(t, script, "systemReserved:")
+		assert.Contains(t, script, `"cpu": "100m"`)
+		assert.Contains(t, script, `"memory": "256Mi"`)
+
+		// Eviction settings
+		assert.Contains(t, script, "evictionHard:")
+		assert.Contains(t, script, `"memory.available": "500Mi"`)
+
+		assert.Contains(t, script, "evictionSoft:")
+		assert.Contains(t, script, `"memory.available": "1Gi"`)
+
+		assert.Contains(t, script, "evictionSoftGracePeriod:")
+		assert.Contains(t, script, `"memory.available": "1m0s"`)
+
+		assert.Contains(t, script, "evictionMaxPodGracePeriod: 120")
+
+		// ImageGC thresholds
+		assert.Contains(t, script, "imageGCHighThresholdPercent: 85")
+		assert.Contains(t, script, "imageGCLowThresholdPercent: 70")
+
+		// cpuCFSQuota
+		assert.Contains(t, script, "cpuCFSQuota: true")
 	})
 
-	t.Run("Multiple extra args", func(t *testing.T) {
-		config := &commonTypes.KubeletConfig{
-			ExtraArgs: map[string]string{
-				"max-pods":                   "110",
-				"kube-reserved":              "cpu=100m,memory=100Mi",
-				"system-reserved":            "cpu=100m,memory=100Mi",
-				"eviction-hard":              "memory.available<500Mi",
-				"cluster-domain":             "cluster.local",
-				"container-runtime":          "remote",
-				"container-runtime-endpoint": "unix:///var/run/containerd/containerd.sock",
+	t.Run("With KubeletConfig nil, uses defaults", func(t *testing.T) {
+		client := &ibm.Client{}
+		provider := NewVPCBootstrapProvider(client, nil, nil)
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token-123",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node-001",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+			// KubeletConfig: nil on purpose
+		}
+
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+		assert.NotEmpty(t, script)
+
+		// clusterDNS should fall back to ${CLUSTER_DNS}
+		assert.Contains(t, script, "clusterDNS:")
+		assert.Contains(t, script, "  - ${CLUSTER_DNS}")
+
+		// None of the optional KubeletConfig fields should appear
+		assert.NotContains(t, script, "maxPods:")
+		assert.NotContains(t, script, "podsPerCore:")
+		assert.NotContains(t, script, "kubeReserved:")
+		assert.NotContains(t, script, "systemReserved:")
+		assert.NotContains(t, script, "evictionHard:")
+		assert.NotContains(t, script, "evictionSoft:")
+		assert.NotContains(t, script, "evictionSoftGracePeriod:")
+		assert.NotContains(t, script, "evictionMaxPodGracePeriod:")
+		assert.NotContains(t, script, "imageGCHighThresholdPercent:")
+		assert.NotContains(t, script, "imageGCLowThresholdPercent:")
+		assert.NotContains(t, script, "cpuCFSQuota:")
+	})
+
+	t.Run("with KubeletConfig partial fields, only render set blocks", func(t *testing.T) {
+		client := &ibm.Client{}
+		provider := NewVPCBootstrapProvider(client, nil, nil)
+
+		options := commonTypes.Options{
+			ClusterEndpoint:   "https://api.cluster.example.com",
+			BootstrapToken:    "test-token-123",
+			DNSClusterIP:      "10.96.0.10",
+			Region:            "us-south",
+			Zone:              "us-south-1",
+			NodeName:          "test-node-001",
+			KubernetesVersion: "v1.28.0",
+			ContainerRuntime:  "containerd",
+			CNIPlugin:         "calico",
+			CNIVersion:        "v3.26.0",
+			Architecture:      "amd64",
+			CABundle:          "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+			KubeletConfig: &v1alpha1.KubeletConfiguration{
+				// Only set a few fields on purpose
+				MaxPods: int32Ptr(50),
+				KubeReserved: map[string]string{
+					"cpu": "100m",
+				},
+				EvictionHard: map[string]string{
+					"memory.available": "300Mi",
+				},
 			},
 		}
 
-		result := provider.buildKubeletExtraArgs(config)
+		script, err := provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+		assert.NotEmpty(t, script)
 
-		// Since map iteration order is not guaranteed, check that all args are present
-		assert.Contains(t, result, "--max-pods=110")
-		assert.Contains(t, result, "--kube-reserved=cpu=100m,memory=100Mi")
-		assert.Contains(t, result, "--system-reserved=cpu=100m,memory=100Mi")
-		assert.Contains(t, result, "--eviction-hard=memory.available<500Mi")
-		assert.Contains(t, result, "--cluster-domain=cluster.local")
-		assert.Contains(t, result, "--container-runtime=remote")
-		assert.Contains(t, result, "--container-runtime-endpoint=unix:///var/run/containerd/containerd.sock")
+		// Scalar field present
+		assert.Contains(t, script, "maxPods: 50")
 
-		// Count the number of arguments
-		argCount := strings.Count(result, "--")
-		assert.Equal(t, 7, argCount)
+		// kubeReserved block present with expected key/value
+		assert.Contains(t, script, "kubeReserved:")
+		assert.Contains(t, script, `"cpu": "100m"`)
+
+		// EvictionHard block
+		assert.Contains(t, script, "evictionHard:")
+		assert.Contains(t, script, `"memory.available": "300Mi"`)
+
+		// Fields we did NOT set should not appear
+		assert.NotContains(t, script, "podsPerCore:")
+		assert.NotContains(t, script, "systemReserved:")
+		assert.NotContains(t, script, "evictionSoft:")
+		assert.NotContains(t, script, "evictionSoftGracePeriod:")
+		assert.NotContains(t, script, "evictionMaxPodGracePeriod:")
+		assert.NotContains(t, script, "imageGCHighThresholdPercent:")
+		assert.NotContains(t, script, "imageGCLowThresholdPercent:")
+		assert.NotContains(t, script, "cpuCFSQuota:")
 	})
 
-	t.Run("Empty values", func(t *testing.T) {
-		config := &commonTypes.KubeletConfig{
-			ExtraArgs: map[string]string{
-				"some-flag": "",
-				"max-pods":  "110",
-			},
-		}
-
-		result := provider.buildKubeletExtraArgs(config)
-		assert.Contains(t, result, "--some-flag=")
-		assert.Contains(t, result, "--max-pods=110")
-	})
-
-	t.Run("Special characters in values", func(t *testing.T) {
-		config := &commonTypes.KubeletConfig{
-			ExtraArgs: map[string]string{
-				"eviction-hard":             "memory.available<500Mi,nodefs.available<10%",
-				"feature-gates":             "EphemeralContainers=true,CSIStorageCapacity=true",
-				"authentication-kubeconfig": "/var/lib/kubelet/kubeconfig",
-			},
-		}
-
-		result := provider.buildKubeletExtraArgs(config)
-		assert.Contains(t, result, "--eviction-hard=memory.available<500Mi,nodefs.available<10%")
-		assert.Contains(t, result, "--feature-gates=EphemeralContainers=true,CSIStorageCapacity=true")
-		assert.Contains(t, result, "--authentication-kubeconfig=/var/lib/kubelet/kubeconfig")
-	})
 }
 
 func TestCloudInitTemplate_EdgeCases(t *testing.T) {
@@ -810,4 +917,12 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 		assert.True(t, serverIndex < mainLogicIndex, "SERVER export should come before main logic")
 		assert.True(t, tokenIndex < mainLogicIndex, "TOKEN export should come before main logic")
 	})
+}
+
+func int32Ptr(i int32) *int32 {
+	return &i
+}
+
+func boolPtr(i bool) *bool {
+	return &i
 }
