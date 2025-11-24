@@ -19,9 +19,9 @@ require (
 	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/multierr v1.11.0
-	go.uber.org/zap v1.27.1
-	k8s.io/api v0.35.0-alpha.3
-	k8s.io/apimachinery v0.35.0-alpha.3
+	go.uber.org/zap v1.27.0
+	k8s.io/api v0.35.0-beta.0
+	k8s.io/apimachinery v0.35.0-beta.0
 	k8s.io/client-go v0.35.0-alpha.3
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
