@@ -159,6 +159,7 @@ get_karpenter_k8s_compatibility() {
     # Karpenter version to Kubernetes compatibility mapping
     # Based on Karpenter release notes and compatibility matrix
     case "$karpenter_version" in
+        1.8.*) echo "1.29 - 1.35" ;;
         1.7.*) echo "1.29 - 1.35" ;;
         1.6.*) echo "1.28 - 1.34" ;;
         1.5.*) echo "1.28 - 1.31" ;;

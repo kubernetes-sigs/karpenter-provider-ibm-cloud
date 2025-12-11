@@ -51,6 +51,7 @@ func TestGenerateBootstrapToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset()
 
 			token, err := GenerateBootstrapToken(context.Background(), client, tt.ttl)
@@ -200,6 +201,7 @@ func TestFindOrCreateBootstrapToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(tt.existingTokens...)
 
 			initialSecrets, _ := client.CoreV1().Secrets("kube-system").List(context.Background(), metav1.ListOptions{})
@@ -313,6 +315,7 @@ clusters:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(tt.k8sObjects...)
 
 			endpoint, err := GetInternalAPIServerEndpoint(context.Background(), client)
@@ -543,6 +546,7 @@ func TestGenerateRandomStringEdgeCases(t *testing.T) {
 
 func TestBootstrapTokenIntegration(t *testing.T) {
 	t.Run("end-to-end token lifecycle", func(t *testing.T) {
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		client := fake.NewSimpleClientset()
 		ctx := context.Background()
 		ttl := 24 * time.Hour

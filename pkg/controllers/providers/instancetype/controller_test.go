@@ -86,7 +86,7 @@ func NewMockInstanceTypeProvider() *MockInstanceTypeProvider {
 	}
 }
 
-func (m *MockInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.InstanceType, error) {
+func (m *MockInstanceTypeProvider) List(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -111,7 +111,7 @@ func (m *MockInstanceTypeProvider) List(ctx context.Context) ([]*cloudprovider.I
 	return result, nil
 }
 
-func (m *MockInstanceTypeProvider) Get(ctx context.Context, name string) (*cloudprovider.InstanceType, error) {
+func (m *MockInstanceTypeProvider) Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -138,7 +138,7 @@ func (m *MockInstanceTypeProvider) Delete(ctx context.Context, instanceType *clo
 	return errors.New("delete not supported for IBM Cloud instance types")
 }
 
-func (m *MockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements) ([]*cloudprovider.InstanceType, error) {
+func (m *MockInstanceTypeProvider) FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
 	var filtered []*cloudprovider.InstanceType
 
 	for _, it := range m.instanceTypes {
@@ -390,7 +390,7 @@ func TestController_IntegrationWorkflow(t *testing.T) {
 	assert.Equal(t, time.Hour, result.RequeueAfter)
 
 	// Step 2: Verify we can get specific instance types after listing
-	instanceType, err := mockProvider.Get(ctx, "bx2-2x8")
+	instanceType, err := mockProvider.Get(ctx, "bx2-2x8", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "bx2-2x8", instanceType.Name)
 
@@ -400,7 +400,7 @@ func TestController_IntegrationWorkflow(t *testing.T) {
 		MinimumMemory: 8,
 		Architecture:  "amd64",
 	}
-	filtered, err := mockProvider.FilterInstanceTypes(ctx, requirements)
+	filtered, err := mockProvider.FilterInstanceTypes(ctx, requirements, nil)
 	require.NoError(t, err)
 	assert.Len(t, filtered, 2) // Both instance types should match
 
@@ -463,12 +463,12 @@ func TestController_ProviderInterfaceCompliance(t *testing.T) {
 	ctx := context.Background()
 
 	// Test List
-	instanceTypes, err := mockProvider.List(ctx)
+	instanceTypes, err := mockProvider.List(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, instanceTypes, 2)
 
 	// Test Get
-	instanceType, err := mockProvider.Get(ctx, "bx2-2x8")
+	instanceType, err := mockProvider.Get(ctx, "bx2-2x8", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "bx2-2x8", instanceType.Name)
 
@@ -487,7 +487,7 @@ func TestController_ProviderInterfaceCompliance(t *testing.T) {
 		MinimumCPU:    1,
 		MinimumMemory: 4,
 	}
-	filtered, err := mockProvider.FilterInstanceTypes(ctx, requirements)
+	filtered, err := mockProvider.FilterInstanceTypes(ctx, requirements, nil)
 	require.NoError(t, err)
 	assert.Len(t, filtered, 2)
 

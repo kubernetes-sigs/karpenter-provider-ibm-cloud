@@ -76,6 +76,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 
 		provider, err := NewVPCInstanceProvider(client, kubeClient, WithKubernetesClient(k8sClient))
@@ -96,6 +97,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		bootstrapProvider := bootstrap.NewVPCBootstrapProvider(client, k8sClient, kubeClient)
 
@@ -137,6 +139,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		bootstrapProvider := bootstrap.NewVPCBootstrapProvider(client, k8sClient, kubeClient)
 		manager := vpcclient.NewManager(client, 0)
@@ -183,6 +186,7 @@ func TestQuotaInfo_Struct(t *testing.T) {
 
 func TestOptionFunctions_Behavior(t *testing.T) {
 	t.Run("Option functions return valid functions", func(t *testing.T) {
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
 
@@ -205,6 +209,7 @@ func TestOptionFunctions_Behavior(t *testing.T) {
 
 		client := &ibm.Client{}
 		kubeClient := fakeClient.NewClientBuilder().Build()
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		manager := vpcclient.NewManager(client, 0)
 		bootstrapProvider := bootstrap.NewVPCBootstrapProvider(client, k8sClient, kubeClient)

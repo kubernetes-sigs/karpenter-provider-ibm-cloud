@@ -25,11 +25,11 @@ import (
 
 // Provider defines the interface for managing IBM Cloud instance types
 type Provider interface {
-	// Get retrieves a specific instance type by name
-	Get(ctx context.Context, name string) (*cloudprovider.InstanceType, error)
+	// Get retrieves a specific instance type by name, If nodeClass is nil, default overhead values will be used.
+	Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error)
 
-	// List returns all available instance types
-	List(ctx context.Context) ([]*cloudprovider.InstanceType, error)
+	// List returns all available instance types, If nodeClass is nil, default overhead values will be used.
+	List(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error)
 
 	// Create creates a new instance type (no-op for IBM Cloud as types are predefined)
 	Create(ctx context.Context, instanceType *cloudprovider.InstanceType) error
@@ -38,7 +38,7 @@ type Provider interface {
 	Delete(ctx context.Context, instanceType *cloudprovider.InstanceType) error
 
 	// FilterInstanceTypes returns instance types that meet the specified requirements
-	FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements) ([]*cloudprovider.InstanceType, error)
+	FilterInstanceTypes(ctx context.Context, requirements *v1alpha1.InstanceTypeRequirements, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error)
 
 	// RankInstanceTypes sorts instance types by cost efficiency and other criteria
 	RankInstanceTypes(instanceTypes []*cloudprovider.InstanceType) []*cloudprovider.InstanceType

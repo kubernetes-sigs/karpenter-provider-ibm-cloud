@@ -160,6 +160,73 @@ spec:
                   Examples: "bng6n48d0t6vj7b33kag", "c4f7x6qw0bx25g5b4vhg"
                 pattern: ^[a-z0-9]+$
                 type: string
+              iksDynamicPools:
+                description: |-
+                  IKSDynamicPools configures dynamic worker pool creation for IKS mode.
+                  When enabled, Karpenter will create new worker pools to match pod requirements
+                  when no existing pool with the required instance type is available.
+                  This allows Karpenter to provision nodes with specific instance types dynamically.
+                properties:
+                  allowedInstanceTypes:
+                    description: |-
+                      AllowedInstanceTypes is a list of instance types (flavors) that can be used when
+                      creating dynamic pools. If empty, all available instance types are allowed.
+                      Example: ["bx2-4x16", "bx2-8x32", "cx2-4x8"]
+                    items:
+                      type: string
+                    type: array
+                  cleanupPolicy:
+                    description: CleanupPolicy defines when dynamically created worker
+                      pools should be deleted.
+                    properties:
+                      deleteOnEmpty:
+                        default: true
+                        description: |-
+                          DeleteOnEmpty controls whether empty pools are automatically deleted.
+                          When true (default), pools are deleted after being empty for EmptyPoolTTL.
+                          When false, pools are retained even when empty.
+                        type: boolean
+                      emptyPoolTTL:
+                        default: 5m
+                        description: |-
+                          EmptyPoolTTL specifies how long an empty pool should remain before being deleted.
+                          An empty pool is one with SizePerZone of 0 nodes.
+                          Format: duration string (e.g., "30m", "1h", "24h")
+                          If not specified, empty pools are cleaned up immediately.
+                        pattern: ^([0-9]+(s|m|h))+$
+                        type: string
+                    type: object
+                  diskEncryption:
+                    default: true
+                    description: |-
+                      DiskEncryption enables disk encryption for worker nodes in dynamically created pools.
+                      When true, the boot volume of worker nodes will be encrypted.
+                    type: boolean
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled controls whether dynamic pool creation is active.
+                      When true, Karpenter will create new worker pools as needed to satisfy pod requirements.
+                      When false (default), Karpenter will only use existing worker pools.
+                    type: boolean
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Labels are key-value pairs applied to dynamically created worker pools.
+                      These labels help identify and manage Karpenter-created pools.
+                      The label "karpenter.sh/managed=true" is always added automatically.
+                    type: object
+                  namePrefix:
+                    default: karp
+                    description: |-
+                      NamePrefix is the prefix used when naming dynamically created worker pools.
+                      Pool names will follow the pattern: {NamePrefix}-{instanceType}-{uniqueID}
+                      Example: With prefix "karp", a pool might be named "karp-bx2-4x16-a1b2c3"
+                    maxLength: 20
+                    pattern: ^[a-z][a-z0-9-]*$
+                    type: string
+                type: object
               iksWorkerPoolID:
                 description: |-
                   IKSWorkerPoolID is the worker pool ID to add nodes to
@@ -281,6 +348,126 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
+              kubelet:
+                description: |-
+                  Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+                  They are a subset of the upstream types, recognizing not all options may be supported.
+                  Wherever possible, the types and names should reflect the upstream kubelet types.
+                properties:
+                  clusterDNS:
+                    description: ClusterDNS is a list of IP addresses for the cluster
+                      DNS server.
+                    items:
+                      type: string
+                    type: array
+                  cpuCFSQuota:
+                    description: CPUCFSQuota enables CPU CFS quota enforcement for
+                      containers that specify CPU limits.
+                    type: boolean
+                  evictionHard:
+                    additionalProperties:
+                      type: string
+                    description: EvictionHard is the map of signal names to quantities
+                      that define hard eviction thresholds
+                    type: object
+                    x-kubernetes-validations:
+                    - message: valid keys for evictionHard are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']
+                      rule: self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])
+                    - message: evictionHard value cannot be a negative resource quantity
+                      rule: self.all(x, !self[x].startsWith('-'))
+                  evictionMaxPodGracePeriod:
+                    description: |-
+                      EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in
+                      response to soft eviction thresholds being met.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  evictionSoft:
+                    additionalProperties:
+                      type: string
+                    description: EvictionSoft is the map of signal names to quantities
+                      that define soft eviction thresholds
+                    type: object
+                    x-kubernetes-validations:
+                    - message: valid keys for evictionSoft are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']
+                      rule: self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])
+                    - message: evictionSoft value cannot be a negative resource quantity
+                      rule: self.all(x, !self[x].startsWith('-'))
+                  evictionSoftGracePeriod:
+                    additionalProperties:
+                      type: string
+                    description: EvictionSoftGracePeriod is the map of signal names
+                      to quantities that define grace periods for each eviction signal
+                    type: object
+                    x-kubernetes-validations:
+                    - message: valid keys for evictionSoftGracePeriod are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']
+                      rule: self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])
+                  imageGCHighThresholdPercent:
+                    description: |-
+                      ImageGCHighThresholdPercent is the percent of disk usage after which image
+                      garbage collection is always run.
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  imageGCLowThresholdPercent:
+                    description: |-
+                      ImageGCLowThresholdPercent is the percent of disk usage before which image
+                      garbage collection is never run.
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  kubeReserved:
+                    additionalProperties:
+                      type: string
+                    description: KubeReserved contains resources reserved for Kubernetes
+                      system components.
+                    type: object
+                    x-kubernetes-validations:
+                    - message: valid keys for kubeReserved are ['cpu','memory','ephemeral-storage','pid']
+                      rule: self.all(x, x=='cpu' || x=='memory' || x=='ephemeral-storage'
+                        || x=='pid')
+                    - message: kubeReserved value cannot be a negative resource quantity
+                      rule: self.all(x, !self[x].startsWith('-'))
+                  maxPods:
+                    description: MaxPods is an override for the maximum number of
+                      pods that can run on a worker node instance.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  podsPerCore:
+                    description: |-
+                      PodsPerCore is an override for the number of pods that can run on a worker node
+                      instance based on the number of cpu cores.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  systemReserved:
+                    additionalProperties:
+                      type: string
+                    description: SystemReserved contains resources reserved for OS
+                      system daemons and kernel memory.
+                    type: object
+                    x-kubernetes-validations:
+                    - message: valid keys for systemReserved are ['cpu','memory','ephemeral-storage','pid']
+                      rule: self.all(x, x=='cpu' || x=='memory' || x=='ephemeral-storage'
+                        || x=='pid')
+                    - message: systemReserved value cannot be a negative resource
+                        quantity
+                      rule: self.all(x, !self[x].startsWith('-'))
+                type: object
+                x-kubernetes-validations:
+                - message: imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent
+                  rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
+                    ? self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent
+                    : true'
+                - message: evictionSoft key does not have a matching evictionSoftGracePeriod
+                  rule: 'has(self.evictionSoft) ? self.evictionSoft.all(e, e in self.evictionSoftGracePeriod)
+                    : true'
+                - message: evictionSoftGracePeriod key does not have a matching evictionSoft
+                  rule: 'has(self.evictionSoftGracePeriod) ? self.evictionSoftGracePeriod.all(e,
+                    e in self.evictionSoft) : true'
               loadBalancerIntegration:
                 description: |-
                   LoadBalancerIntegration defines load balancer integration settings
@@ -620,6 +807,18 @@ spec:
                   configuration, including checking VPC/subnet existence, security group validity, and
                   instance type availability. Used to determine if revalidation is needed.
                 format: date-time
+                type: string
+              resolvedImageID:
+                description: |-
+                  ResolvedImageID contains the IBM Cloud VPC image ID that has been resolved from either
+                  the Image field or the ImageSelector criteria. This field is populated by the status
+                  controller during validation and is used by the instance provider during provisioning.
+                  This eliminates duplicate VPC API calls and ensures consistency between validation and provisioning.
+                  The field is updated when:
+                  - ImageSelector criteria are specified and successfully resolved to an image
+                  - Image field is specified and successfully validated
+                  When this field is populated, the instance provider will use it directly instead of
+                  performing image resolution again.
                 type: string
               selectedInstanceTypes:
                 description: |-

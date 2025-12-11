@@ -362,57 +362,79 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 	}
 
 	// Create primary network attachment with VNI
+	// VPC resource names have a max length of 63 characters
+	// The suffix "-primary" is 8 chars, leaving 55 chars for the nodeclaim name
+	attachmentName := nodeClaim.Name
+	if len(attachmentName) > 55 {
+		attachmentName = attachmentName[:55]
+	}
 	primaryNetworkAttachment := &vpcv1.InstanceNetworkAttachmentPrototype{
-		Name:                    &[]string{fmt.Sprintf("%s-primary-attachment", nodeClaim.Name)}[0],
+		Name:                    &[]string{fmt.Sprintf("%s-primary", attachmentName)}[0],
 		VirtualNetworkInterface: vniPrototype,
 	}
 
 	// Resolve image identifier to image ID
-	imageResolver := image.NewResolver(vpcClient, nodeClass.Spec.Region, logger)
+	// First, try to use the cached resolved image from NodeClass status (populated by status controller)
+	// This eliminates duplicate VPC API calls and ensures consistency
 	var imageID string
 
-	// Use explicit image if specified, otherwise use imageSelector
-	if nodeClass.Spec.Image != "" {
-		logger.Info("Resolving explicit image", "image", nodeClass.Spec.Image)
-		imageID, err = imageResolver.ResolveImage(ctx, nodeClass.Spec.Image)
-		if err != nil {
-			logger.Error(err, "Failed to resolve explicit image", "image", nodeClass.Spec.Image)
-			return nil, fmt.Errorf("resolving image %s: %w", nodeClass.Spec.Image, err)
-		}
-		logger.Info("Successfully resolved explicit image", "image", nodeClass.Spec.Image, "imageID", imageID)
-	} else if nodeClass.Spec.ImageSelector != nil {
-		logger.Info("Resolving image using selector",
-			"os", nodeClass.Spec.ImageSelector.OS,
-			"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
-			"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
-			"architecture", nodeClass.Spec.ImageSelector.Architecture,
-			"variant", nodeClass.Spec.ImageSelector.Variant)
-		imageID, err = imageResolver.ResolveImageBySelector(ctx, nodeClass.Spec.ImageSelector)
-		if err != nil {
-			logger.Error(err, "Failed to resolve image using selector",
+	if nodeClass.Status.ResolvedImageID != "" {
+		// Use cached resolved image from status
+		imageID = nodeClass.Status.ResolvedImageID
+		logger.Info("Using cached resolved image from NodeClass status",
+			"resolvedImageID", imageID,
+			"hasImageSelector", nodeClass.Spec.ImageSelector != nil,
+			"hasExplicitImage", nodeClass.Spec.Image != "")
+	} else {
+		// Fall back to inline resolution for backwards compatibility
+		// This handles cases where status controller hasn't populated the field yet
+		logger.V(1).Info("NodeClass status does not have cached resolved image, performing inline resolution")
+
+		imageResolver := image.NewResolver(vpcClient, nodeClass.Spec.Region, logger)
+
+		// Use explicit image if specified, otherwise use imageSelector
+		if nodeClass.Spec.Image != "" {
+			logger.Info("Resolving explicit image inline", "image", nodeClass.Spec.Image)
+			imageID, err = imageResolver.ResolveImage(ctx, nodeClass.Spec.Image)
+			if err != nil {
+				logger.Error(err, "Failed to resolve explicit image", "image", nodeClass.Spec.Image)
+				return nil, fmt.Errorf("resolving image %s: %w", nodeClass.Spec.Image, err)
+			}
+			logger.Info("Successfully resolved explicit image inline", "image", nodeClass.Spec.Image, "imageID", imageID)
+		} else if nodeClass.Spec.ImageSelector != nil {
+			logger.Info("Resolving image using selector inline",
 				"os", nodeClass.Spec.ImageSelector.OS,
 				"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
 				"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
 				"architecture", nodeClass.Spec.ImageSelector.Architecture,
 				"variant", nodeClass.Spec.ImageSelector.Variant)
-			return nil, fmt.Errorf("resolving image using selector (os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s): %w",
-				nodeClass.Spec.ImageSelector.OS,
-				nodeClass.Spec.ImageSelector.MajorVersion,
-				nodeClass.Spec.ImageSelector.MinorVersion,
-				nodeClass.Spec.ImageSelector.Architecture,
-				nodeClass.Spec.ImageSelector.Variant,
-				err)
+			imageID, err = imageResolver.ResolveImageBySelector(ctx, nodeClass.Spec.ImageSelector)
+			if err != nil {
+				logger.Error(err, "Failed to resolve image using selector",
+					"os", nodeClass.Spec.ImageSelector.OS,
+					"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
+					"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
+					"architecture", nodeClass.Spec.ImageSelector.Architecture,
+					"variant", nodeClass.Spec.ImageSelector.Variant)
+				return nil, fmt.Errorf("resolving image using selector (os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s): %w",
+					nodeClass.Spec.ImageSelector.OS,
+					nodeClass.Spec.ImageSelector.MajorVersion,
+					nodeClass.Spec.ImageSelector.MinorVersion,
+					nodeClass.Spec.ImageSelector.Architecture,
+					nodeClass.Spec.ImageSelector.Variant,
+					err)
+			}
+			logger.Info("Successfully resolved image using selector inline",
+				"os", nodeClass.Spec.ImageSelector.OS,
+				"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
+				"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
+				"architecture", nodeClass.Spec.ImageSelector.Architecture,
+				"variant", nodeClass.Spec.ImageSelector.Variant,
+				"resolvedImageID", imageID)
+		} else {
+			logger.Error(nil, "Neither image nor imageSelector specified in NodeClass")
+			return nil, fmt.Errorf("neither image nor imageSelector specified in NodeClass")
 		}
-		logger.Info("Successfully resolved image using selector",
-			"os", nodeClass.Spec.ImageSelector.OS,
-			"majorVersion", nodeClass.Spec.ImageSelector.MajorVersion,
-			"minorVersion", nodeClass.Spec.ImageSelector.MinorVersion,
-			"architecture", nodeClass.Spec.ImageSelector.Architecture,
-			"variant", nodeClass.Spec.ImageSelector.Variant,
-			"resolvedImageID", imageID)
-	} else {
-		logger.Error(nil, "Neither image nor imageSelector specified in NodeClass")
-		return nil, fmt.Errorf("neither image nor imageSelector specified in NodeClass")
 	}
 
 	// Validate the resolved imageID is not empty
@@ -420,6 +442,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		logger.Error(nil, "Image resolution returned empty imageID",
 			"hasImage", nodeClass.Spec.Image != "",
 			"hasImageSelector", nodeClass.Spec.ImageSelector != nil,
+			"hasStatusResolvedImage", nodeClass.Status.ResolvedImageID != "",
 			"explicitImage", nodeClass.Spec.Image)
 		return nil, fmt.Errorf("image resolution returned empty imageID")
 	}
@@ -439,26 +462,32 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		"selectedInstanceType-ptr", &selectedInstanceType.Name,
 		"availableTypes", len(instanceTypes))
 
-	// Create instance prototype with VNI
-	instancePrototype := &vpcv1.InstancePrototypeInstanceByImageInstanceByImageInstanceByNetworkAttachment{
-		Image: &vpcv1.ImageIdentityByID{
-			ID: &imageID,
-		},
-		Zone: &vpcv1.ZoneIdentityByName{
-			Name: &zone,
-		},
-		PrimaryNetworkAttachment: primaryNetworkAttachment,
-		VPC: &vpcv1.VPCIdentityByID{
-			ID: &nodeClass.Spec.VPC,
-		},
-		Name: &nodeClaim.Name,
-		Profile: &vpcv1.InstanceProfileIdentityByName{
-			Name: &instanceProfile,
-		},
-		BootVolumeAttachment: bootVolumeAttachment,
-		AvailabilityPolicy: &vpcv1.InstanceAvailabilityPolicyPrototype{
-			HostFailure: &[]string{"restart"}[0],
-		},
+	sdkClient, ok := vpcClient.GetSDKClient().(*vpcv1.VpcV1)
+	if !ok {
+		return nil, fmt.Errorf("failed to get VPC SDK client for builder function")
+	}
+
+	// Use the SDK builder to create the prototype with required fields
+	instancePrototype, err := sdkClient.NewInstancePrototypeInstanceByImageInstanceByImageInstanceByNetworkAttachment(
+		&vpcv1.ImageIdentityByID{ID: &imageID},
+		&vpcv1.ZoneIdentityByName{Name: &zone},
+		primaryNetworkAttachment,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating instance prototype with SDK builder: %w", err)
+	}
+
+	// Set additional optional fields
+	instancePrototype.VPC = &vpcv1.VPCIdentityByID{
+		ID: &nodeClass.Spec.VPC,
+	}
+	instancePrototype.Name = &nodeClaim.Name
+	instancePrototype.Profile = &vpcv1.InstanceProfileIdentityByName{
+		Name: &instanceProfile,
+	}
+	instancePrototype.BootVolumeAttachment = bootVolumeAttachment
+	instancePrototype.AvailabilityPolicy = &vpcv1.InstanceAvailabilityPolicyPrototype{
+		HostFailure: &[]string{"restart"}[0],
 	}
 
 	// Add placement target if specified
@@ -596,6 +625,25 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		"resource_group", instancePrototype.ResourceGroup,
 		"user_data_length", len(*instancePrototype.UserData))
 
+	// DEBUG: Marshal the entire instancePrototype to JSON to see exactly what will be sent to the API
+	// This helps debug oneOf constraint violations
+	prototypeJSON, jsonErr := json.MarshalIndent(instancePrototype, "", "  ")
+	if jsonErr != nil {
+		logger.Info("WARN: Failed to marshal instancePrototype for debugging", "error", jsonErr)
+	} else {
+		// Sanitize user data before logging (it contains sensitive bootstrap tokens)
+		var prototypeMap map[string]interface{}
+		if unmarshalErr := json.Unmarshal(prototypeJSON, &prototypeMap); unmarshalErr == nil {
+			if prototypeMap["user_data"] != nil {
+				prototypeMap["user_data"] = "[REDACTED - contains bootstrap token]"
+			}
+			sanitizedJSON, _ := json.MarshalIndent(prototypeMap, "", "  ")
+			logger.Info("DEBUG: InstancePrototype JSON payload", "json", string(sanitizedJSON))
+		} else {
+			logger.Info("DEBUG: InstancePrototype JSON payload (raw)", "json", string(prototypeJSON))
+		}
+	}
+
 	// Log volume attachments details for block device troubleshooting
 	if len(instancePrototype.VolumeAttachments) > 0 {
 		for i, va := range instancePrototype.VolumeAttachments {
@@ -623,36 +671,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		}
 	}
 
-	// Log the full instance prototype being sent to VPC API for debugging
-	logger.Info("FULL VPC CreateInstance request debug",
-		"instance_name", nodeClaim.Name,
-		"instance_prototype", fmt.Sprintf("%+v", instancePrototype),
-		"primary_network_attachment", fmt.Sprintf("%+v", instancePrototype.PrimaryNetworkAttachment),
-		"boot_volume_attachment", fmt.Sprintf("%+v", instancePrototype.BootVolumeAttachment),
-		"profile", fmt.Sprintf("%+v", instancePrototype.Profile),
-		"vpc", fmt.Sprintf("%+v", instancePrototype.VPC),
-		"resource_group", fmt.Sprintf("%+v", instancePrototype.ResourceGroup))
-
-	// ENHANCED DEBUGGING: Marshal to JSON to see exact API payload
-	if jsonBytes, jsonErr := json.MarshalIndent(instancePrototype, "", "  "); jsonErr == nil {
-		logger.Info("VPC CreateInstance JSON payload",
-			"instance_name", nodeClaim.Name,
-			"json_payload", string(jsonBytes))
-	} else {
-		logger.Error(jsonErr, "Failed to marshal instance prototype to JSON for debugging")
-	}
-
-	// Log oneOf discriminator fields specifically
-	logger.Info("OneOf discriminator field analysis",
-		"instance_name", nodeClaim.Name,
-		"prototype_type", fmt.Sprintf("%T", instancePrototype),
-		"image_field", instancePrototype.Image != nil,
-		"profile_field", instancePrototype.Profile != nil,
-		"vpc_field", instancePrototype.VPC != nil,
-		"zone_field", instancePrototype.Zone != nil,
-		"boot_volume_field", instancePrototype.BootVolumeAttachment != nil,
-		"primary_network_field", instancePrototype.PrimaryNetworkAttachment != nil)
-
+	// Create the instance
 	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
 	if err != nil {
 		// Check if this is a partial failure that might have created resources
@@ -722,12 +741,12 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		}
 
 		// Create detailed error message for better debugging in NodeClaim conditions
-		detailedErr := fmt.Errorf("creating VPC instance failed: %s (code: %s, status: %d, instance_profile: %s, zone: %s, image: %s)",
-			err.Error(), ibmErr.Code, ibmErr.StatusCode, instanceProfile, zone, nodeClass.Spec.Image)
+		detailedErr := fmt.Errorf("creating VPC instance failed: %s (code: %s, status: %d, instance_profile: %s, zone: %s, resolvedImageID: %s)",
+			err.Error(), ibmErr.Code, ibmErr.StatusCode, instanceProfile, zone, imageID)
 
 		// Still use HandleVPCError for consistent logging but return our detailed error
 		_ = vpcclient.HandleVPCError(err, logger, "creating VPC instance",
-			"instance_profile", instanceProfile, "zone", zone, "image", nodeClass.Spec.Image)
+			"instance_profile", instanceProfile, "zone", zone, "resolvedImageID", imageID)
 		return nil, detailedErr
 	}
 
@@ -1343,51 +1362,51 @@ func (p *VPCInstanceProvider) buildVolumeAttachments(nodeClass *v1alpha1.IBMNode
 				deleteOnTermination = *mapping.VolumeSpec.DeleteOnTermination
 			}
 
-			// Create the concrete oneOf type directly for VPC SDK
-			// Use VolumeAttachmentPrototypeVolumeVolumePrototypeInstanceContextVolumePrototypeInstanceContextVolumeByCapacity
-			volumeByCapacity := &vpcv1.VolumeAttachmentPrototypeVolumeVolumePrototypeInstanceContextVolumePrototypeInstanceContextVolumeByCapacity{
+			// Use concrete oneOf type for volume creation by capacity
+			// This is required for proper JSON marshaling with discriminator
+			volumeProto := &vpcv1.VolumeAttachmentPrototypeVolumeVolumePrototypeInstanceContextVolumePrototypeInstanceContextVolumeByCapacity{
 				Name: &volumeName,
 			}
 
-			// Set capacity (required field)
+			// Set capacity (required field for byCapacity variant)
 			if mapping.VolumeSpec.Capacity != nil {
-				volumeByCapacity.Capacity = mapping.VolumeSpec.Capacity
+				volumeProto.Capacity = mapping.VolumeSpec.Capacity
 			} else {
 				// Default to 100GB for data volumes
-				volumeByCapacity.Capacity = &[]int64{100}[0]
+				volumeProto.Capacity = &[]int64{100}[0]
 			}
 
 			// Set profile (required field)
 			if mapping.VolumeSpec.Profile != nil {
-				volumeByCapacity.Profile = &vpcv1.VolumeProfileIdentityByName{
+				volumeProto.Profile = &vpcv1.VolumeProfileIdentityByName{
 					Name: mapping.VolumeSpec.Profile,
 				}
 			} else {
-				volumeByCapacity.Profile = &vpcv1.VolumeProfileIdentityByName{
+				volumeProto.Profile = &vpcv1.VolumeProfileIdentityByName{
 					Name: &[]string{"general-purpose"}[0],
 				}
 			}
 
 			// Set optional fields
 			if mapping.VolumeSpec.IOPS != nil {
-				volumeByCapacity.Iops = mapping.VolumeSpec.IOPS
+				volumeProto.Iops = mapping.VolumeSpec.IOPS
 			}
 			if mapping.VolumeSpec.Bandwidth != nil {
-				volumeByCapacity.Bandwidth = mapping.VolumeSpec.Bandwidth
+				volumeProto.Bandwidth = mapping.VolumeSpec.Bandwidth
 			}
 			if mapping.VolumeSpec.EncryptionKeyID != nil {
-				volumeByCapacity.EncryptionKey = &vpcv1.EncryptionKeyIdentityByCRN{
+				volumeProto.EncryptionKey = &vpcv1.EncryptionKeyIdentityByCRN{
 					CRN: mapping.VolumeSpec.EncryptionKeyID,
 				}
 			}
 			if len(mapping.VolumeSpec.Tags) > 0 {
-				volumeByCapacity.UserTags = mapping.VolumeSpec.Tags
+				volumeProto.UserTags = mapping.VolumeSpec.Tags
 			}
 
-			// The volumeByCapacity should implement VolumeAttachmentPrototypeVolumeIntf directly
+			// Create volume attachment - volumeProto implements VolumeAttachmentPrototypeVolumeIntf
 			volumeAttachment := vpcv1.VolumeAttachmentPrototype{
 				Name:                         &volumeName,
-				Volume:                       volumeByCapacity,
+				Volume:                       volumeProto,
 				DeleteVolumeOnInstanceDelete: &deleteOnTermination,
 			}
 

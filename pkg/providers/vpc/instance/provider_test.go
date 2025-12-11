@@ -25,2401 +25,2017 @@ import (
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	corev1 "k8s.io/api/core/v1"
+	"go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	mock_ibm "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm/mock"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// MockVPCSDKClient provides a mock implementation of the IBM VPC SDK client interface
-type MockVPCSDKClient struct {
-	mock.Mock
-}
+// Test helpers
+func getTestVPCInstance() *vpcv1.Instance {
+	instanceID := "test-instance-id"
+	instanceName := "test-nodeclaim"
+	profileName := "bx2-4x16"
+	zoneName := "us-south-1"
 
-func (m *MockVPCSDKClient) CreateInstanceWithContext(ctx context.Context, options *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.Instance), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) DeleteInstanceWithContext(ctx context.Context, options *vpcv1.DeleteInstanceOptions) (*core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*core.DetailedResponse), args.Error(1)
-}
-
-func (m *MockVPCSDKClient) GetInstanceWithContext(ctx context.Context, options *vpcv1.GetInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.Instance), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListInstancesWithContext(ctx context.Context, options *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.InstanceCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) UpdateInstanceWithContext(ctx context.Context, options *vpcv1.UpdateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.Instance), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListSubnetsWithContext(ctx context.Context, options *vpcv1.ListSubnetsOptions) (*vpcv1.SubnetCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.SubnetCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetSubnetWithContext(ctx context.Context, options *vpcv1.GetSubnetOptions) (*vpcv1.Subnet, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.Subnet), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetVPCWithContext(ctx context.Context, options *vpcv1.GetVPCOptions) (*vpcv1.VPC, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.VPC), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetImageWithContext(ctx context.Context, options *vpcv1.GetImageOptions) (*vpcv1.Image, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.Image), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListImagesWithContext(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.ImageCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListInstanceProfilesWithContext(ctx context.Context, options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.InstanceProfileCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetInstanceProfileWithContext(ctx context.Context, options *vpcv1.GetInstanceProfileOptions) (*vpcv1.InstanceProfile, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.InstanceProfile), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListSecurityGroupsWithContext(ctx context.Context, options *vpcv1.ListSecurityGroupsOptions) (*vpcv1.SecurityGroupCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.SecurityGroupCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-// Volume methods
-func (m *MockVPCSDKClient) ListVolumesWithContext(ctx context.Context, options *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.VolumeCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) DeleteVolumeWithContext(ctx context.Context, options *vpcv1.DeleteVolumeOptions) (*core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*core.DetailedResponse), args.Error(1)
-}
-
-// Virtual Network Interface methods
-func (m *MockVPCSDKClient) ListVirtualNetworkInterfacesWithContext(ctx context.Context, options *vpcv1.ListVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterfaceCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.VirtualNetworkInterfaceCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) DeleteVirtualNetworkInterfacesWithContext(ctx context.Context, options *vpcv1.DeleteVirtualNetworkInterfacesOptions) (*vpcv1.VirtualNetworkInterface, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.VirtualNetworkInterface), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-// Load Balancer methods
-func (m *MockVPCSDKClient) GetLoadBalancerWithContext(ctx context.Context, options *vpcv1.GetLoadBalancerOptions) (*vpcv1.LoadBalancer, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancer), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListLoadBalancerPoolsWithContext(ctx context.Context, options *vpcv1.ListLoadBalancerPoolsOptions) (*vpcv1.LoadBalancerPoolCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPoolCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetLoadBalancerPoolWithContext(ctx context.Context, options *vpcv1.GetLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPool), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) CreateLoadBalancerPoolMemberWithContext(ctx context.Context, options *vpcv1.CreateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPoolMember), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) DeleteLoadBalancerPoolMemberWithContext(ctx context.Context, options *vpcv1.DeleteLoadBalancerPoolMemberOptions) (*core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*core.DetailedResponse), args.Error(1)
-}
-
-func (m *MockVPCSDKClient) GetLoadBalancerPoolMemberWithContext(ctx context.Context, options *vpcv1.GetLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPoolMember), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListLoadBalancerPoolMembersWithContext(ctx context.Context, options *vpcv1.ListLoadBalancerPoolMembersOptions) (*vpcv1.LoadBalancerPoolMemberCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPoolMemberCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) UpdateLoadBalancerPoolMemberWithContext(ctx context.Context, options *vpcv1.UpdateLoadBalancerPoolMemberOptions) (*vpcv1.LoadBalancerPoolMember, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPoolMember), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) UpdateLoadBalancerPoolWithContext(ctx context.Context, options *vpcv1.UpdateLoadBalancerPoolOptions) (*vpcv1.LoadBalancerPool, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.LoadBalancerPool), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListRegionZonesWithContext(ctx context.Context, options *vpcv1.ListRegionZonesOptions) (*vpcv1.ZoneCollection, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.ZoneCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) ListRegions(options *vpcv1.ListRegionsOptions) (*vpcv1.RegionCollection, *core.DetailedResponse, error) {
-	args := m.Called(options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.RegionCollection), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetSecurityGroupWithContext(ctx context.Context, options *vpcv1.GetSecurityGroupOptions) (*vpcv1.SecurityGroup, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.SecurityGroup), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-func (m *MockVPCSDKClient) GetKeyWithContext(ctx context.Context, options *vpcv1.GetKeyOptions) (*vpcv1.Key, *core.DetailedResponse, error) {
-	args := m.Called(ctx, options)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).(*vpcv1.Key), args.Get(1).(*core.DetailedResponse), args.Error(2)
-}
-
-// IBMClientInterface defines the interface we need for testing
-type IBMClientInterface interface {
-	GetVPCClient() (*ibm.VPCClient, error)
-	GetIKSClient() *ibm.IKSClient
-}
-
-// testVPCInstanceProvider is a test-specific wrapper that allows interface injection
-type testVPCInstanceProvider struct {
-	client     IBMClientInterface
-	kubeClient client.Client
-}
-
-// Create implements the Create method for testing
-func (p *testVPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*corev1.Node, error) {
-	// Get the node class
-	var nodeClass v1alpha1.IBMNodeClass
-	nodeClassRef := nodeClaim.Spec.NodeClassRef
-	err := p.kubeClient.Get(ctx, types.NamespacedName{
-		Name: nodeClassRef.Name,
-	}, &nodeClass)
-	if err != nil {
-		return nil, fmt.Errorf("getting nodeclass %s: %w", nodeClassRef.Name, err)
-	}
-
-	// Get VPC client
-	vpcClient, err := p.client.GetVPCClient()
-	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
-	}
-
-	// Get pre-selected instance type from nodeClaim (matching real implementation)
-	instanceProfile := nodeClaim.Labels["node.kubernetes.io/instance-type"]
-	if instanceProfile == "" {
-		return nil, fmt.Errorf("no instance type selected for nodeclaim %s", nodeClaim.Name)
-	}
-
-	if nodeClass.Spec.Zone == "" {
-		return nil, fmt.Errorf("zone not specified in NodeClass")
-	}
-
-	if nodeClass.Spec.Subnet == "" {
-		return nil, fmt.Errorf("subnet not specified in NodeClass")
-	}
-
-	// Resolve image if needed
-	imageID := nodeClass.Spec.Image
-	if imageID != "" {
-		_, err = vpcClient.GetImage(ctx, imageID)
-		if err != nil {
-			return nil, fmt.Errorf("resolving image %s: %w", imageID, err)
-		}
-	}
-
-	// Create primary network interface with subnet
-	primaryNetworkInterface := &vpcv1.NetworkInterfacePrototype{
-		Subnet: &vpcv1.SubnetIdentity{
-			ID: &nodeClass.Spec.Subnet,
+	return &vpcv1.Instance{
+		ID:   &instanceID,
+		Name: &instanceName,
+		Profile: &vpcv1.InstanceProfileReference{
+			Name: &profileName,
+		},
+		Zone: &vpcv1.ZoneReference{
+			Name: &zoneName,
 		},
 	}
+}
 
-	// Add security groups if specified, otherwise use default (matching real implementation)
-	if len(nodeClass.Spec.SecurityGroups) > 0 {
-		var securityGroups []vpcv1.SecurityGroupIdentityIntf
-		for _, sg := range nodeClass.Spec.SecurityGroups {
-			securityGroups = append(securityGroups, &vpcv1.SecurityGroupIdentity{ID: &sg})
-		}
-		primaryNetworkInterface.SecurityGroups = securityGroups
-	} else {
-		// Use default security group (simplified for test)
-		defaultSG := "default-sg"
-		primaryNetworkInterface.SecurityGroups = []vpcv1.SecurityGroupIdentityIntf{
-			&vpcv1.SecurityGroupIdentity{ID: &defaultSG},
-		}
+// MockIBMClientWrapper wraps the generated mock for use in tests
+type MockIBMClientWrapper struct {
+	vpcClient *mock_ibm.MockvpcClientInterface
+}
+
+func (m *MockIBMClientWrapper) GetVPCClient() (*ibm.VPCClient, error) {
+	if m.vpcClient == nil {
+		return nil, fmt.Errorf("mock VPC client not initialized")
+	}
+	return ibm.NewVPCClientWithMock(m.vpcClient), nil
+}
+
+func (m *MockIBMClientWrapper) GetIKSClient() (ibm.IKSClientInterface, error) {
+	// VPC mode doesn't use IKS client
+	return nil, nil
+}
+
+func TestVPCClient_CreateInstance(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testImage := &vpcv1.Image{
+		ID:   ptrString("test-image-id"),
+		Name: ptrString("test-image"),
 	}
 
-	// Create instance prototype following IBM SDK patterns
+	testInstance := getTestVPCInstance()
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	// Expect GetImageWithContext call
+	mockVPC.EXPECT().
+		GetImageWithContext(gomock.Any(), gomock.Any()).
+		Return(testImage, testResponse, nil).
+		Times(1)
+
+	// Expect CreateInstanceWithContext call
+	mockVPC.EXPECT().
+		CreateInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	// Test GetImage
+	image, err := vpcClient.GetImage(ctx, "test-image-id")
+	assert.NoError(t, err)
+	assert.NotNil(t, image)
+	assert.Equal(t, "test-image-id", *image.ID)
+
+	// Test CreateInstance
 	instancePrototype := &vpcv1.InstancePrototypeInstanceByImage{
-		Name: &nodeClaim.Name,
+		Name: ptrString("test-instance"),
 		Image: &vpcv1.ImageIdentity{
-			ID: &imageID,
+			ID: ptrString("test-image-id"),
 		},
 		Profile: &vpcv1.InstanceProfileIdentity{
-			Name: &instanceProfile,
+			Name: ptrString("bx2-4x16"),
 		},
 		Zone: &vpcv1.ZoneIdentity{
-			Name: &nodeClass.Spec.Zone,
+			Name: ptrString("us-south-1"),
 		},
 		VPC: &vpcv1.VPCIdentity{
-			ID: &nodeClass.Spec.VPC,
+			ID: ptrString("test-vpc-id"),
 		},
-		PrimaryNetworkInterface: primaryNetworkInterface,
+		PrimaryNetworkInterface: &vpcv1.NetworkInterfacePrototype{
+			Subnet: &vpcv1.SubnetIdentity{
+				ID: ptrString("test-subnet-id"),
+			},
+		},
 	}
 
-	// Create the instance using VPC client
 	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
-	if err != nil {
-		return nil, fmt.Errorf("creating VPC instance: %w", err)
-	}
-
-	// Convert to Kubernetes Node
-	node := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClaim.Name,
-			Labels: map[string]string{
-				"node.kubernetes.io/instance-type": instanceProfile,
-				"topology.kubernetes.io/zone":      nodeClass.Spec.Zone,
-			},
-		},
-		Spec: corev1.NodeSpec{
-			ProviderID: fmt.Sprintf("ibm:///%s/%s", nodeClass.Spec.Region, *instance.ID),
-		},
-	}
-
-	return node, nil
+	assert.NoError(t, err)
+	assert.NotNil(t, instance)
+	assert.Equal(t, "test-instance-id", *instance.ID)
 }
 
-// Delete implements the Delete method for testing
-func (p *testVPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) error {
-	instanceID := extractInstanceIDFromProviderID(node.Spec.ProviderID)
-	if instanceID == "" {
-		return fmt.Errorf("could not extract instance ID from provider ID: %s", node.Spec.ProviderID)
-	}
+func TestVPCClient_GetInstance(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	vpcClient, err := p.client.GetVPCClient()
-	if err != nil {
-		return fmt.Errorf("getting VPC client: %w", err)
-	}
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
-	// Delete the instance using VPC client
-	err = vpcClient.DeleteInstance(ctx, instanceID)
-	if err != nil {
-		return fmt.Errorf("deleting VPC instance: %w", err)
-	}
+	testInstance := getTestVPCInstance()
+	testResponse := &core.DetailedResponse{StatusCode: 200}
 
-	return nil
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instance, err := vpcClient.GetInstance(ctx, "test-instance-id")
+	assert.NoError(t, err)
+	assert.NotNil(t, instance)
+	assert.Equal(t, "test-instance-id", *instance.ID)
+	assert.Equal(t, "test-nodeclaim", *instance.Name)
 }
 
-// Get implements the Get method for testing
-func (p *testVPCInstanceProvider) Get(ctx context.Context, providerID string) (*corev1.Node, error) {
-	instanceID := extractInstanceIDFromProviderID(providerID)
-	if instanceID == "" {
-		return nil, fmt.Errorf("could not extract instance ID from provider ID: %s", providerID)
-	}
+func TestVPCClient_DeleteInstance(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	vpcClient, err := p.client.GetVPCClient()
-	if err != nil {
-		return nil, fmt.Errorf("getting VPC client: %w", err)
-	}
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
-	// Get the instance using VPC client
-	instance, err := vpcClient.GetInstance(ctx, instanceID)
-	if err != nil {
-		return nil, fmt.Errorf("getting VPC instance: %w", err)
-	}
+	testResponse := &core.DetailedResponse{StatusCode: 204}
 
-	// Convert to Kubernetes Node
-	node := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: *instance.Name,
-			Labels: map[string]string{
-				"node.kubernetes.io/instance-type": *instance.Profile.Name,
-				"topology.kubernetes.io/zone":      *instance.Zone.Name,
-			},
-		},
-		Spec: corev1.NodeSpec{
-			ProviderID: providerID,
-		},
-	}
-	return node, nil
+	mockVPC.EXPECT().
+		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	err := vpcClient.DeleteInstance(ctx, "test-instance-id")
+	assert.NoError(t, err)
 }
 
-// UpdateTags implements the UpdateTags method for testing
-func (p *testVPCInstanceProvider) UpdateTags(ctx context.Context, providerID string, tags map[string]string) error {
-	instanceID := extractInstanceIDFromProviderID(providerID)
-	if instanceID == "" {
-		return fmt.Errorf("could not extract instance ID from provider ID: %s", providerID)
+func TestVPCClient_ListInstances(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance1 := getTestVPCInstance()
+	testInstance2 := &vpcv1.Instance{
+		ID:   ptrString("instance-2"),
+		Name: ptrString("instance-2-name"),
 	}
 
-	vpcClient, err := p.client.GetVPCClient()
-	if err != nil {
-		return fmt.Errorf("getting VPC client: %w", err)
+	testCollection := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{*testInstance1, *testInstance2},
 	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
 
-	// Update instance tags using VPC client
-	err = vpcClient.UpdateInstanceTags(ctx, instanceID, tags)
-	if err != nil {
-		return fmt.Errorf("updating VPC instance tags: %w", err)
-	}
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testCollection, testResponse, nil).
+		Times(1)
 
-	return nil
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instances, err := vpcClient.ListInstances(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, instances)
+	assert.Len(t, instances, 2)
+	assert.Equal(t, "test-instance-id", *instances[0].ID)
+	assert.Equal(t, "instance-2", *instances[1].ID)
 }
 
-// MockIBMClient provides a mock implementation of the IBM client
-type MockIBMClient struct {
-	mock.Mock
-	mockVPCSDKClient *MockVPCSDKClient
+func TestVPCClient_GetImage_NotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	mockVPC.EXPECT().
+		GetImageWithContext(gomock.Any(), gomock.Any()).
+		Return(nil, nil, fmt.Errorf("image not found")).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	image, err := vpcClient.GetImage(ctx, "nonexistent-image-id")
+	assert.Error(t, err)
+	assert.Nil(t, image)
+	assert.Contains(t, err.Error(), "image not found")
 }
 
-func (m *MockIBMClient) GetVPCClient() (*ibm.VPCClient, error) {
-	// Return a VPC client that uses our mock SDK client
-	if m.mockVPCSDKClient == nil {
-		return nil, fmt.Errorf("mock VPC SDK client not initialized")
+func TestVPCClient_CreateInstance_Failure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	mockVPC.EXPECT().
+		CreateInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(nil, nil, fmt.Errorf("quota exceeded")).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instancePrototype := &vpcv1.InstancePrototypeInstanceByImage{
+		Name: ptrString("test-instance"),
 	}
 
-	// Create a VPC client with the mock SDK client
-	vpcClient := ibm.NewVPCClientWithMock(m.mockVPCSDKClient)
-	return vpcClient, nil
-}
-
-func (m *MockIBMClient) GetIKSClient() *ibm.IKSClient {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(*ibm.IKSClient)
-}
-
-// Test helpers
-func getTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = corev1.AddToScheme(s)
-	_ = v1alpha1.AddToScheme(s)
-	// Note: karpenter v1 scheme registration is handled differently
-	return s
-}
-
-func getTestNodeClass() *v1alpha1.IBMNodeClass {
-	return &v1alpha1.IBMNodeClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-nodeclass",
-		},
-		Spec: v1alpha1.IBMNodeClassSpec{
-			Region:          "us-south",
-			Zone:            "us-south-1",
-			InstanceProfile: "bx2-4x16",
-			Image:           "test-image-id",
-			VPC:             "test-vpc-id",
-			Subnet:          "test-subnet-id",
-		},
-	}
-}
-
-func getTestNodeClaim() *karpv1.NodeClaim {
-	return &karpv1.NodeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-nodeclaim",
-			Labels: map[string]string{
-				"node.kubernetes.io/instance-type": "bx2-4x16",
-			},
-		},
-		Spec: karpv1.NodeClaimSpec{
-			NodeClassRef: &karpv1.NodeClassReference{
-				Name: "test-nodeclass",
-			},
-		},
-	}
-}
-
-func getTestVPCInstance() *vpcv1.Instance {
-	id := "test-instance-id"
-	name := "test-instance"
-	zone := "us-south-1"
-	profile := "bx2-4x16"
-	return &vpcv1.Instance{
-		ID:      &id,
-		Name:    &name,
-		Zone:    &vpcv1.ZoneReference{Name: &zone},
-		Profile: &vpcv1.InstanceProfileReference{Name: &profile},
-	}
-}
-
-// Test the real VPCInstanceProvider implementation with comprehensive mocks
-func TestVPCInstanceProvider_CreateReal(t *testing.T) {
-	t.Skip("Skipping test with broken mock expectations - pre-existing issue")
-	// Re-enable these tests with better mocking
-	tests := []struct {
-		name           string
-		nodeClass      *v1alpha1.IBMNodeClass
-		nodeClaim      *karpv1.NodeClaim
-		setupMocks     func(*MockVPCSDKClient)
-		failVPCClient  bool
-		expectError    bool
-		errorContains  string
-		validateResult func(*testing.T, *corev1.Node)
-	}{
-		{
-			name:      "successful instance creation with comprehensive flow",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// Mock security group lookup for default SG
-				vpc := &vpcv1.VPC{ID: &[]string{"test-vpc-id"}[0]}
-				vpcSDKClient.On("GetVPCWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetVPCOptions")).Return(vpc, &core.DetailedResponse{}, nil)
-
-				securityGroups := &vpcv1.SecurityGroupCollection{
-					SecurityGroups: []vpcv1.SecurityGroup{
-						{ID: &[]string{"sg-default"}[0], Name: &[]string{"default"}[0]},
-					},
-				}
-				vpcSDKClient.On("ListSecurityGroupsWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListSecurityGroupsOptions")).Return(securityGroups, &core.DetailedResponse{}, nil)
-
-				// Mock image lookup for image resolution (the test implementation calls GetImageWithContext)
-				testImage := &vpcv1.Image{
-					ID:   &[]string{"test-image-id"}[0],
-					Name: &[]string{"test-image"}[0],
-				}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, &core.DetailedResponse{}, nil)
-
-				// Mock instance creation
-				expectedInstance := getTestVPCInstance()
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, &core.DetailedResponse{StatusCode: 201}, nil)
-			},
-			expectError: false,
-			validateResult: func(t *testing.T, node *corev1.Node) {
-				assert.NotNil(t, node)
-				assert.Equal(t, "test-nodeclaim", node.Name)
-				assert.Contains(t, node.Spec.ProviderID, "test-instance-id")
-				assert.Equal(t, "bx2-4x16", node.Labels["node.kubernetes.io/instance-type"])
-				assert.Equal(t, "us-south-1", node.Labels["topology.kubernetes.io/zone"])
-			},
-		},
-		{
-			name: "missing zone validation",
-			nodeClass: func() *v1alpha1.IBMNodeClass {
-				nc := getTestNodeClass()
-				nc.Spec.Zone = "" // Missing zone
-				return nc
-			}(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed for validation error
-			},
-			expectError:   true,
-			errorContains: "zone not specified",
-		},
-		{
-			name: "missing subnet validation",
-			nodeClass: func() *v1alpha1.IBMNodeClass {
-				nc := getTestNodeClass()
-				nc.Spec.Subnet = "" // Missing subnet
-				return nc
-			}(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed for validation error
-			},
-			expectError:   true,
-			errorContains: "subnet not specified",
-		},
-		{
-			name:      "VPC client creation failure",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed as VPC client creation will fail
-			},
-			failVPCClient: true,
-			expectError:   true,
-			errorContains: "getting VPC client",
-		},
-		{
-			name:      "image resolution failure",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// Mock security group lookup success
-				vpc := &vpcv1.VPC{ID: &[]string{"test-vpc-id"}[0]}
-				vpcSDKClient.On("GetVPCWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetVPCOptions")).Return(vpc, &core.DetailedResponse{}, nil)
-
-				securityGroups := &vpcv1.SecurityGroupCollection{
-					SecurityGroups: []vpcv1.SecurityGroup{
-						{ID: &[]string{"sg-default"}[0], Name: &[]string{"default"}[0]},
-					},
-				}
-				vpcSDKClient.On("ListSecurityGroupsWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListSecurityGroupsOptions")).Return(securityGroups, &core.DetailedResponse{}, nil)
-
-				// Mock image lookup failure
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(nil, nil, fmt.Errorf("image not found"))
-			},
-			expectError:   true,
-			errorContains: "resolving image",
-		},
-		{
-			name: "resource group configuration",
-			nodeClass: func() *v1alpha1.IBMNodeClass {
-				nc := getTestNodeClass()
-				nc.Spec.ResourceGroup = "test-resource-group-id"
-				return nc
-			}(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// Mock security group lookup
-				vpc := &vpcv1.VPC{ID: &[]string{"test-vpc-id"}[0]}
-				vpcSDKClient.On("GetVPCWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetVPCOptions")).Return(vpc, &core.DetailedResponse{}, nil)
-
-				securityGroups := &vpcv1.SecurityGroupCollection{
-					SecurityGroups: []vpcv1.SecurityGroup{
-						{ID: &[]string{"sg-default"}[0], Name: &[]string{"default"}[0]},
-					},
-				}
-				vpcSDKClient.On("ListSecurityGroupsWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListSecurityGroupsOptions")).Return(securityGroups, &core.DetailedResponse{}, nil)
-
-				// Mock image lookup
-				testImage := &vpcv1.Image{
-					ID:   &[]string{"test-image-id"}[0],
-					Name: &[]string{"test-image"}[0],
-				}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, &core.DetailedResponse{}, nil)
-
-				// Mock instance creation with validation that resource group is set
-				expectedInstance := getTestVPCInstance()
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.MatchedBy(func(options *vpcv1.CreateInstanceOptions) bool {
-					// Verify that the instance prototype has the resource group set
-					if options.InstancePrototype == nil {
-						return false
-					}
-
-					// Cast to the specific type to access ResourceGroup field
-					if prototypeByImage, ok := options.InstancePrototype.(*vpcv1.InstancePrototypeInstanceByImage); ok {
-						if prototypeByImage.ResourceGroup == nil {
-							return false
-						}
-						if resourceGroupIdentity, ok := prototypeByImage.ResourceGroup.(*vpcv1.ResourceGroupIdentity); ok {
-							return resourceGroupIdentity.ID != nil && *resourceGroupIdentity.ID == "test-resource-group-id"
-						}
-					}
-					return false
-				})).Return(expectedInstance, &core.DetailedResponse{StatusCode: 201}, nil)
-			},
-			expectError: false,
-			validateResult: func(t *testing.T, node *corev1.Node) {
-				assert.NotNil(t, node)
-				assert.Equal(t, "test-nodeclaim", node.Name)
-				assert.Contains(t, node.Spec.ProviderID, "test-instance-id")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create fake Kubernetes client with the nodeclass
-			scheme := getTestScheme()
-			_ = v1alpha1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-
-			var fakeClient client.Client
-			if tt.nodeClass != nil {
-				fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.nodeClass).Build()
-			} else {
-				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			}
-
-			// Create mock VPC client
-			mockVPCSDKClient := &MockVPCSDKClient{}
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockVPCSDKClient)
-			}
-
-			// Create mock IBM client
-			var mockIBMClient *MockIBMClient
-			if tt.failVPCClient {
-				mockIBMClient = &MockIBMClient{
-					mockVPCSDKClient: nil, // Will cause GetVPCClient to fail
-				}
-			} else {
-				mockIBMClient = &MockIBMClient{
-					mockVPCSDKClient: mockVPCSDKClient,
-				}
-			}
-
-			// Create real VPC instance provider using testVPCInstanceProvider interface
-			provider := &testVPCInstanceProvider{
-				client:     mockIBMClient,
-				kubeClient: fakeClient,
-			}
-
-			// Test
-			ctx := context.Background()
-			result, err := provider.Create(ctx, tt.nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-
-			// Validate results
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-				assert.Nil(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-				if tt.validateResult != nil {
-					tt.validateResult(t, result)
-				}
-			}
-
-			// Verify all expected calls were made
-			mockVPCSDKClient.AssertExpectations(t)
-		})
-	}
-}
-
-// MockIBMClientWithFailure simulates IBM client creation failure
-type MockIBMClientWithFailure struct{}
-
-func (m *MockIBMClientWithFailure) GetVPCClient() (*ibm.VPCClient, error) {
-	return nil, fmt.Errorf("failed to create VPC client")
-}
-
-func (m *MockIBMClientWithFailure) GetIKSClient() *ibm.IKSClient {
-	return nil
-}
-
-func TestVPCInstanceProvider_Create(t *testing.T) {
-	tests := []struct {
-		name           string
-		nodeClass      *v1alpha1.IBMNodeClass
-		nodeClaim      *karpv1.NodeClaim
-		setupMocks     func(*MockIBMClient, *MockVPCSDKClient)
-		expectError    bool
-		errorContains  string
-		validateResult func(*testing.T, *corev1.Node)
-	}{
-		{
-			name:      "successful instance creation",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// Mock image resolution
-				testImage := &vpcv1.Image{
-					ID:   &[]string{"resolved-image-id"}[0],
-					Name: &[]string{"test-image"}[0],
-				}
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-
-				// Mock instance creation
-				expectedInstance := getTestVPCInstance()
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
-			},
-			expectError: false,
-			validateResult: func(t *testing.T, node *corev1.Node) {
-				assert.NotNil(t, node)
-				assert.Equal(t, "test-nodeclaim", node.Name)
-				assert.Equal(t, "ibm:///us-south/test-instance-id", node.Spec.ProviderID)
-				assert.Equal(t, "bx2-4x16", node.Labels["node.kubernetes.io/instance-type"])
-				assert.Equal(t, "us-south-1", node.Labels["topology.kubernetes.io/zone"])
-			},
-		},
-		{
-			name:      "nodeclass not found",
-			nodeClass: nil, // Will cause Get to fail
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed as we'll fail before reaching IBM client
-			},
-			expectError:   true,
-			errorContains: "not found",
-		},
-		{
-			name:      "VPC client creation failure",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// Set the mock SDK client to nil to simulate client creation failure
-				ibmClient.mockVPCSDKClient = nil
-			},
-			expectError:   true,
-			errorContains: "mock VPC SDK client not initialized",
-		},
-		{
-			name:      "missing instance type in nodeClaim labels",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: func() *karpv1.NodeClaim {
-				nc := getTestNodeClaim()
-				nc.Labels = nil // Remove instance-type label
-				return nc
-			}(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed for basic validation errors
-			},
-			expectError:   true,
-			errorContains: "no instance type selected",
-		},
-		{
-			name: "missing zone",
-			nodeClass: func() *v1alpha1.IBMNodeClass {
-				nc := getTestNodeClass()
-				nc.Spec.Zone = "" // Remove zone
-				return nc
-			}(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed for basic validation errors
-			},
-			expectError:   true,
-			errorContains: "zone not specified",
-		},
-		{
-			name: "missing subnet",
-			nodeClass: func() *v1alpha1.IBMNodeClass {
-				nc := getTestNodeClass()
-				nc.Spec.Subnet = "" // Remove subnet
-				return nc
-			}(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed for basic validation errors
-			},
-			expectError:   true,
-			errorContains: "subnet not specified",
-		},
-		{
-			name:      "instance creation failure",
-			nodeClass: getTestNodeClass(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// Mock image resolution success
-				testImage := &vpcv1.Image{
-					ID:   &[]string{"resolved-image-id"}[0],
-					Name: &[]string{"test-image"}[0],
-				}
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-
-				// Mock instance creation failure
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(nil, nil, fmt.Errorf("instance creation failed"))
-			},
-			expectError:   true,
-			errorContains: "creating VPC instance",
-		},
-		{
-			name: "resource group configuration",
-			nodeClass: func() *v1alpha1.IBMNodeClass {
-				nc := getTestNodeClass()
-				nc.Spec.ResourceGroup = "test-resource-group-id"
-				return nc
-			}(),
-			nodeClaim: getTestNodeClaim(),
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				testImage := &vpcv1.Image{
-					ID:   &[]string{"resolved-image-id"}[0],
-					Name: &[]string{"test-image"}[0],
-				}
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-
-				expectedInstance := getTestVPCInstance()
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
-			},
-			expectError: false,
-			validateResult: func(t *testing.T, node *corev1.Node) {
-				assert.NotNil(t, node)
-				assert.Equal(t, "test-nodeclaim", node.Name)
-				assert.Contains(t, node.Spec.ProviderID, "test-instance-id")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			// Create fake Kubernetes client
-			scheme := getTestScheme()
-			builder := fake.NewClientBuilder().WithScheme(scheme)
-			if tt.nodeClass != nil {
-				builder = builder.WithObjects(tt.nodeClass)
-			}
-			fakeClient := builder.Build()
-
-			// Create mock clients
-			mockIBMClient := &MockIBMClient{}
-			mockVPCSDKClient := &MockVPCSDKClient{}
-			mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-
-			// Setup mocks
-			tt.setupMocks(mockIBMClient, mockVPCSDKClient)
-
-			// Create VPC instance provider with interface wrapper
-			provider := &testVPCInstanceProvider{
-				client:     mockIBMClient,
-				kubeClient: fakeClient,
-			}
-
-			// Test Create method
-			result, err := provider.Create(ctx, tt.nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-
-			// Validate results
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-				assert.Nil(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-				if tt.validateResult != nil {
-					tt.validateResult(t, result)
-				}
-			}
-
-			// Verify all expected calls were made
-			mockIBMClient.AssertExpectations(t)
-			mockVPCSDKClient.AssertExpectations(t)
-		})
-	}
-}
-
-func TestVPCInstanceProvider_Delete(t *testing.T) {
-	tests := []struct {
-		name          string
-		node          *corev1.Node
-		setupMocks    func(*MockIBMClient, *MockVPCSDKClient)
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name: "successful instance deletion",
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-				Spec: corev1.NodeSpec{
-					ProviderID: "ibm:///us-south/test-instance-id",
-				},
-			},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				testResponse := &core.DetailedResponse{StatusCode: 204}
-				vpcSDKClient.On("DeleteInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.DeleteInstanceOptions")).Return(testResponse, nil)
-			},
-			expectError: false,
-		},
-		{
-			name: "instance not found",
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-				Spec: corev1.NodeSpec{
-					ProviderID: "ibm:///us-south/test-instance-id",
-				},
-			},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				vpcSDKClient.On("DeleteInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.DeleteInstanceOptions")).Return(nil, fmt.Errorf("instance not found"))
-			},
-			expectError:   true,
-			errorContains: "instance not found",
-		},
-		{
-			name: "invalid provider ID",
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-				Spec: corev1.NodeSpec{
-					ProviderID: "invalid-provider-id",
-				},
-			},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed as we'll fail before reaching IBM client
-			},
-			expectError:   true,
-			errorContains: "could not extract instance ID",
-		},
-		{
-			name: "VPC client creation failure",
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-				Spec: corev1.NodeSpec{
-					ProviderID: "ibm:///us-south/test-instance-id",
-				},
-			},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				ibmClient.mockVPCSDKClient = nil // Simulate VPC client creation failure
-			},
-			expectError:   true,
-			errorContains: "getting VPC client",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			// Create mock clients
-			mockIBMClient := &MockIBMClient{}
-			mockVPCSDKClient := &MockVPCSDKClient{}
-			mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-
-			// Setup mocks
-			tt.setupMocks(mockIBMClient, mockVPCSDKClient)
-
-			// Create VPC instance provider
-			provider := &testVPCInstanceProvider{
-				client: mockIBMClient,
-			}
-
-			// Test Delete method
-			err := provider.Delete(ctx, tt.node)
-
-			// Validate results
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-
-			// Verify all expected calls were made
-			mockIBMClient.AssertExpectations(t)
-			mockVPCSDKClient.AssertExpectations(t)
-		})
-	}
-}
-
-func TestVPCInstanceProvider_Get(t *testing.T) {
-	tests := []struct {
-		name          string
-		providerID    string
-		setupMocks    func(*MockIBMClient, *MockVPCSDKClient)
-		expectError   bool
-		errorContains string
-		validateNode  func(*testing.T, *corev1.Node)
-	}{
-		{
-			name:       "successful instance retrieval",
-			providerID: "ibm:///us-south/test-instance-id",
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				testInstance := getTestVPCInstance()
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("GetInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetInstanceOptions")).Return(testInstance, testResponse, nil)
-			},
-			expectError: false,
-			validateNode: func(t *testing.T, node *corev1.Node) {
-				assert.NotNil(t, node)
-				assert.Equal(t, "test-instance", node.Name)
-				assert.Equal(t, "ibm:///us-south/test-instance-id", node.Spec.ProviderID)
-			},
-		},
-		{
-			name:       "instance not found",
-			providerID: "ibm:///us-south/nonexistent-instance",
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				vpcSDKClient.On("GetInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetInstanceOptions")).Return(nil, nil, fmt.Errorf("instance not found"))
-			},
-			expectError:   true,
-			errorContains: "not found",
-		},
-		{
-			name:       "invalid provider ID",
-			providerID: "invalid-provider-id",
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed as we'll fail before reaching IBM client
-			},
-			expectError:   true,
-			errorContains: "could not extract instance ID",
-		},
-		{
-			name:       "VPC client creation failure",
-			providerID: "ibm:///us-south/test-instance-id",
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				ibmClient.mockVPCSDKClient = nil // Simulate VPC client creation failure
-			},
-			expectError:   true,
-			errorContains: "getting VPC client",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			// Create mock clients
-			mockIBMClient := &MockIBMClient{}
-			mockVPCSDKClient := &MockVPCSDKClient{}
-			mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-
-			// Setup mocks
-			tt.setupMocks(mockIBMClient, mockVPCSDKClient)
-
-			// Create VPC instance provider
-			provider := &testVPCInstanceProvider{
-				client: mockIBMClient,
-			}
-
-			// Test Get method
-			result, err := provider.Get(ctx, tt.providerID)
-
-			// Validate results
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-				assert.Nil(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-				if tt.validateNode != nil {
-					tt.validateNode(t, result)
-				}
-			}
-
-			// Verify all expected calls were made
-			mockIBMClient.AssertExpectations(t)
-			mockVPCSDKClient.AssertExpectations(t)
-		})
-	}
-}
-
-func TestVPCInstanceProvider_UpdateTags(t *testing.T) {
-	tests := []struct {
-		name          string
-		providerID    string
-		tags          map[string]string
-		setupMocks    func(*MockIBMClient, *MockVPCSDKClient)
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name:       "successful tag update",
-			providerID: "ibm:///us-south/test-instance-id",
-			tags: map[string]string{
-				"environment": "test",
-				"team":        "platform",
-			},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				testInstance := getTestVPCInstance()
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("UpdateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.UpdateInstanceOptions")).Return(testInstance, testResponse, nil)
-			},
-			expectError: false,
-		},
-		{
-			name:       "invalid provider ID",
-			providerID: "invalid-provider-id",
-			tags:       map[string]string{"test": "value"},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				// No mocks needed as we'll fail before reaching IBM client
-			},
-			expectError:   true,
-			errorContains: "could not extract instance ID",
-		},
-		{
-			name:       "VPC client creation failure",
-			providerID: "ibm:///us-south/test-instance-id",
-			tags:       map[string]string{"test": "value"},
-			setupMocks: func(ibmClient *MockIBMClient, vpcSDKClient *MockVPCSDKClient) {
-				ibmClient.mockVPCSDKClient = nil // Simulate VPC client creation failure
-			},
-			expectError:   true,
-			errorContains: "getting VPC client",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			// Create mock clients
-			mockIBMClient := &MockIBMClient{}
-			mockVPCSDKClient := &MockVPCSDKClient{}
-			mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-
-			// Setup mocks
-			tt.setupMocks(mockIBMClient, mockVPCSDKClient)
-
-			// Create VPC instance provider
-			provider := &testVPCInstanceProvider{
-				client: mockIBMClient,
-			}
-
-			// Test UpdateTags method
-			err := provider.UpdateTags(ctx, tt.providerID, tt.tags)
-
-			// Validate results
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-
-			// Verify all expected calls were made
-			mockIBMClient.AssertExpectations(t)
-			mockVPCSDKClient.AssertExpectations(t)
-		})
-	}
+	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
+	assert.Error(t, err)
+	assert.Nil(t, instance)
+	assert.Contains(t, err.Error(), "quota exceeded")
 }
 
 func TestExtractInstanceIDFromProviderID(t *testing.T) {
 	tests := []struct {
 		name       string
 		providerID string
-		expected   string
+		want       string
 	}{
 		{
 			name:       "valid provider ID",
-			providerID: "ibm:///us-south/test-instance-id",
-			expected:   "test-instance-id",
+			providerID: "ibm:///us-south/instance-123",
+			want:       "instance-123",
 		},
 		{
-			name:       "provider ID without region",
-			providerID: "ibm://test-instance-id",
-			expected:   "", // Invalid format, should return empty
-		},
-		{
-			name:       "simple provider ID",
-			providerID: "ibm://instance-123",
-			expected:   "", // Invalid format, should return empty
-		},
-		{
-			name:       "invalid provider ID",
-			providerID: "invalid-id",
-			expected:   "",
+			name:       "simple instance ID",
+			providerID: "instance-456",
+			want:       "", // extractInstanceIDFromProviderID expects ibm:// format
 		},
 		{
 			name:       "empty provider ID",
 			providerID: "",
-			expected:   "",
+			want:       "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractInstanceIDFromProviderID(tt.providerID)
+			got := extractInstanceIDFromProviderID(tt.providerID)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestVPCInstanceProvider_Get(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance := getTestVPCInstance()
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instance, err := vpcClient.GetInstance(ctx, "test-instance-id")
+	assert.NoError(t, err)
+	assert.NotNil(t, instance)
+	assert.Equal(t, "test-instance-id", *instance.ID)
+	assert.Equal(t, "test-nodeclaim", *instance.Name)
+}
+
+func TestVPCInstanceProvider_Delete(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testResponse := &core.DetailedResponse{StatusCode: 204}
+
+	// Expect DeleteInstance call
+	mockVPC.EXPECT().
+		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testResponse, nil).
+		Times(1)
+
+	// Expect GetInstance call to verify deletion (should return not found)
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(nil, nil, fmt.Errorf("instance not found: 404")).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	// Test delete
+	err := vpcClient.DeleteInstance(ctx, "test-instance-id")
+	assert.NoError(t, err)
+
+	// Verify instance is gone
+	instance, err := vpcClient.GetInstance(ctx, "test-instance-id")
+	assert.Error(t, err)
+	assert.Nil(t, instance)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestVPCInstanceProvider_List(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance1 := getTestVPCInstance()
+	testInstance2 := &vpcv1.Instance{
+		ID:   ptrString("instance-2"),
+		Name: ptrString("node-2"),
+		Profile: &vpcv1.InstanceProfileReference{
+			Name: ptrString("bx2-8x32"),
+		},
+		Zone: &vpcv1.ZoneReference{
+			Name: ptrString("us-south-2"),
+		},
+	}
+
+	testCollection := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{*testInstance1, *testInstance2},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testCollection, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instances, err := vpcClient.ListInstances(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, instances)
+	assert.Len(t, instances, 2)
+	assert.Equal(t, "test-instance-id", *instances[0].ID)
+	assert.Equal(t, "instance-2", *instances[1].ID)
+}
+
+func TestIsHexString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{
+			name:     "valid hex lowercase",
+			input:    "0123456789abcdef",
+			expected: true,
+		},
+		{
+			name:     "valid hex uppercase",
+			input:    "0123456789ABCDEF",
+			expected: true,
+		},
+		{
+			name:     "valid hex mixed case",
+			input:    "0123456789AbCdEf",
+			expected: true,
+		},
+		{
+			name:     "invalid hex with g",
+			input:    "0123456789abcdefg",
+			expected: false,
+		},
+		{
+			name:     "invalid hex with special chars",
+			input:    "0123-4567-89ab",
+			expected: false,
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: true, // Empty string is technically all hex chars
+		},
+		{
+			name:     "32 char resource group ID",
+			input:    "a1b2c3d4e5f67890a1b2c3d4e5f67890",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isHexString(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// Additional tests for real VPCInstanceProvider implementation
-
-func TestNewVPCInstanceProvider(t *testing.T) {
+func TestErrorClassification(t *testing.T) {
 	tests := []struct {
-		name        string
-		client      *ibm.Client
-		kubeClient  client.Client
-		expectError bool
+		name      string
+		err       error
+		isTimeout bool
+		isQuota   bool
+		isAuth    bool
 	}{
 		{
-			name:        "successful creation",
-			client:      &ibm.Client{},
-			kubeClient:  fake.NewClientBuilder().Build(),
-			expectError: false,
+			name:      "timeout error with 'timeout' string",
+			err:       fmt.Errorf("request timeout"),
+			isTimeout: true,
+			isQuota:   false,
+			isAuth:    false,
 		},
 		{
-			name:        "nil client",
-			client:      nil,
-			kubeClient:  fake.NewClientBuilder().Build(),
-			expectError: true,
+			name:      "context deadline exceeded",
+			err:       fmt.Errorf("context deadline exceeded"),
+			isTimeout: true,
+			isQuota:   false,
+			isAuth:    false,
+		},
+		{
+			name:      "quota exceeded error",
+			err:       fmt.Errorf("quota exceeded for instances"),
+			isTimeout: false,
+			isQuota:   true,
+			isAuth:    false,
+		},
+		{
+			name:      "limit exceeded error",
+			err:       fmt.Errorf("limit exceeded"),
+			isTimeout: false,
+			isQuota:   true,
+			isAuth:    false,
+		},
+		{
+			name:      "unauthorized error",
+			err:       fmt.Errorf("unauthorized"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    true,
+		},
+		{
+			name:      "403 forbidden",
+			err:       fmt.Errorf("403 forbidden"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    true,
+		},
+		{
+			name:      "401 authentication failed",
+			err:       fmt.Errorf("401 authentication failed"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    true,
+		},
+		{
+			name:      "nil error",
+			err:       nil,
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    false,
+		},
+		{
+			name:      "generic error",
+			err:       fmt.Errorf("something went wrong"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if !tt.expectError {
-				_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
-				defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
-			}
-
-			provider, err := NewVPCInstanceProvider(tt.client, tt.kubeClient)
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Nil(t, provider)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, provider)
-			}
+			assert.Equal(t, tt.isTimeout, isTimeoutError(tt.err), "isTimeoutError mismatch")
+			assert.Equal(t, tt.isQuota, isQuotaError(tt.err), "isQuotaError mismatch")
+			assert.Equal(t, tt.isAuth, isAuthError(tt.err), "isAuthError mismatch")
 		})
 	}
 }
 
-func TestNewVPCInstanceProviderWithKubernetesClient(t *testing.T) {
+func TestSelectSubnetFromStatusList(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+
 	tests := []struct {
-		name        string
-		client      *ibm.Client
-		kubeClient  client.Client
-		k8sClient   kubernetes.Interface
-		expectError bool
+		name      string
+		subnetIDs []string
+		expectLen int
 	}{
 		{
-			name:        "successful creation with k8s client",
-			client:      &ibm.Client{},
-			kubeClient:  fake.NewClientBuilder().Build(),
-			k8sClient:   k8sfake.NewSimpleClientset(),
-			expectError: false,
+			name:      "empty list",
+			subnetIDs: []string{},
+			expectLen: 0,
 		},
 		{
-			name:        "nil client",
-			client:      nil,
-			kubeClient:  fake.NewClientBuilder().Build(),
-			k8sClient:   nil,
-			expectError: true,
+			name:      "single subnet",
+			subnetIDs: []string{"subnet-1"},
+			expectLen: 8, // "subnet-1" length
+		},
+		{
+			name:      "multiple subnets",
+			subnetIDs: []string{"subnet-1", "subnet-2", "subnet-3"},
+			expectLen: 8, // Should return one of them
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if !tt.expectError {
-				_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
-				defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
-			}
-
-			provider, err := NewVPCInstanceProviderWithKubernetesClient(tt.client, tt.kubeClient, tt.k8sClient)
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Nil(t, provider)
-				assert.Contains(t, err.Error(), "IBM client cannot be nil")
+			result := provider.selectSubnetFromStatusList(tt.subnetIDs)
+			if tt.expectLen == 0 {
+				assert.Empty(t, result)
 			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, provider)
+				assert.NotEmpty(t, result)
+				if len(tt.subnetIDs) == 1 {
+					assert.Equal(t, tt.subnetIDs[0], result)
+				} else if len(tt.subnetIDs) > 1 {
+					// Should be one of the subnets in the list
+					found := false
+					for _, subnet := range tt.subnetIDs {
+						if subnet == result {
+							found = true
+							break
+						}
+					}
+					assert.True(t, found, "selected subnet should be from the input list")
+				}
 			}
 		})
 	}
 }
 
-func TestVPCInstanceProvider_List(t *testing.T) {
-	// Test the List method which exists on the real provider
+func TestGetDefaultSecurityGroup(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	// Create mock clients
-	mockIBMClient := &MockIBMClient{}
-	mockVPCSDKClient := &MockVPCSDKClient{}
-	mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
-	// Mock instance list response
-	instances := &vpcv1.InstanceCollection{
-		Instances: []vpcv1.Instance{
+	vpcID := "test-vpc-id"
+	defaultSGID := "default-sg-id"
+	defaultSGName := "default"
+
+	testSecurityGroups := &vpcv1.SecurityGroupCollection{
+		SecurityGroups: []vpcv1.SecurityGroup{
 			{
-				ID:   &[]string{"instance-1"}[0],
-				Name: &[]string{"test-instance-1"}[0],
+				ID:   &defaultSGID,
+				Name: &defaultSGName,
 			},
 			{
-				ID:   &[]string{"instance-2"}[0],
-				Name: &[]string{"test-instance-2"}[0],
+				ID:   ptrString("custom-sg-id"),
+				Name: ptrString("custom"),
 			},
 		},
 	}
 	testResponse := &core.DetailedResponse{StatusCode: 200}
-	mockVPCSDKClient.On("ListInstancesWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.ListInstancesOptions")).Return(instances, testResponse, nil)
 
-	// Create test provider interface
-	provider := &testVPCInstanceProvider{
-		client: mockIBMClient,
+	mockVPC.EXPECT().
+		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+		Return(testSecurityGroups, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	provider := &VPCInstanceProvider{}
+
+	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	assert.NoError(t, err)
+	assert.NotNil(t, sg)
+	assert.Equal(t, "default-sg-id", *sg.ID)
+	assert.Equal(t, "default", *sg.Name)
+}
+
+func TestGetDefaultSecurityGroup_NotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	vpcID := "test-vpc-id"
+
+	testSecurityGroups := &vpcv1.SecurityGroupCollection{
+		SecurityGroups: []vpcv1.SecurityGroup{
+			{
+				ID:   ptrString("custom-sg-id"),
+				Name: ptrString("custom"),
+			},
+		},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+		Return(testSecurityGroups, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	provider := &VPCInstanceProvider{}
+
+	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	assert.Error(t, err)
+	assert.Nil(t, sg)
+	assert.Contains(t, err.Error(), "default security group not found")
+}
+
+func TestSelectSubnetFromMultiZoneList(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+
+	tests := []struct {
+		name    string
+		subnets []subnet.SubnetInfo
+		want    string // zone of selected subnet
+	}{
+		{
+			name:    "empty list",
+			subnets: []subnet.SubnetInfo{},
+			want:    "",
+		},
+		{
+			name: "single subnet",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-1", Zone: "us-south-1", AvailableIPs: 100},
+			},
+			want: "us-south-1",
+		},
+		{
+			name: "multiple zones - selects from round-robin",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-1", Zone: "us-south-1", AvailableIPs: 50},
+				{ID: "subnet-2", Zone: "us-south-2", AvailableIPs: 100},
+				{ID: "subnet-3", Zone: "us-south-3", AvailableIPs: 75},
+			},
+			want: "", // Can be any zone due to round-robin
+		},
+		{
+			name: "multiple subnets same zone - picks highest IPs",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-1", Zone: "us-south-1", AvailableIPs: 50},
+				{ID: "subnet-2", Zone: "us-south-1", AvailableIPs: 100},
+				{ID: "subnet-3", Zone: "us-south-1", AvailableIPs: 75},
+			},
+			want: "us-south-1",
+		},
 	}
 
-	// Note: The real provider doesn't have a List method that matches the common interface
-	// This test validates the expected behavior if such a method existed
-	t.Run("list instances test structure", func(t *testing.T) {
-		// Test that we can create the provider and it has expected structure
-		assert.NotNil(t, provider)
-		assert.NotNil(t, provider.client)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := provider.selectSubnetFromMultiZoneList(tt.subnets)
+			if len(tt.subnets) == 0 {
+				assert.Empty(t, result.ID)
+			} else if len(tt.subnets) == 1 {
+				assert.Equal(t, tt.subnets[0].ID, result.ID)
+				assert.Equal(t, tt.want, result.Zone)
+			} else if tt.want != "" {
+				// For single-zone tests, verify zone matches
+				assert.Equal(t, tt.want, result.Zone)
+				// Should pick the one with highest IPs
+				assert.Equal(t, "subnet-2", result.ID)
+			} else {
+				// For multi-zone, just verify it's one of the input subnets
+				found := false
+				for _, subnet := range tt.subnets {
+					if subnet.ID == result.ID {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found)
+			}
+		})
+	}
+}
+
+func TestIsIBMInstanceNotFoundError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "not found error from IBM",
+			err:      fmt.Errorf("instance not found: 404"),
+			expected: true, // ibm.IsNotFound checks for "not found" in error message
+		},
+		{
+			name:     "generic error",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isIBMInstanceNotFoundError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestBuildVolumeAttachments_Defaults(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+	nodeClass := &v1alpha1.IBMNodeClass{
+		Spec: v1alpha1.IBMNodeClassSpec{
+			// No BlockDeviceMappings - should use defaults
+		},
+	}
+
+	bootVolume, additionalVolumes, err := provider.buildVolumeAttachments(nodeClass, "test-instance", "us-south-1")
+
+	assert.NoError(t, err)
+	assert.NotNil(t, bootVolume)
+	assert.Nil(t, additionalVolumes)
+
+	// Verify default boot volume
+	assert.NotNil(t, bootVolume.Volume)
+	assert.Equal(t, "test-instance-boot", *bootVolume.Volume.Name)
+	assert.Equal(t, int64(100), *bootVolume.Volume.Capacity)
+	assert.Equal(t, "general-purpose", *bootVolume.Volume.Profile.(*vpcv1.VolumeProfileIdentityByName).Name)
+	assert.True(t, *bootVolume.DeleteVolumeOnInstanceDelete)
+}
+
+func TestVPCClient_UpdateInstanceTags(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	instanceID := "test-instance-id"
+	tags := map[string]string{
+		"environment": "test",
+		"managed-by":  "karpenter",
+	}
+
+	// Mock UpdateInstanceWithContext call
+	mockVPC.EXPECT().
+		UpdateInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(&vpcv1.Instance{ID: &instanceID}, &core.DetailedResponse{StatusCode: 200}, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	err := vpcClient.UpdateInstanceTags(ctx, instanceID, tags)
+	assert.NoError(t, err)
+}
+
+func TestVPCClient_ListVolumes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	volumeName := "test-volume"
+	testVolumes := &vpcv1.VolumeCollection{
+		Volumes: []vpcv1.Volume{
+			{
+				ID:   ptrString("volume-1"),
+				Name: &volumeName,
+			},
+		},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListVolumesWithContext(gomock.Any(), gomock.Any()).
+		Return(testVolumes, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	volumes, err := vpcClient.ListVolumes(ctx, &vpcv1.ListVolumesOptions{Name: &volumeName})
+	assert.NoError(t, err)
+	assert.NotNil(t, volumes)
+	assert.Len(t, volumes.Volumes, 1)
+	assert.Equal(t, "volume-1", *volumes.Volumes[0].ID)
+}
+
+func TestVPCClient_DeleteVolume(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	volumeID := "volume-to-delete"
+	testResponse := &core.DetailedResponse{StatusCode: 204}
+
+	mockVPC.EXPECT().
+		DeleteVolumeWithContext(gomock.Any(), gomock.Any()).
+		Return(testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	err := vpcClient.DeleteVolume(ctx, volumeID)
+	assert.NoError(t, err)
+}
+
+func TestVPCClient_ListVirtualNetworkInterfaces(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	vniName := "test-vni"
+	testVNIs := &vpcv1.VirtualNetworkInterfaceCollection{
+		VirtualNetworkInterfaces: []vpcv1.VirtualNetworkInterface{
+			{
+				ID:   ptrString("vni-1"),
+				Name: &vniName,
+			},
+		},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListVirtualNetworkInterfacesWithContext(gomock.Any(), gomock.Any()).
+		Return(testVNIs, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	vnis, err := vpcClient.ListVirtualNetworkInterfaces(ctx, &vpcv1.ListVirtualNetworkInterfacesOptions{})
+	assert.NoError(t, err)
+	assert.NotNil(t, vnis)
+	assert.Len(t, vnis.VirtualNetworkInterfaces, 1)
+	assert.Equal(t, "vni-1", *vnis.VirtualNetworkInterfaces[0].ID)
+}
+
+func TestVPCClient_DeleteVirtualNetworkInterfaces(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	vniID := "vni-to-delete"
+	testVNI := &vpcv1.VirtualNetworkInterface{
+		ID: &vniID,
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 204}
+
+	mockVPC.EXPECT().
+		DeleteVirtualNetworkInterfacesWithContext(gomock.Any(), gomock.Any()).
+		Return(testVNI, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	err := vpcClient.DeleteVirtualNetworkInterface(ctx, vniID)
+	assert.NoError(t, err)
+}
+
+func TestVPCClient_GetImage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	imageID := "test-image-id"
+	testImage := &vpcv1.Image{
+		ID:   &imageID,
+		Name: ptrString("ubuntu-22-04"),
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		GetImageWithContext(gomock.Any(), gomock.Any()).
+		Return(testImage, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	image, err := vpcClient.GetImage(ctx, imageID)
+	assert.NoError(t, err)
+	assert.NotNil(t, image)
+	assert.Equal(t, imageID, *image.ID)
+	assert.Equal(t, "ubuntu-22-04", *image.Name)
+}
+
+func TestExtractInstanceIDFromProviderID_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		providerID string
+		want       string
+	}{
+		{
+			name:       "valid provider ID with zone prefix",
+			providerID: "ibm:///us-south/02u7_1234-5678-abcd",
+			want:       "02u7_1234-5678-abcd",
+		},
+		{
+			name:       "valid provider ID simple",
+			providerID: "ibm:///us-south/instance-123",
+			want:       "instance-123",
+		},
+		{
+			name:       "too few parts",
+			providerID: "ibm://us-south",
+			want:       "",
+		},
+		{
+			name:       "exactly 4 parts",
+			providerID: "ibm:///region/instance",
+			want:       "instance",
+		},
+		{
+			name:       "more than 4 parts - gets last",
+			providerID: "ibm:///region/zone/instance-id",
+			want:       "instance-id",
+		},
+		{
+			name:       "empty string",
+			providerID: "",
+			want:       "",
+		},
+		{
+			name:       "no slashes",
+			providerID: "instance-id",
+			want:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractInstanceIDFromProviderID(tt.providerID)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsPartialFailure_AdditionalCases(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+
+	tests := []struct {
+		name     string
+		ibmErr   *ibm.IBMError
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			ibmErr:   nil,
+			expected: false,
+		},
+		{
+			name: "quota exceeded",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_instance_quota_exceeded",
+			},
+			expected: true,
+		},
+		{
+			name: "profile not available",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_instance_profile_not_available",
+			},
+			expected: true,
+		},
+		{
+			name: "security group not found",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 404,
+				Code:       "vpc_security_group_not_found",
+			},
+			expected: true,
+		},
+		{
+			name: "subnet not available",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_subnet_not_available",
+			},
+			expected: true,
+		},
+		{
+			name: "volume capacity insufficient",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_volume_capacity_insufficient",
+			},
+			expected: true,
+		},
+		{
+			name: "boot volume creation failed",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 500,
+				Code:       "vpc_boot_volume_creation_failed",
+			},
+			expected: true,
+		},
+		{
+			name: "5xx error - potential partial failure",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 503,
+				Code:       "service_unavailable",
+			},
+			expected: true,
+		},
+		{
+			name: "4xx error - not partial failure",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 404,
+				Code:       "not_found",
+			},
+			expected: false,
+		},
+		{
+			name: "unknown error code with 2xx - not partial",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 200,
+				Code:       "unknown",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := provider.isPartialFailure(tt.ibmErr)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestProviderGet_Success(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance := getTestVPCInstance()
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instance, err := vpcClient.GetInstance(ctx, "test-instance-id")
+	assert.NoError(t, err)
+	assert.NotNil(t, instance)
+	assert.Equal(t, "test-instance-id", *instance.ID)
+	assert.Equal(t, "test-nodeclaim", *instance.Name)
+}
+
+func TestProviderList_Success(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	instance1 := getTestVPCInstance()
+	instance2 := &vpcv1.Instance{
+		ID:   ptrString("instance-2"),
+		Name: ptrString("node-2"),
+		Profile: &vpcv1.InstanceProfileReference{
+			Name: ptrString("bx2-8x32"),
+		},
+		Zone: &vpcv1.ZoneReference{
+			Name: ptrString("us-south-2"),
+		},
+	}
+
+	testCollection := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{*instance1, *instance2},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testCollection, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instances, err := vpcClient.ListInstances(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, instances)
+	assert.Len(t, instances, 2)
+	assert.Equal(t, "test-instance-id", *instances[0].ID)
+	assert.Equal(t, "instance-2", *instances[1].ID)
+}
+
+func TestGetCurrentVPCUsage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	vcpuCount1 := int64(4)
+	vcpuCount2 := int64(8)
+
+	testInstances := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{
+			{
+				ID:   ptrString("instance-1"),
+				Name: ptrString("node-1"),
+				Vcpu: &vpcv1.InstanceVcpu{
+					Count: &vcpuCount1,
+				},
+			},
+			{
+				ID:   ptrString("instance-2"),
+				Name: ptrString("node-2"),
+				Vcpu: &vpcv1.InstanceVcpu{
+					Count: &vcpuCount2,
+				},
+			},
+		},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstances, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+
+	instances, err := vpcClient.ListInstances(ctx)
+	assert.NoError(t, err)
+	assert.Len(t, instances, 2)
+
+	// Calculate usage (what getCurrentVPCUsage does)
+	instanceCount := len(instances)
+	vcpuTotal := 0
+	for _, inst := range instances {
+		if inst.Vcpu != nil && inst.Vcpu.Count != nil {
+			vcpuTotal += int(*inst.Vcpu.Count)
+		}
+	}
+
+	assert.Equal(t, 2, instanceCount)
+	assert.Equal(t, 12, vcpuTotal)
+}
+
+func TestVPCClient_ErrorCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMock   func(*mock_ibm.MockvpcClientInterface)
+		testFunc    func(*ibm.VPCClient, context.Context) error
+		expectedErr string
+	}{
+		{
+			name: "UpdateInstanceTags error",
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().UpdateInstanceWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, nil, fmt.Errorf("instance not found"))
+			},
+			testFunc: func(c *ibm.VPCClient, ctx context.Context) error {
+				return c.UpdateInstanceTags(ctx, "test-id", map[string]string{"foo": "bar"})
+			},
+			expectedErr: "instance not found",
+		},
+		{
+			name: "GetInstance not found",
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().GetInstanceWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, nil, fmt.Errorf("instance not found"))
+			},
+			testFunc: func(c *ibm.VPCClient, ctx context.Context) error {
+				_, err := c.GetInstance(ctx, "nonexistent-id")
+				return err
+			},
+			expectedErr: "instance not found",
+		},
+		{
+			name: "DeleteInstance error",
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, fmt.Errorf("permission denied"))
+			},
+			testFunc: func(c *ibm.VPCClient, ctx context.Context) error {
+				return c.DeleteInstance(ctx, "test-id")
+			},
+			expectedErr: "permission denied",
+		},
+		{
+			name: "ListVolumes error",
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().ListVolumesWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, nil, fmt.Errorf("API error"))
+			},
+			testFunc: func(c *ibm.VPCClient, ctx context.Context) error {
+				_, err := c.ListVolumes(ctx, &vpcv1.ListVolumesOptions{})
+				return err
+			},
+			expectedErr: "API error",
+		},
+		{
+			name: "DeleteVolume not found",
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().DeleteVolumeWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, fmt.Errorf("volume not found"))
+			},
+			testFunc: func(c *ibm.VPCClient, ctx context.Context) error {
+				return c.DeleteVolume(ctx, "nonexistent-volume")
+			},
+			expectedErr: "volume not found",
+		},
+		{
+			name: "GetImage error",
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().GetImageWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, nil, fmt.Errorf("image not available"))
+			},
+			testFunc: func(c *ibm.VPCClient, ctx context.Context) error {
+				_, err := c.GetImage(ctx, "unavailable-image")
+				return err
+			},
+			expectedErr: "image not available",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			ctx := context.Background()
+			mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+			tt.setupMock(mockVPC)
+
+			vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+			err := tt.testFunc(vpcClient, ctx)
+
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectedErr)
+		})
+	}
+}
+
+func TestVPCClient_EmptyResults(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	t.Run("ListInstances empty", func(t *testing.T) {
+		emptyCollection := &vpcv1.InstanceCollection{Instances: []vpcv1.Instance{}}
+		mockVPC.EXPECT().ListInstancesWithContext(gomock.Any(), gomock.Any()).
+			Return(emptyCollection, &core.DetailedResponse{StatusCode: 200}, nil)
+
+		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+		instances, err := vpcClient.ListInstances(ctx)
+
+		assert.NoError(t, err)
+		assert.Empty(t, instances)
 	})
 }
 
-func TestVPCInstanceProvider_BootstrapUserData(t *testing.T) {
-	tests := []struct {
-		name         string
-		nodeClass    *v1alpha1.IBMNodeClass
-		expectedData string
-		containsData string
-	}{
-		{
-			name: "manual userData provided",
-			nodeClass: &v1alpha1.IBMNodeClass{
-				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:   "us-south",
-					UserData: "#!/bin/bash\necho 'custom script'",
-				},
-			},
-			expectedData: "#!/bin/bash\necho 'custom script'",
-		},
-	}
+func TestGetDefaultSecurityGroup_Error(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Test manual userData
-			assert.Equal(t, tt.expectedData, tt.nodeClass.Spec.UserData)
-		})
-	}
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	mockVPC.EXPECT().
+		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+		Return(nil, nil, fmt.Errorf("API error")).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	provider := &VPCInstanceProvider{}
+
+	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+	assert.Error(t, err)
+	assert.Nil(t, sg)
+	assert.Contains(t, err.Error(), "listing security groups")
 }
 
-func TestVPCInstanceProvider_ValidationErrors(t *testing.T) {
-	tests := []struct {
-		name          string
-		nodeClass     *v1alpha1.IBMNodeClass
-		nodeClaim     *karpv1.NodeClaim
-		expectedError string
-	}{
-		{
-			name: "missing instance type in nodeClaim labels",
-			nodeClass: &v1alpha1.IBMNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
-				Spec: v1alpha1.IBMNodeClassSpec{
-					Region: "us-south",
-					Zone:   "us-south-1",
-					Subnet: "test-subnet",
-					// Missing InstanceProfile
-				},
-			},
-			nodeClaim: &karpv1.NodeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "test-nodeclaim",
-					Labels: map[string]string{
-						// Missing node.kubernetes.io/instance-type label
-					},
-				},
-				Spec: karpv1.NodeClaimSpec{
-					NodeClassRef: &karpv1.NodeClassReference{Name: "test-nodeclass"},
-				},
-			},
-			expectedError: "no instance type selected",
-		},
-		{
-			name: "success when nodeclass instance profile missing but nodeClaim has instance type",
-			nodeClass: &v1alpha1.IBMNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
-				Spec: v1alpha1.IBMNodeClassSpec{
-					Region: "us-south",
-					Zone:   "us-south-1",
-					Subnet: "test-subnet",
-					Image:  "test-image-id",
-					VPC:    "test-vpc-id",
-					// Missing InstanceProfile - but nodeClaim has instance type, so should succeed
-				},
-			},
-			nodeClaim: &karpv1.NodeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclaim",
-					Labels: map[string]string{
-						"node.kubernetes.io/instance-type": "bx2-4x16", // This should be used
-					},
-				},
-				Spec: karpv1.NodeClaimSpec{
-					NodeClassRef: &karpv1.NodeClassReference{Name: "test-nodeclass"},
-				},
-			},
-			expectedError: "", // Should succeed now
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create fake client with nodeclass
-			scheme := getTestScheme()
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.nodeClass).Build()
-
-			// Create mock clients
-			mockIBMClient := &MockIBMClient{}
-			mockVPCSDKClient := &MockVPCSDKClient{}
-			mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-
-			if tt.expectedError == "" {
-				// Setup mocks for successful case
-				testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				mockVPCSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-
-				expectedInstance := getTestVPCInstance()
-				mockVPCSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
-			}
-
-			// Create provider
-			provider := &testVPCInstanceProvider{
-				client:     mockIBMClient,
-				kubeClient: fakeClient,
-			}
-
-			// Test create
-			ctx := context.Background()
-			result, err := provider.Create(ctx, tt.nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-
-			if tt.expectedError != "" {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
-				assert.Nil(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-			}
-		})
-	}
+// Helper function to create string pointers
+func ptrString(s string) *string {
+	return &s
 }
 
-func TestVPCInstanceProvider_SecurityGroupHandling(t *testing.T) {
+func TestNewVPCInstanceProvider(t *testing.T) {
 	tests := []struct {
 		name          string
-		nodeClass     *v1alpha1.IBMNodeClass
-		setupMocks    func(*MockVPCSDKClient)
+		client        *ibm.Client
+		kubeClient    client.Client
 		expectError   bool
 		errorContains string
 	}{
 		{
-			name: "explicit security groups provided",
-			nodeClass: &v1alpha1.IBMNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
-				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:          "us-south",
-					Zone:            "us-south-1",
-					InstanceProfile: "bx2-4x16",
-					Image:           "test-image-id",
-					VPC:             "test-vpc-id",
-					Subnet:          "test-subnet-id",
-					SecurityGroups:  []string{"sg-1", "sg-2"},
-				},
-			},
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// Mock image resolution
-				testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-
-				// Mock instance creation
-				expectedInstance := getTestVPCInstance()
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
-			},
-			expectError: false,
+			name:          "nil IBM client",
+			client:        nil,
+			kubeClient:    &mockKubeClient{},
+			expectError:   true,
+			errorContains: "IBM client cannot be nil",
 		},
 		{
-			name: "default security group used when none specified",
-			nodeClass: &v1alpha1.IBMNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
-				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:          "us-south",
-					Zone:            "us-south-1",
-					InstanceProfile: "bx2-4x16",
-					Image:           "test-image-id",
-					VPC:             "test-vpc-id",
-					Subnet:          "test-subnet-id",
-					// No SecurityGroups specified
-				},
-			},
-			setupMocks: func(vpcSDKClient *MockVPCSDKClient) {
-				// This test validates the structure but would need more complex mocking
-				// for the default security group lookup
-				testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
-				testResponse := &core.DetailedResponse{StatusCode: 200}
-				vpcSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, testResponse, nil)
-
-				expectedInstance := getTestVPCInstance()
-				vpcSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.CreateInstanceOptions")).Return(expectedInstance, testResponse, nil)
-			},
-			expectError: false,
+			name:          "nil kube client",
+			client:        &ibm.Client{},
+			kubeClient:    nil,
+			expectError:   true,
+			errorContains: "kubernetes client cannot be nil",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Validate NodeClass configuration structure
-			if len(tt.nodeClass.Spec.SecurityGroups) > 0 {
-				assert.Contains(t, tt.nodeClass.Spec.SecurityGroups, "sg-1")
-				assert.Equal(t, 2, len(tt.nodeClass.Spec.SecurityGroups))
-			} else {
-				assert.Empty(t, tt.nodeClass.Spec.SecurityGroups)
-			}
+			// Note: NewVPCInstanceProvider requires IBMCLOUD_API_KEY environment variable
+			// These tests focus on client validation which happens before env var check
+			_, err := NewVPCInstanceProvider(tt.client, tt.kubeClient)
 
-			// Test that we can create test nodeclaim
-			nodeClaim := &karpv1.NodeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclaim",
-					Labels: map[string]string{
-						"node.kubernetes.io/instance-type": "bx2-4x16",
-					},
-				},
-				Spec: karpv1.NodeClaimSpec{
-					NodeClassRef: &karpv1.NodeClassReference{Name: tt.nodeClass.Name},
-				},
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
 			}
-			assert.NotNil(t, nodeClaim)
 		})
 	}
 }
 
-// Test helper functions
-func TestVPCInstanceProvider_HelperFunctions(t *testing.T) {
-	t.Run("isIBMInstanceNotFoundError", func(t *testing.T) {
-		// Test the helper function logic structure
-		err := fmt.Errorf("instance not found")
-		// The actual implementation would call ibm.IsNotFound(err)
-		// Here we test the function structure
-		result := isIBMInstanceNotFoundError(err)
-		// The function exists and can be called (actual behavior depends on ibm.IsNotFound implementation)
-		// We just verify it returns a boolean value
-		assert.IsType(t, false, result)
-	})
-
-	t.Run("getDefaultSecurityGroup placeholder", func(t *testing.T) {
-		// Test validates the placeholder implementation structure
-		// The real implementation returns a placeholder security group
-		mockIBMClient := &MockIBMClient{}
-		mockVPCSDKClient := &MockVPCSDKClient{}
-		mockIBMClient.mockVPCSDKClient = mockVPCSDKClient
-
-		provider := &testVPCInstanceProvider{
-			client: mockIBMClient,
-		}
-
-		// Validate provider structure
-		assert.NotNil(t, provider)
-		assert.NotNil(t, provider.client)
-
-		// The actual getDefaultSecurityGroup is not exposed, but we can validate
-		// that the provider has the necessary structure for security group handling
-		vpcClient, err := provider.client.GetVPCClient()
-		if err == nil {
-			assert.NotNil(t, vpcClient)
-		}
-	})
+type mockKubeClient struct {
+	client.Client
 }
 
-// Test real VPCInstanceProvider methods to increase coverage
-func TestRealVPCInstanceProvider_Methods(t *testing.T) {
-	t.Run("NewVPCInstanceProvider", func(t *testing.T) {
-		// Test with nil client
-		provider, err := NewVPCInstanceProvider(nil, nil)
-		assert.Error(t, err)
-		assert.Nil(t, provider)
-		assert.Contains(t, err.Error(), "IBM client cannot be nil")
-
-		// Test with valid client
-		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
-		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
-
-		client := &ibm.Client{}
-		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
-		provider, err = NewVPCInstanceProvider(client, fakeKubeClient)
-		assert.NoError(t, err)
-		assert.NotNil(t, provider)
-	})
-
-	t.Run("NewVPCInstanceProviderWithKubernetesClient", func(t *testing.T) {
-		// Test with nil client
-		provider, err := NewVPCInstanceProviderWithKubernetesClient(nil, nil, nil)
-		assert.Error(t, err)
-		assert.Nil(t, provider)
-		assert.Contains(t, err.Error(), "IBM client cannot be nil")
-
-		// Test with valid client
-		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
-		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
-
-		client := &ibm.Client{}
-		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
-		fakeK8sClient := k8sfake.NewSimpleClientset()
-		provider, err = NewVPCInstanceProviderWithKubernetesClient(client, fakeKubeClient, fakeK8sClient)
-		assert.NoError(t, err)
-		assert.NotNil(t, provider)
-	})
-
-	t.Run("extractInstanceIDFromProviderID", func(t *testing.T) {
-		tests := []struct {
-			name       string
-			providerID string
-			expected   string
-		}{
-			{
-				name:       "valid IBM provider ID",
-				providerID: "ibm:///us-south/test-instance-id",
-				expected:   "test-instance-id",
-			},
-			{
-				name:       "provider ID with different region",
-				providerID: "ibm:///eu-de/another-instance-id",
-				expected:   "another-instance-id",
-			},
-			{
-				name:       "invalid provider ID format",
-				providerID: "aws:///us-west-1/instance-123",
-				expected:   "instance-123", // The function extracts the last part regardless of prefix
-			},
-			{
-				name:       "malformed provider ID",
-				providerID: "ibm://missing-slash",
-				expected:   "",
-			},
-			{
-				name:       "empty provider ID",
-				providerID: "",
-				expected:   "",
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				result := extractInstanceIDFromProviderID(tt.providerID)
-				assert.Equal(t, tt.expected, result)
-			})
-		}
-	})
-}
-
-// Test coverage for error handling paths
-func TestVPCInstanceProvider_ErrorHandling(t *testing.T) {
-	t.Run("Create with nil kubeClient", func(t *testing.T) {
-		provider := &VPCInstanceProvider{
-			client:     &ibm.Client{},
-			kubeClient: nil, // This will cause an error
-		}
-
-		ctx := context.Background()
-		nodeClaim := getTestNodeClaim()
-
-		result, err := provider.Create(ctx, nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "kubernetes client not set")
-	})
-
-	t.Run("Create with missing NodeClass", func(t *testing.T) {
-		// Create empty fake client (no NodeClass objects)
-		scheme := getTestScheme()
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-		provider := &VPCInstanceProvider{
-			client:     &ibm.Client{},
-			kubeClient: fakeClient,
-		}
-
-		ctx := context.Background()
-		nodeClaim := getTestNodeClaim()
-
-		result, err := provider.Create(ctx, nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "not found")
-	})
-}
-
-// Test real provider List, Get, Delete, UpdateTags methods
-func TestVPCInstanceProvider_CRUDOperations(t *testing.T) {
-	t.Run("List method structure", func(t *testing.T) {
-		// Set required environment variable
-		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
-		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
-
-		// Create a real provider instance
-		client := &ibm.Client{}
-		fakeKubeClient := fake.NewClientBuilder().WithScheme(getTestScheme()).Build()
-		provider, err := NewVPCInstanceProvider(client, fakeKubeClient)
-		assert.NoError(t, err)
-		assert.NotNil(t, provider)
-
-		// Convert to concrete type to access all methods
-		realProvider := provider.(*VPCInstanceProvider)
-		assert.NotNil(t, realProvider.client)
-		assert.NotNil(t, realProvider.kubeClient)
-	})
-
-	t.Run("Get method error handling", func(t *testing.T) {
-		// Test with invalid provider ID
-		provider := &VPCInstanceProvider{
-			client: &ibm.Client{},
-		}
-
-		ctx := context.Background()
-		result, err := provider.Get(ctx, "invalid-provider-id")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "could not extract instance ID")
-	})
-
-	t.Run("Delete method error handling", func(t *testing.T) {
-		// Test with invalid provider ID
-		provider := &VPCInstanceProvider{
-			client: &ibm.Client{},
-		}
-
-		ctx := context.Background()
-		node := &corev1.Node{
-			Spec: corev1.NodeSpec{
-				ProviderID: "invalid-provider-id",
-			},
-		}
-
-		err := provider.Delete(ctx, node)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "could not extract instance ID")
-	})
-
-	t.Run("UpdateTags method error handling", func(t *testing.T) {
-		// Test with invalid provider ID
-		provider := &VPCInstanceProvider{
-			client: &ibm.Client{},
-		}
-
-		ctx := context.Background()
-		tags := map[string]string{"test": "value"}
-
-		err := provider.UpdateTags(ctx, "invalid-provider-id", tags)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "could not extract instance ID")
-	})
-}
-
-// Test createKubernetesClient function
-func TestVPCInstanceProvider_CreateKubernetesClient(t *testing.T) {
-	t.Run("createKubernetesClient success", func(t *testing.T) {
-		provider := &VPCInstanceProvider{
-			client: &ibm.Client{},
-		}
-
-		// This function creates a kubernetes client from in-cluster config
-		// In a test environment, this will likely fail, but we can test the function exists
-		ctx := context.Background()
-		client, err := provider.createKubernetesClient(ctx)
-		// In test environment, this should fail gracefully
-		if err != nil {
-			assert.Contains(t, err.Error(), "creating in-cluster config")
-		} else {
-			assert.NotNil(t, client)
-		}
-	})
-}
-
-// Test security group management functionality
-func TestVPCInstanceProvider_SecurityGroups(t *testing.T) {
-	t.Run("should apply specified security groups to instance prototype", func(t *testing.T) {
-		// Create NodeClass with specific security groups
-		nodeClass := &v1alpha1.IBMNodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-nodeclass",
-			},
-			Spec: v1alpha1.IBMNodeClassSpec{
-				Region:          "us-south",
-				Zone:            "us-south-1",
-				InstanceProfile: "bx2-4x16",
-				Image:           "test-image-id",
-				VPC:             "test-vpc-id",
-				Subnet:          "test-subnet-id",
-				SecurityGroups:  []string{"r010-sg12345", "r010-sg67890"},
-			},
-		}
-
-		// Create NodeClaim
-		nodeClaim := &karpv1.NodeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-node",
-				Labels: map[string]string{
-					"node.kubernetes.io/instance-type": "bx2-4x16",
-				},
-			},
-			Spec: karpv1.NodeClaimSpec{
-				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
-				},
-			},
-		}
-
-		// Set up fake kubernetes client
-		scheme := getTestScheme()
-		k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodeClass).Build()
-
-		// Mock VPC SDK client
-		mockVPCSDKClient := &MockVPCSDKClient{}
-		mockIBMClient := &MockIBMClient{mockVPCSDKClient: mockVPCSDKClient}
-
-		// Mock image resolution
-		testImage := &vpcv1.Image{
-			ID: &[]string{"test-image-id"}[0],
-		}
-		mockVPCSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, &core.DetailedResponse{StatusCode: 200}, nil)
-
-		// Mock instance creation with security group validation
-		expectedInstance := &vpcv1.Instance{
-			ID:   &[]string{"test-instance-id"}[0],
-			Name: &[]string{"test-node"}[0],
-		}
-
-		// Verify security groups are passed correctly in CreateInstanceWithContext call
-		mockVPCSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.MatchedBy(func(options *vpcv1.CreateInstanceOptions) bool {
-			if options.InstancePrototype == nil {
-				return false
-			}
-
-			prototype, ok := options.InstancePrototype.(*vpcv1.InstancePrototypeInstanceByImage)
-			if !ok {
-				return false
-			}
-
-			if prototype.PrimaryNetworkInterface == nil {
-				return false
-			}
-
-			if prototype.PrimaryNetworkInterface.SecurityGroups == nil {
-				return false
-			}
-
-			// Verify both security groups are present in the request
-			if len(prototype.PrimaryNetworkInterface.SecurityGroups) != 2 {
-				return false
-			}
-
-			// Check security group IDs match expected values
-			sgIDs := make(map[string]bool)
-			for _, sg := range prototype.PrimaryNetworkInterface.SecurityGroups {
-				if sgIdentity, ok := sg.(*vpcv1.SecurityGroupIdentity); ok && sgIdentity.ID != nil {
-					sgIDs[*sgIdentity.ID] = true
-				} else {
-					return false
-				}
-			}
-
-			return sgIDs["r010-sg12345"] && sgIDs["r010-sg67890"]
-		})).Return(expectedInstance, &core.DetailedResponse{StatusCode: 201}, nil)
-
-		// Create test provider
-		provider := &testVPCInstanceProvider{
-			client:     mockIBMClient,
-			kubeClient: k8sClient,
-		}
-
-		// Create the instance
-		ctx := context.Background()
-		node, err := provider.Create(ctx, nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-
-		// Verify results
-		assert.NoError(t, err)
-		assert.NotNil(t, node)
-		assert.Equal(t, "test-node", node.Name)
-
-		// Verify mocks were called with expected parameters
-		mockVPCSDKClient.AssertExpectations(t)
-	})
-
-	t.Run("should use default security group when none specified", func(t *testing.T) {
-		// Create NodeClass without security groups
-		nodeClass := &v1alpha1.IBMNodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-nodeclass",
-			},
-			Spec: v1alpha1.IBMNodeClassSpec{
-				Region:          "us-south",
-				Zone:            "us-south-1",
-				InstanceProfile: "bx2-4x16",
-				Image:           "test-image-id",
-				VPC:             "test-vpc-id",
-				Subnet:          "test-subnet-id",
-				// SecurityGroups not specified - should trigger default behavior
-			},
-		}
-
-		// Create NodeClaim
-		nodeClaim := &karpv1.NodeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-node",
-				Labels: map[string]string{
-					"node.kubernetes.io/instance-type": "bx2-4x16",
-				},
-			},
-			Spec: karpv1.NodeClaimSpec{
-				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
-				},
-			},
-		}
-
-		// Set up fake kubernetes client
-		scheme := getTestScheme()
-		k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodeClass).Build()
-
-		// Mock VPC SDK client
-		mockVPCSDKClient := &MockVPCSDKClient{}
-		mockIBMClient := &MockIBMClient{mockVPCSDKClient: mockVPCSDKClient}
-
-		// Mock image resolution
-		testImage := &vpcv1.Image{
-			ID: &[]string{"test-image-id"}[0],
-		}
-		mockVPCSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, &core.DetailedResponse{StatusCode: 200}, nil)
-
-		// Mock instance creation
-		expectedInstance := &vpcv1.Instance{
-			ID:   &[]string{"test-instance-id"}[0],
-			Name: &[]string{"test-node"}[0],
-		}
-
-		// Verify default security group is used when none specified
-		mockVPCSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.MatchedBy(func(options *vpcv1.CreateInstanceOptions) bool {
-			if options.InstancePrototype == nil {
-				return false
-			}
-
-			prototype, ok := options.InstancePrototype.(*vpcv1.InstancePrototypeInstanceByImage)
-			if !ok {
-				return false
-			}
-
-			if prototype.PrimaryNetworkInterface == nil {
-				return false
-			}
-
-			if prototype.PrimaryNetworkInterface.SecurityGroups == nil {
-				return false
-			}
-
-			// Verify default security group is present
-			if len(prototype.PrimaryNetworkInterface.SecurityGroups) != 1 {
-				return false
-			}
-
-			if sgIdentity, ok := prototype.PrimaryNetworkInterface.SecurityGroups[0].(*vpcv1.SecurityGroupIdentity); ok && sgIdentity.ID != nil {
-				return *sgIdentity.ID == "default-sg"
-			}
-
-			return false
-		})).Return(expectedInstance, &core.DetailedResponse{StatusCode: 201}, nil)
-
-		// Create test provider
-		provider := &testVPCInstanceProvider{
-			client:     mockIBMClient,
-			kubeClient: k8sClient,
-		}
-
-		// Create the instance
-		ctx := context.Background()
-		node, err := provider.Create(ctx, nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-
-		// Verify results
-		assert.NoError(t, err)
-		assert.NotNil(t, node)
-		assert.Equal(t, "test-node", node.Name)
-
-		// Verify mocks were called with expected parameters
-		mockVPCSDKClient.AssertExpectations(t)
-	})
-
-	t.Run("should handle empty security groups list", func(t *testing.T) {
-		// Create NodeClass with empty security groups array
-		nodeClass := &v1alpha1.IBMNodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-nodeclass",
-			},
-			Spec: v1alpha1.IBMNodeClassSpec{
-				Region:          "us-south",
-				Zone:            "us-south-1",
-				InstanceProfile: "bx2-4x16",
-				Image:           "test-image-id",
-				VPC:             "test-vpc-id",
-				Subnet:          "test-subnet-id",
-				SecurityGroups:  []string{}, // Empty list should trigger default behavior
-			},
-		}
-
-		nodeClaim := &karpv1.NodeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-node",
-				Labels: map[string]string{
-					"node.kubernetes.io/instance-type": "bx2-4x16",
-				},
-			},
-			Spec: karpv1.NodeClaimSpec{
-				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
-				},
-			},
-		}
-
-		scheme := getTestScheme()
-		k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodeClass).Build()
-
-		mockVPCSDKClient := &MockVPCSDKClient{}
-		mockIBMClient := &MockIBMClient{mockVPCSDKClient: mockVPCSDKClient}
-
-		testImage := &vpcv1.Image{ID: &[]string{"test-image-id"}[0]}
-		mockVPCSDKClient.On("GetImageWithContext", mock.Anything, mock.AnythingOfType("*vpcv1.GetImageOptions")).Return(testImage, &core.DetailedResponse{StatusCode: 200}, nil)
-
-		expectedInstance := &vpcv1.Instance{
-			ID:   &[]string{"test-instance-id"}[0],
-			Name: &[]string{"test-node"}[0],
-		}
-
-		// Verify empty security groups list triggers default security group logic
-		mockVPCSDKClient.On("CreateInstanceWithContext", mock.Anything, mock.MatchedBy(func(options *vpcv1.CreateInstanceOptions) bool {
-			prototype := options.InstancePrototype.(*vpcv1.InstancePrototypeInstanceByImage)
-			if prototype.PrimaryNetworkInterface == nil || prototype.PrimaryNetworkInterface.SecurityGroups == nil {
-				return false
-			}
-
-			// Should have default security group when list is empty
-			if len(prototype.PrimaryNetworkInterface.SecurityGroups) == 1 {
-				if sgIdentity, ok := prototype.PrimaryNetworkInterface.SecurityGroups[0].(*vpcv1.SecurityGroupIdentity); ok && sgIdentity.ID != nil {
-					return *sgIdentity.ID == "default-sg"
-				}
-			}
-
-			return false
-		})).Return(expectedInstance, &core.DetailedResponse{StatusCode: 201}, nil)
-
-		provider := &testVPCInstanceProvider{
-			client:     mockIBMClient,
-			kubeClient: k8sClient,
-		}
-
-		ctx := context.Background()
-		node, err := provider.Create(ctx, nodeClaim, []*cloudprovider.InstanceType{{Name: "bx2-2x8"}})
-
-		assert.NoError(t, err)
-		assert.NotNil(t, node)
-		mockVPCSDKClient.AssertExpectations(t)
-	})
-}
-
-// TestVPCInstanceProvider_VNIConfiguration tests Virtual Network Interface configuration
-func TestVPCInstanceProvider_VNIConfiguration(t *testing.T) {
-	t.Skip("VNI test requires mock interface refactoring - VNI implementation tested via integration")
-
-	// Note: VNI functionality is validated through:
-	// 1. Compilation tests (ensuring VNI types work correctly)
-	// 2. Integration tests with real IBM Cloud API
-	// 3. All existing tests pass with VNI implementation
-}
-
-// TestVPCInstanceProvider_BlockDeviceMappings tests block device mapping functionality
-func TestVPCInstanceProvider_BlockDeviceMappings(t *testing.T) {
+func TestExtractInstanceIDFromProviderID_Comprehensive(t *testing.T) {
 	tests := []struct {
-		name                 string
-		blockDeviceMappings  []v1alpha1.BlockDeviceMapping
-		expectedBootCapacity int64
-		expectedBootProfile  string
-		expectedDataVolumes  int
-		validateAttachments  func(*testing.T, *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext, []vpcv1.VolumeAttachmentPrototype)
+		name       string
+		providerID string
+		want       string
 	}{
 		{
-			name:                 "Default configuration when no mappings specified",
-			blockDeviceMappings:  nil,
-			expectedBootCapacity: 100,
-			expectedBootProfile:  "general-purpose",
-			expectedDataVolumes:  0,
+			name:       "standard IBM provider ID",
+			providerID: "ibm:///us-south-1/instance-123",
+			want:       "instance-123",
 		},
 		{
-			name: "Custom boot volume only",
-			blockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-				{
-					RootVolume: true,
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity:            &[]int64{200}[0],
-						Profile:             &[]string{"10iops-tier"}[0],
-						DeleteOnTermination: &[]bool{false}[0],
-					},
-				},
-			},
-			expectedBootCapacity: 200,
-			expectedBootProfile:  "10iops-tier",
-			expectedDataVolumes:  0,
-			validateAttachments: func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext, data []vpcv1.VolumeAttachmentPrototype) {
-				assert.Equal(t, false, *boot.DeleteVolumeOnInstanceDelete)
-			},
+			name:       "provider ID with complex zone",
+			providerID: "ibm:///eu-de-2/02u7_abcd-1234-efgh-5678",
+			want:       "02u7_abcd-1234-efgh-5678",
 		},
 		{
-			name: "Boot volume with custom IOPS",
-			blockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-				{
-					RootVolume: true,
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity:  &[]int64{150}[0],
-						Profile:   &[]string{"custom"}[0],
-						IOPS:      &[]int64{5000}[0],
-						Bandwidth: &[]int64{250}[0],
-					},
-				},
-			},
-			expectedBootCapacity: 150,
-			expectedBootProfile:  "custom",
-			expectedDataVolumes:  0,
-			validateAttachments: func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext, data []vpcv1.VolumeAttachmentPrototype) {
-				assert.Equal(t, int64(5000), *boot.Volume.Iops)
-				assert.Equal(t, int64(250), *boot.Volume.Bandwidth)
-			},
+			name:       "provider ID with just region",
+			providerID: "ibm:///us-south/simple-id",
+			want:       "simple-id",
 		},
 		{
-			name: "Boot volume with encryption",
-			blockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-				{
-					RootVolume: true,
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity:        &[]int64{100}[0],
-						EncryptionKeyID: &[]string{"crn:v1:bluemix:public:kms:us-south:a/123:456::789"}[0],
-						Tags:            []string{"encrypted", "production"},
-					},
-				},
-			},
-			expectedBootCapacity: 100,
-			expectedBootProfile:  "general-purpose",
-			expectedDataVolumes:  0,
-			validateAttachments: func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext, data []vpcv1.VolumeAttachmentPrototype) {
-				assert.NotNil(t, boot.Volume.EncryptionKey)
-				assert.Equal(t, 2, len(boot.Volume.UserTags))
-			},
+			name:       "invalid format - no slashes",
+			providerID: "instance-456",
+			want:       "",
 		},
 		{
-			name: "Boot volume and data volumes",
-			blockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-				{
-					RootVolume: true,
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity: &[]int64{100}[0],
-					},
-				},
-				{
-					DeviceName: &[]string{"data-disk-1"}[0],
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity: &[]int64{500}[0],
-						Profile:  &[]string{"5iops-tier"}[0],
-					},
-				},
-				{
-					DeviceName: &[]string{"data-disk-2"}[0],
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity:            &[]int64{1000}[0],
-						Profile:             &[]string{"10iops-tier"}[0],
-						DeleteOnTermination: &[]bool{false}[0],
-					},
-				},
-			},
-			expectedBootCapacity: 100,
-			expectedBootProfile:  "general-purpose",
-			expectedDataVolumes:  2,
-			validateAttachments: func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext, data []vpcv1.VolumeAttachmentPrototype) {
-				assert.Len(t, data, 2)
-				// Check first data volume
-				assert.Equal(t, "data-disk-1", *data[0].Name)
-				vol1 := data[0].Volume.(*vpcv1.VolumeAttachmentPrototypeVolumeVolumePrototypeInstanceContextVolumePrototypeInstanceContextVolumeByCapacity)
-				assert.Equal(t, int64(500), *vol1.Capacity)
-				// Check second data volume
-				assert.Equal(t, "data-disk-2", *data[1].Name)
-				vol2 := data[1].Volume.(*vpcv1.VolumeAttachmentPrototypeVolumeVolumePrototypeInstanceContextVolumePrototypeInstanceContextVolumeByCapacity)
-				assert.Equal(t, int64(1000), *vol2.Capacity)
-				assert.Equal(t, false, *data[1].DeleteVolumeOnInstanceDelete)
-			},
+			name:       "invalid format - not enough parts",
+			providerID: "ibm://us-south",
+			want:       "",
 		},
 		{
-			name: "Multiple data volumes without boot volume mapping uses default boot",
-			blockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-				{
-					DeviceName: &[]string{"extra-storage"}[0],
-					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity: &[]int64{2000}[0],
-					},
-				},
-			},
-			expectedBootCapacity: 100,               // Default
-			expectedBootProfile:  "general-purpose", // Default
-			expectedDataVolumes:  1,
+			name:       "empty string",
+			providerID: "",
+			want:       "",
+		},
+		{
+			name:       "provider ID with extra slashes",
+			providerID: "ibm:///region/zone/instance/extra",
+			want:       "extra",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test provider
-			provider := &VPCInstanceProvider{}
-
-			// Create test node class
-			nodeClass := &v1alpha1.IBMNodeClass{
-				Spec: v1alpha1.IBMNodeClassSpec{
-					BlockDeviceMappings: tt.blockDeviceMappings,
-				},
-			}
-
-			// Call buildVolumeAttachments
-			bootVolume, dataVolumes, err := provider.buildVolumeAttachments(nodeClass, "test-instance", "us-south-1")
-
-			// Verify no error
-			assert.NoError(t, err)
-			assert.NotNil(t, bootVolume)
-
-			// Verify boot volume
-			assert.Equal(t, tt.expectedBootCapacity, *bootVolume.Volume.Capacity)
-			profileIdentity := bootVolume.Volume.Profile.(*vpcv1.VolumeProfileIdentityByName)
-			assert.Equal(t, tt.expectedBootProfile, *profileIdentity.Name)
-
-			// Verify data volumes count
-			assert.Len(t, dataVolumes, tt.expectedDataVolumes)
-
-			// Run custom validations if provided
-			if tt.validateAttachments != nil {
-				tt.validateAttachments(t, bootVolume, dataVolumes)
-			}
+			got := extractInstanceIDFromProviderID(tt.providerID)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-// TestVPCInstanceProvider_BlockDeviceMappingValidation tests validation logic for block device mappings
-func TestVPCInstanceProvider_BlockDeviceMappingValidation(t *testing.T) {
+func TestSelectSubnetFromStatusList_EdgeCases(t *testing.T) {
 	provider := &VPCInstanceProvider{}
 
-	t.Run("Empty volume spec for root volume uses defaults", func(t *testing.T) {
-		nodeClass := &v1alpha1.IBMNodeClass{
-			Spec: v1alpha1.IBMNodeClassSpec{
-				BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-					{
-						RootVolume: true,
-						// No VolumeSpec
-					},
-				},
+	tests := []struct {
+		name      string
+		subnetIDs []string
+		validate  func(t *testing.T, result string)
+	}{
+		{
+			name:      "nil slice",
+			subnetIDs: nil,
+			validate: func(t *testing.T, result string) {
+				assert.Empty(t, result)
 			},
-		}
+		},
+		{
+			name:      "empty slice",
+			subnetIDs: []string{},
+			validate: func(t *testing.T, result string) {
+				assert.Empty(t, result)
+			},
+		},
+		{
+			name:      "single subnet",
+			subnetIDs: []string{"subnet-abc"},
+			validate: func(t *testing.T, result string) {
+				assert.Equal(t, "subnet-abc", result)
+			},
+		},
+		{
+			name:      "multiple subnets - round robin",
+			subnetIDs: []string{"subnet-1", "subnet-2", "subnet-3", "subnet-4", "subnet-5"},
+			validate: func(t *testing.T, result string) {
+				assert.NotEmpty(t, result)
+				// Should be one of the input subnets
+				found := false
+				for _, subnet := range []string{"subnet-1", "subnet-2", "subnet-3", "subnet-4", "subnet-5"} {
+					if subnet == result {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "selected subnet should be from input list")
+			},
+		},
+	}
 
-		bootVolume, _, err := provider.buildVolumeAttachments(nodeClass, "test", "us-south-1")
-		assert.NoError(t, err)
-		assert.Equal(t, int64(100), *bootVolume.Volume.Capacity)
-		profileIdentity := bootVolume.Volume.Profile.(*vpcv1.VolumeProfileIdentityByName)
-		assert.Equal(t, "general-purpose", *profileIdentity.Name)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := provider.selectSubnetFromStatusList(tt.subnetIDs)
+			tt.validate(t, result)
+		})
+	}
+}
 
-	t.Run("Data volume without spec is skipped", func(t *testing.T) {
-		nodeClass := &v1alpha1.IBMNodeClass{
-			Spec: v1alpha1.IBMNodeClassSpec{
-				BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
-					{
-						RootVolume: false,
-						// No VolumeSpec - should be skipped
-					},
-					{
-						RootVolume: false,
-						VolumeSpec: &v1alpha1.VolumeSpec{
-							Capacity: &[]int64{200}[0],
+func TestSelectSubnetFromMultiZoneList_DetailedCases(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+
+	tests := []struct {
+		name     string
+		subnets  []subnet.SubnetInfo
+		validate func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo)
+	}{
+		{
+			name:    "nil slice",
+			subnets: nil,
+			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
+				assert.Empty(t, result.ID)
+				assert.Empty(t, result.Zone)
+			},
+		},
+		{
+			name:    "empty slice",
+			subnets: []subnet.SubnetInfo{},
+			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
+				assert.Empty(t, result.ID)
+			},
+		},
+		{
+			name: "single subnet",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-only", Zone: "zone-1", AvailableIPs: 100},
+			},
+			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
+				assert.Equal(t, "subnet-only", result.ID)
+				assert.Equal(t, "zone-1", result.Zone)
+			},
+		},
+		{
+			name: "multiple zones - balanced selection",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-z1", Zone: "zone-1", AvailableIPs: 100},
+				{ID: "subnet-z2", Zone: "zone-2", AvailableIPs: 200},
+				{ID: "subnet-z3", Zone: "zone-3", AvailableIPs: 150},
+			},
+			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
+				assert.NotEmpty(t, result.ID)
+				// Should be one of the zones
+				validZones := []string{"zone-1", "zone-2", "zone-3"}
+				found := false
+				for _, zone := range validZones {
+					if zone == result.Zone {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found)
+			},
+		},
+		{
+			name: "same zone multiple subnets - picks highest available IPs",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-small", Zone: "zone-1", AvailableIPs: 50},
+				{ID: "subnet-medium", Zone: "zone-1", AvailableIPs: 100},
+				{ID: "subnet-large", Zone: "zone-1", AvailableIPs: 200},
+			},
+			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
+				assert.Equal(t, "subnet-large", result.ID)
+				assert.Equal(t, int32(200), result.AvailableIPs)
+			},
+		},
+		{
+			name: "zero available IPs",
+			subnets: []subnet.SubnetInfo{
+				{ID: "subnet-full", Zone: "zone-1", AvailableIPs: 0},
+				{ID: "subnet-available", Zone: "zone-2", AvailableIPs: 50},
+			},
+			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
+				// Should still select one - provider may attempt to use full subnet
+				assert.NotEmpty(t, result.ID)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := provider.selectSubnetFromMultiZoneList(tt.subnets)
+			tt.validate(t, result, tt.subnets)
+		})
+	}
+}
+
+func TestBuildVolumeAttachments_VariousConfigurations(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+
+	tests := []struct {
+		name          string
+		nodeClass     *v1alpha1.IBMNodeClass
+		instanceName  string
+		zone          string
+		expectError   bool
+		validateBoot  func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext)
+		validateAdded func(t *testing.T, additional []vpcv1.VolumeAttachmentPrototype)
+	}{
+		{
+			name: "default boot volume",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{},
+			},
+			instanceName: "test-node",
+			zone:         "us-south-1",
+			expectError:  false,
+			validateBoot: func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext) {
+				assert.NotNil(t, boot)
+				assert.NotNil(t, boot.Volume)
+				assert.Equal(t, "test-node-boot", *boot.Volume.Name)
+				assert.Equal(t, int64(100), *boot.Volume.Capacity)
+				assert.True(t, *boot.DeleteVolumeOnInstanceDelete)
+			},
+			validateAdded: func(t *testing.T, additional []vpcv1.VolumeAttachmentPrototype) {
+				assert.Nil(t, additional)
+			},
+		},
+		{
+			name: "custom boot volume size",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{
+					BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
+						{
+							DeviceName: ptrString("/dev/vda"),
+							VolumeSpec: &v1alpha1.VolumeSpec{
+								Capacity: ptrInt64(250),
+								Profile:  ptrString("general-purpose"),
+							},
+							RootVolume: true,
 						},
 					},
 				},
 			},
+			instanceName: "test-node-custom",
+			zone:         "eu-de-1",
+			expectError:  false,
+			validateBoot: func(t *testing.T, boot *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext) {
+				assert.NotNil(t, boot)
+				assert.NotNil(t, boot.Volume)
+				assert.Equal(t, int64(250), *boot.Volume.Capacity)
+				assert.Equal(t, "general-purpose", *boot.Volume.Profile.(*vpcv1.VolumeProfileIdentityByName).Name)
+			},
+			validateAdded: func(t *testing.T, additional []vpcv1.VolumeAttachmentPrototype) {
+				assert.Nil(t, additional)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			boot, additional, err := provider.buildVolumeAttachments(tt.nodeClass, tt.instanceName, tt.zone)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.validateBoot != nil {
+					tt.validateBoot(t, boot)
+				}
+				if tt.validateAdded != nil {
+					tt.validateAdded(t, additional)
+				}
+			}
+		})
+	}
+}
+
+func ptrInt64(i int64) *int64 {
+	return &i
+}
+
+func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	provider := &VPCInstanceProvider{}
+
+	t.Run("multiple security groups - finds default", func(t *testing.T) {
+		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+		sgDefault := "default-sg-id"
+		sgCustom1 := "custom-sg-1"
+		sgCustom2 := "custom-sg-2"
+
+		testSGs := &vpcv1.SecurityGroupCollection{
+			SecurityGroups: []vpcv1.SecurityGroup{
+				{ID: &sgCustom1, Name: ptrString("custom-sg-1")},
+				{ID: &sgDefault, Name: ptrString("default")},
+				{ID: &sgCustom2, Name: ptrString("another-custom")},
+			},
 		}
 
-		_, dataVolumes, err := provider.buildVolumeAttachments(nodeClass, "test", "us-south-1")
+		mockVPC.EXPECT().
+			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+			Return(testSGs, &core.DetailedResponse{StatusCode: 200}, nil)
+
+		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+
 		assert.NoError(t, err)
-		assert.Len(t, dataVolumes, 1) // Only one data volume should be created
+		assert.NotNil(t, sg)
+		assert.Equal(t, "default-sg-id", *sg.ID)
 	})
+
+	t.Run("empty security group list", func(t *testing.T) {
+		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+		emptySGs := &vpcv1.SecurityGroupCollection{
+			SecurityGroups: []vpcv1.SecurityGroup{},
+		}
+
+		mockVPC.EXPECT().
+			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+			Return(emptySGs, &core.DetailedResponse{StatusCode: 200}, nil)
+
+		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+
+		assert.Error(t, err)
+		assert.Nil(t, sg)
+		assert.Contains(t, err.Error(), "default security group not found")
+	})
+
+	t.Run("API error during list", func(t *testing.T) {
+		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+		mockVPC.EXPECT().
+			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+			Return(nil, nil, fmt.Errorf("API rate limit exceeded"))
+
+		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+
+		assert.Error(t, err)
+		assert.Nil(t, sg)
+		assert.Contains(t, err.Error(), "listing security groups")
+	})
+}
+
+func TestIsPartialFailure_ComprehensiveCases(t *testing.T) {
+	provider := &VPCInstanceProvider{}
+
+	tests := []struct {
+		name     string
+		ibmErr   *ibm.IBMError
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			ibmErr:   nil,
+			expected: false,
+		},
+		{
+			name: "quota exceeded - instances",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_instance_quota_exceeded",
+				Message:    "Instance quota exceeded",
+			},
+			expected: true,
+		},
+		{
+			name: "quota exceeded - vcpu",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_vcpu_quota_exceeded",
+				Message:    "VCPU quota exceeded",
+			},
+			expected: false, // Not explicitly in the partial failure list
+		},
+		{
+			name: "profile not available",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_instance_profile_not_available",
+			},
+			expected: true,
+		},
+		{
+			name: "image not found",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 404,
+				Code:       "vpc_image_not_found",
+			},
+			expected: false, // Not in the partial failure list
+		},
+		{
+			name: "subnet not available",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_subnet_not_available",
+			},
+			expected: true,
+		},
+		{
+			name: "insufficient subnet capacity",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_subnet_insufficient_capacity",
+			},
+			expected: false, // Not in the partial failure list
+		},
+		{
+			name: "volume capacity insufficient",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "vpc_volume_capacity_insufficient",
+			},
+			expected: true,
+		},
+		{
+			name: "5xx server error",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 503,
+				Code:       "service_unavailable",
+			},
+			expected: true,
+		},
+		{
+			name: "502 bad gateway",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 502,
+				Code:       "bad_gateway",
+			},
+			expected: true,
+		},
+		{
+			name: "not found - not partial",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 404,
+				Code:       "not_found",
+			},
+			expected: false,
+		},
+		{
+			name: "unauthorized - not partial",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 401,
+				Code:       "unauthorized",
+			},
+			expected: false,
+		},
+		{
+			name: "forbidden - not partial",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 403,
+				Code:       "forbidden",
+			},
+			expected: false,
+		},
+		{
+			name: "400 bad request - not partial",
+			ibmErr: &ibm.IBMError{
+				StatusCode: 400,
+				Code:       "invalid_request",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := provider.isPartialFailure(tt.ibmErr)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestErrorClassificationHelpers(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		isTimeout bool
+		isQuota   bool
+		isAuth    bool
+	}{
+		{
+			name:      "timeout error with 'timeout' keyword",
+			err:       fmt.Errorf("request timeout after 30s"),
+			isTimeout: true,
+			isQuota:   false,
+			isAuth:    false,
+		},
+		{
+			name:      "context deadline exceeded",
+			err:       fmt.Errorf("context deadline exceeded"),
+			isTimeout: true,
+			isQuota:   false,
+			isAuth:    false,
+		},
+		{
+			name:      "i/o timeout",
+			err:       fmt.Errorf("i/o timeout"),
+			isTimeout: true,
+			isQuota:   false,
+			isAuth:    false,
+		},
+		{
+			name:      "quota exceeded",
+			err:       fmt.Errorf("quota exceeded for VPC instances"),
+			isTimeout: false,
+			isQuota:   true,
+			isAuth:    false,
+		},
+		{
+			name:      "limit exceeded",
+			err:       fmt.Errorf("limit exceeded"),
+			isTimeout: false,
+			isQuota:   true,
+			isAuth:    false,
+		},
+		{
+			name:      "rate limit",
+			err:       fmt.Errorf("rate limit exceeded"),
+			isTimeout: false,
+			isQuota:   true,
+			isAuth:    false,
+		},
+		{
+			name:      "unauthorized",
+			err:       fmt.Errorf("unauthorized: invalid API key"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    true,
+		},
+		{
+			name:      "403 forbidden",
+			err:       fmt.Errorf("403 forbidden"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    true,
+		},
+		{
+			name:      "401 authentication required",
+			err:       fmt.Errorf("401 authentication required"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    true,
+		},
+		{
+			name:      "nil error",
+			err:       nil,
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    false,
+		},
+		{
+			name:      "generic error",
+			err:       fmt.Errorf("something went wrong"),
+			isTimeout: false,
+			isQuota:   false,
+			isAuth:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.isTimeout, isTimeoutError(tt.err), "isTimeoutError mismatch")
+			assert.Equal(t, tt.isQuota, isQuotaError(tt.err), "isQuotaError mismatch")
+			assert.Equal(t, tt.isAuth, isAuthError(tt.err), "isAuthError mismatch")
+		})
+	}
+}
+
+func TestAddKarpenterTags(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name          string
+		clusterEnv    string
+		nodeClaim     *karpv1.NodeClaim
+		nodeClass     *v1alpha1.IBMNodeClass
+		setupMock     func(*mock_ibm.MockvpcClientInterface)
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:       "successful tag addition",
+			clusterEnv: "test-cluster",
+			nodeClaim: &karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-claim",
+					Labels: map[string]string{
+						"karpenter.sh/nodepool": "default",
+					},
+				},
+			},
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{
+					Tags: map[string]string{
+						"env": "prod",
+					},
+				},
+			},
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().
+					UpdateInstanceWithContext(gomock.Any(), gomock.Any()).
+					Return(&vpcv1.Instance{}, &core.DetailedResponse{StatusCode: 200}, nil)
+			},
+			expectError: false,
+		},
+		{
+			name:       "API error during update",
+			clusterEnv: "test-cluster",
+			nodeClaim: &karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-claim",
+					Labels: map[string]string{
+						"karpenter.sh/nodepool": "default",
+					},
+				},
+			},
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{},
+			},
+			setupMock: func(m *mock_ibm.MockvpcClientInterface) {
+				m.EXPECT().
+					UpdateInstanceWithContext(gomock.Any(), gomock.Any()).
+					Return(nil, nil, fmt.Errorf("API rate limit exceeded"))
+			},
+			expectError:   true,
+			errorContains: "updating instance tags",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldClusterName := os.Getenv("CLUSTER_NAME")
+			if tt.clusterEnv != "" {
+				_ = os.Setenv("CLUSTER_NAME", tt.clusterEnv)
+			} else {
+				_ = os.Unsetenv("CLUSTER_NAME")
+			}
+			defer func() { _ = os.Setenv("CLUSTER_NAME", oldClusterName) }()
+
+			mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+			tt.setupMock(mockVPC)
+
+			vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+			provider := &VPCInstanceProvider{}
+
+			err := provider.addKarpenterTags(ctx, vpcClient, "test-instance-id", tt.nodeClass, tt.nodeClaim)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

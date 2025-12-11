@@ -60,8 +60,8 @@ func (m *MockIBMClient) GetGlobalCatalogClient() (*ibm.GlobalCatalogClient, erro
 	return nil, nil
 }
 
-func (m *MockIBMClient) GetIKSClient() *ibm.IKSClient {
-	return nil
+func (m *MockIBMClient) GetIKSClient() (ibm.IKSClientInterface, error) {
+	return nil, nil
 }
 
 func (m *MockIBMClient) GetIAMClient() *ibm.IAMClient {
@@ -231,6 +231,121 @@ func TestNewProvider(t *testing.T) {
 	}
 }
 
+func TestCalculateOverhead(t *testing.T) {
+	provider := &IBMInstanceTypeProvider{}
+	ctx := context.Background()
+	defaultCPU := resource.MustParse("100m")
+	defaultMem := resource.MustParse("1Gi")
+	defaultEvict := resource.MustParse("500Mi")
+
+	t.Run("Nil node class, fall back to defaults", func(t *testing.T) {
+		overhead := provider.calculateOverhead(ctx, nil)
+		if assert.NotNil(t, overhead) {
+			assert.True(t, overhead.KubeReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.KubeReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.EvictionThreshold[corev1.ResourceMemory].Equal(defaultEvict))
+		}
+	})
+
+	t.Run("Nil kubelet, fall back to defaults", func(t *testing.T) {
+		nodeClass := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Kubelet: nil,
+			},
+		}
+
+		overhead := provider.calculateOverhead(ctx, nodeClass)
+		if assert.NotNil(t, overhead) {
+			assert.True(t, overhead.KubeReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.KubeReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.EvictionThreshold[corev1.ResourceMemory].Equal(defaultEvict))
+		}
+	})
+
+	t.Run("Full override from node class", func(t *testing.T) {
+		nodeClass := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Kubelet: &v1alpha1.KubeletConfiguration{
+					KubeReserved: map[string]string{
+						"cpu":    "1",
+						"memory": "2Gi",
+					},
+					SystemReserved: map[string]string{
+						"cpu":    "500m",
+						"memory": "1Gi",
+					},
+					EvictionHard: map[string]string{
+						"memory.available": "500Mi",
+					},
+				},
+			},
+		}
+
+		overhead := provider.calculateOverhead(ctx, nodeClass)
+		if assert.NotNil(t, overhead) {
+			assert.True(t, overhead.KubeReserved[corev1.ResourceCPU].Equal(resource.MustParse("1")))
+			assert.True(t, overhead.KubeReserved[corev1.ResourceMemory].Equal(resource.MustParse("2Gi")))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceCPU].Equal(resource.MustParse("500m")))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceMemory].Equal(resource.MustParse("1Gi")))
+			assert.True(t, overhead.EvictionThreshold[corev1.ResourceMemory].Equal(resource.MustParse("500Mi")))
+		}
+	})
+
+	t.Run("Partial override, keep defaults for missing fields", func(t *testing.T) {
+		nodeClass := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Kubelet: &v1alpha1.KubeletConfiguration{
+					KubeReserved: map[string]string{
+						"cpu": "2",
+					},
+				},
+			},
+		}
+
+		overhead := provider.calculateOverhead(ctx, nodeClass)
+		if assert.NotNil(t, overhead) {
+			assert.True(t, overhead.KubeReserved[corev1.ResourceCPU].Equal(resource.MustParse("2")))
+			assert.True(t, overhead.KubeReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.EvictionThreshold[corev1.ResourceMemory].Equal(defaultEvict))
+		}
+	})
+
+	t.Run("Invalid quantities, fall back to defaults", func(t *testing.T) {
+		nodeClass := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Kubelet: &v1alpha1.KubeletConfiguration{
+					KubeReserved: map[string]string{
+						"cpu":    "not-a-quantity",
+						"memory": "also-bad",
+					},
+					SystemReserved: map[string]string{
+						"cpu":    "still-bad",
+						"memory": "nope",
+					},
+					EvictionHard: map[string]string{
+						"memory.available": "broken",
+					},
+				},
+			},
+		}
+
+		overhead := provider.calculateOverhead(ctx, nodeClass)
+		if assert.NotNil(t, overhead) {
+			assert.True(t, overhead.KubeReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.KubeReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceCPU].Equal(defaultCPU))
+			assert.True(t, overhead.SystemReserved[corev1.ResourceMemory].Equal(defaultMem))
+			assert.True(t, overhead.EvictionThreshold[corev1.ResourceMemory].Equal(defaultEvict))
+		}
+	})
+}
+
 // Test convertVPCProfileToInstanceType
 func TestConvertVPCProfileToInstanceType(t *testing.T) {
 	provider := &IBMInstanceTypeProvider{}
@@ -291,7 +406,7 @@ func TestConvertVPCProfileToInstanceType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.convertVPCProfileToInstanceType(context.Background(), tt.profile)
+			got, err := provider.convertVPCProfileToInstanceType(context.Background(), tt.profile, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("convertVPCProfileToInstanceType() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -327,7 +442,7 @@ func TestIBMInstanceTypeProvider_GetWithMocks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.provider.Get(ctx, tt.instanceName)
+			_, err := tt.provider.Get(ctx, tt.instanceName, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Get() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -383,7 +498,7 @@ func TestIBMInstanceTypeProvider_FilterInstanceTypes_NilClient(t *testing.T) {
 		MinimumMemory: 8,
 	}
 
-	result, err := provider.FilterInstanceTypes(context.Background(), requirements)
+	result, err := provider.FilterInstanceTypes(context.Background(), requirements, nil)
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "IBM client not initialized")
@@ -420,7 +535,7 @@ func TestIBMInstanceTypeProvider_Get_Extended(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := tt.provider.Get(context.Background(), tt.instanceName)
+			result, err := tt.provider.Get(context.Background(), tt.instanceName, nil)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, result)
@@ -455,7 +570,7 @@ func TestIBMInstanceTypeProvider_List_Extended(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := tt.provider.List(context.Background())
+			result, err := tt.provider.List(context.Background(), nil)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, result)
@@ -749,7 +864,7 @@ func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := provider.FilterInstanceTypes(context.Background(), tt.requirements)
+			result, err := provider.FilterInstanceTypes(context.Background(), tt.requirements, nil)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -891,7 +1006,7 @@ func TestConvertVPCProfileToInstanceType_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := provider.convertVPCProfileToInstanceType(context.Background(), tt.profile)
+			result, err := provider.convertVPCProfileToInstanceType(context.Background(), tt.profile, nil)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -929,7 +1044,7 @@ func TestConvertVPCProfileToInstanceType_WithGPU(t *testing.T) {
 		},
 	}
 
-	result, err := provider.convertVPCProfileToInstanceType(context.Background(), profile)
+	result, err := provider.convertVPCProfileToInstanceType(context.Background(), profile, nil)
 
 	// Should error due to nil client
 	assert.Error(t, err)
@@ -953,7 +1068,7 @@ func TestConvertVPCProfileToInstanceType_PodCapacity(t *testing.T) {
 		},
 	}
 
-	result, err := provider.convertVPCProfileToInstanceType(context.Background(), profile)
+	result, err := provider.convertVPCProfileToInstanceType(context.Background(), profile, nil)
 
 	// Should error due to nil client trying to get zones
 	assert.Error(t, err)

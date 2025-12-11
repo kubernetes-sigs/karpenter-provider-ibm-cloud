@@ -1,0 +1,5 @@
+defaultBaseImage: gcr.io/distroless/static:nonroot
+defaultPlatforms:
+  - linux/amd64
+  - linux/arm64
+  - linux/s390x

@@ -121,7 +121,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	zone := node.Labels["topology.kubernetes.io/zone"]
 	log.Info("Found instance", "type", instanceTypeName, "zone", zone)
 
-	instanceTypes, err := c.instanceTypeProvider.List(ctx)
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		log.Error(err, "Failed to list instance types")
 		return nil, fmt.Errorf("listing instance types, %w", err)
@@ -282,45 +282,57 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", readyCondition.Message)
 	}
 
-	log.Info("Resolving instance types")
-	instanceTypes, err := c.instanceTypeProvider.List(ctx)
-	if err != nil {
-		log.Error(err, "Failed to resolve instance types")
-		return nil, fmt.Errorf("resolving instance types, %w", err)
+	// Determine provider mode for this NodeClass
+	providerMode := c.providerFactory.GetProviderMode(nodeClass)
+
+	var compatible []*cloudprovider.InstanceType
+
+	// For IKS mode, skip VPC instance type filtering - IKS provider handles its own flavor selection
+	if providerMode == commonTypes.IKSMode {
+		log.Info("IKS mode detected, skipping VPC instance type filtering")
+		// For IKS, we pass nil compatible list - the IKS provider will handle flavor selection
+		compatible = nil
+	} else {
+		log.Info("Resolving instance types")
+		instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
+		if err != nil {
+			log.Error(err, "Failed to resolve instance types")
+			return nil, fmt.Errorf("resolving instance types, %w", err)
+		}
+
+		reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
+		compatible = lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
+			reqErr := reqs.Compatible(i.Requirements, scheduling.AllowUndefinedWellKnownLabels)
+			offeringsCompatible := len(i.Offerings.Compatible(reqs).Available()) > 0
+			resourcesFit := resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
+
+			if reqErr != nil {
+				log.Info("Instance type incompatible with requirements",
+					"type", i.Name,
+					"error", reqErr)
+				return false
+			}
+			if !offeringsCompatible {
+				log.Info("No compatible offerings available",
+					"type", i.Name)
+				return false
+			}
+			if !resourcesFit {
+				log.Info("Resources don't fit",
+					"type", i.Name,
+					"requested", nodeClaim.Spec.Resources.Requests,
+					"allocatable", i.Allocatable())
+				return false
+			}
+			return true
+		})
+
+		if len(compatible) == 0 {
+			log.Error(nil, "No compatible instance types found")
+			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
+		}
+		log.Info("Found compatible instance types", "count", len(compatible), "types", lo.Map(compatible, func(it *cloudprovider.InstanceType, _ int) string { return it.Name }))
 	}
-
-	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
-	compatible := lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
-		reqErr := reqs.Compatible(i.Requirements, scheduling.AllowUndefinedWellKnownLabels)
-		offeringsCompatible := len(i.Offerings.Compatible(reqs).Available()) > 0
-		resourcesFit := resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
-
-		if reqErr != nil {
-			log.Info("Instance type incompatible with requirements",
-				"type", i.Name,
-				"error", reqErr)
-			return false
-		}
-		if !offeringsCompatible {
-			log.Info("No compatible offerings available",
-				"type", i.Name)
-			return false
-		}
-		if !resourcesFit {
-			log.Info("Resources don't fit",
-				"type", i.Name,
-				"requested", nodeClaim.Spec.Resources.Requests,
-				"allocatable", i.Allocatable())
-			return false
-		}
-		return true
-	})
-
-	if len(compatible) == 0 {
-		log.Error(nil, "No compatible instance types found")
-		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
-	}
-	log.Info("Found compatible instance types", "count", len(compatible), "types", lo.Map(compatible, func(it *cloudprovider.InstanceType, _ int) string { return it.Name }))
 
 	log.Info("Creating instance")
 
@@ -514,7 +526,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	}
 	log.Info("Resolved NodeClass", "name", nodeClass.Name)
 
-	instanceTypes, err := c.instanceTypeProvider.List(ctx)
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		log.Error(err, "Failed to list instance types")
 		return nil, err

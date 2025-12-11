@@ -58,6 +58,7 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/bootstrap"
+	ikspoolcleanup "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/iks/poolcleanup"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/interruption"
 	nodeorphancleanup "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/node/orphancleanup"
 	nodeclaimgc "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/garbagecollection"
@@ -228,6 +229,16 @@ func NewControllers(
 		logger.Info("IBM client not available, skipping orphaned node cleanup controller")
 	} else {
 		logger.Info("orphaned node cleanup controller is disabled")
+	}
+
+	// Add IKS pool cleanup controller for dynamic pool lifecycle management
+	if ibmClient != nil {
+		poolCleanupCtrl := ikspoolcleanup.NewController(kubeClient, ibmClient)
+		if err := poolCleanupCtrl.Register(ctx, mgr); err != nil {
+			logger.Error(err, "failed to register IKS pool cleanup controller")
+		} else {
+			logger.Info("enabled IKS pool cleanup controller")
+		}
 	}
 
 	return controllers

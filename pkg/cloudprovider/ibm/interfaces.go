@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate mockgen -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
+//go:generate go run go.uber.org/mock/mockgen@latest -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
 
 package ibm
 
@@ -39,6 +39,20 @@ type IKSClientInterface interface {
 	// GetWorkerPool retrieves a specific worker pool
 	GetWorkerPool(ctx context.Context, clusterID, poolID string) (*WorkerPool, error)
 
-	// ResizeWorkerPool resizes a worker pool by adding one node
+	// ResizeWorkerPool resizes a worker pool to the specified size
 	ResizeWorkerPool(ctx context.Context, clusterID, poolID string, newSize int) error
+
+	// IncrementWorkerPool atomically increments a worker pool's size by 1.
+	// Returns the new size after increment.
+	IncrementWorkerPool(ctx context.Context, clusterID, poolID string) (int, error)
+
+	// DecrementWorkerPool atomically decrements a worker pool's size by 1.
+	// Returns the new size after decrement. Will not go below 0.
+	DecrementWorkerPool(ctx context.Context, clusterID, poolID string) (int, error)
+
+	// CreateWorkerPool creates a new worker pool with the specified configuration
+	CreateWorkerPool(ctx context.Context, clusterID string, request *WorkerPoolCreateRequest) (*WorkerPool, error)
+
+	// DeleteWorkerPool deletes a worker pool from the cluster
+	DeleteWorkerPool(ctx context.Context, clusterID, poolID string) error
 }

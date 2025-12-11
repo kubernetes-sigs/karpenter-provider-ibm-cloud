@@ -398,6 +398,11 @@ func (s *E2ETestSuite) deleteResourcesByLabels(ctx context.Context, t *testing.T
 	switch list := listObj.(type) {
 	case *appsv1.DeploymentList:
 		for _, item := range list.Items {
+			// Skip resources in karpenter namespace to avoid deleting the controller
+			if item.Namespace == "karpenter" {
+				t.Logf("⏭️ Skipping %s in karpenter namespace: %s", resourceType, item.Name)
+				continue
+			}
 			s.kubeClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
 			t.Logf("🗑️ Deleted %s: %s", resourceType, item.Name)
 		}
@@ -433,6 +438,10 @@ func (s *E2ETestSuite) deleteResourcesByNamePattern(ctx context.Context, t *test
 	switch list := listObj.(type) {
 	case *appsv1.DeploymentList:
 		for _, item := range list.Items {
+			// Skip resources in karpenter namespace to avoid deleting the controller
+			if item.Namespace == "karpenter" {
+				continue
+			}
 			if s.matchesAnyPattern(item.Name, patterns) {
 				s.kubeClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
 				t.Logf("🗑️ Pattern-deleted %s: %s", resourceType, item.Name)

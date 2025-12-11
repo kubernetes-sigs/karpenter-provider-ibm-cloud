@@ -43,13 +43,12 @@ func (s *E2ETestSuite) GetMultipleInstanceTypes(t *testing.T, count int) []strin
 		count = 3
 	}
 
-	// Use hardcoded instance types that are universally available across all IBM Cloud regions
 	availableTypes := []string{
-		"bx2-2x8",  // 2 vCPU, 8 GB RAM - highly available
-		"cx2-2x4",  // 2 vCPU, 4 GB RAM - highly available
-		"bx2-4x16", // 4 vCPU, 16 GB RAM - widely available
-		"mx2-2x16", // 2 vCPU, 16 GB RAM - widely available
-		"cx2-4x8",  // 4 vCPU, 8 GB RAM - widely available
+		"bx2-2x8",  // 2 vCPU, 8 GB RAM
+		"bx2-4x16", // 4 vCPU, 16 GB RAM
+		"mx2-2x16", // 2 vCPU, 16 GB RAM
+		"cx2-4x8",  // 4 vCPU, 8 GB RAM
+		"bx2-8x32", // 8 vCPU, 32 GB RAM
 	}
 
 	// Return requested count, up to available types

@@ -1,0 +1,18 @@
+{
+  "SkipNodeClassCreation": true,
+  "NodeClass": {
+    "Name": "rke2-nodeclass"
+  },
+  "NodePool": {
+    "Name": "rke2-test-nodepool",
+    "InstanceTypes": ["bx2-2x8", "bx2-4x16"],
+    "Architecture": ["amd64"],
+    "CapacityTypes": ["on-demand"]
+  },
+  "Workload": {
+    "Name": "rke2-test-workload",
+    "Replicas": 2,
+    "CPURequest": "500m",
+    "MemoryRequest": "512Mi"
+  }
+}

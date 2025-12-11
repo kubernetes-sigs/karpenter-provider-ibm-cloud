@@ -633,6 +633,7 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 }
 
 // validateImageConfiguration validates image configuration (either explicit image or imageSelector)
+// and stores the resolved image ID in the NodeClass status for use during provisioning
 func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha1.IBMNodeClass) error {
 	logger := log.FromContext(ctx)
 
@@ -645,16 +646,21 @@ func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha
 
 	// Validate explicit image if specified
 	if nc.Spec.Image != "" {
-		_, err = imageResolver.ResolveImage(ctx, nc.Spec.Image)
+		resolvedImageID, err := imageResolver.ResolveImage(ctx, nc.Spec.Image)
 		if err != nil {
 			return fmt.Errorf("image %s not found or not accessible in region %s: %w", nc.Spec.Image, nc.Spec.Region, err)
 		}
+		// Store resolved image ID in status for use during provisioning
+		nc.Status.ResolvedImageID = resolvedImageID
+		logger.V(1).Info("Resolved and cached explicit image",
+			"image", nc.Spec.Image,
+			"resolvedImageID", resolvedImageID)
 		return nil
 	}
 
 	// Validate imageSelector if specified
 	if nc.Spec.ImageSelector != nil {
-		_, err = imageResolver.ResolveImageBySelector(ctx, nc.Spec.ImageSelector)
+		resolvedImageID, err := imageResolver.ResolveImageBySelector(ctx, nc.Spec.ImageSelector)
 		if err != nil {
 			return fmt.Errorf("no images found matching selector (os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s) in region %s: %w",
 				nc.Spec.ImageSelector.OS,
@@ -665,6 +671,15 @@ func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha
 				nc.Spec.Region,
 				err)
 		}
+		// Store resolved image ID in status for use during provisioning
+		nc.Status.ResolvedImageID = resolvedImageID
+		logger.Info("Resolved and cached image using selector",
+			"os", nc.Spec.ImageSelector.OS,
+			"majorVersion", nc.Spec.ImageSelector.MajorVersion,
+			"minorVersion", nc.Spec.ImageSelector.MinorVersion,
+			"architecture", nc.Spec.ImageSelector.Architecture,
+			"variant", nc.Spec.ImageSelector.Variant,
+			"resolvedImageID", resolvedImageID)
 		return nil
 	}
 

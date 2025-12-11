@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate mockgen -source=./provider.go -destination=./mock/provider_generated.go -package=mock
+//go:generate go run go.uber.org/mock/mockgen@latest -source=./provider.go -destination=./mock/provider_generated.go -package=mock
 
 package pricing
 

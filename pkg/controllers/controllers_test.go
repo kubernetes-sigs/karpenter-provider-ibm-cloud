@@ -192,6 +192,7 @@ func TestRegisterControllers(t *testing.T) {
 			clk := clock.NewFakeClock(time.Now())
 
 			// Create fake kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			kubeClient := fake.NewSimpleClientset()
 
 			// Since we can't easily test the actual controller registration without a full manager,
@@ -314,6 +315,7 @@ func TestCloudProviderIntegration(t *testing.T) {
 func TestKubernetesClientIntegration(t *testing.T) {
 	t.Run("kubernetes client operations", func(t *testing.T) {
 		// Create fake kubernetes client
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		kubeClient := fake.NewSimpleClientset()
 
 		// Create a test node

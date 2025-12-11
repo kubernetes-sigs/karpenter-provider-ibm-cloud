@@ -126,6 +126,65 @@ spec:
   {{- end }}
   {{- end }}
 
+  {{- with .Values.customResources.nodeClass.common.kubelet }}
+  # Kubelet configuration
+  kubelet:
+    {{- if .clusterDNS }}
+    clusterDNS:
+      {{- range .clusterDNS }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .maxPods }}
+    maxPods: {{ .maxPods }}
+    {{- end }}
+    {{- if .podsPerCore }}
+    podsPerCore: {{ .podsPerCore }}
+    {{- end }}
+    {{- if .kubeReserved }}
+    kubeReserved:
+      {{- range $k, $v := .kubeReserved }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .systemReserved }}
+    systemReserved:
+      {{- range $k, $v := .systemReserved }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionHard }}
+    evictionHard:
+      {{- range $k, $v := .evictionHard }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionSoft }}
+    evictionSoft:
+      {{- range $k, $v := .evictionSoft }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionSoftGracePeriod }}
+    evictionSoftGracePeriod:
+      {{- range $k, $v := .evictionSoftGracePeriod }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionMaxPodGracePeriod }}
+    evictionMaxPodGracePeriod: {{ .evictionMaxPodGracePeriod }}
+    {{- end }}
+    {{- if .imageGCHighThresholdPercent }}
+    imageGCHighThresholdPercent: {{ .imageGCHighThresholdPercent }}
+    {{- end }}
+    {{- if .imageGCLowThresholdPercent }}
+    imageGCLowThresholdPercent: {{ .imageGCLowThresholdPercent }}
+    {{- end }}
+    {{- if .cpuCFSQuota }}
+    cpuCFSQuota: {{ .cpuCFSQuota }}
+    {{- end }}
+  {{- end }}
+
   # Role configuration
   role: {{ printf "%s-node-instance-profile" (include "karpenter.fullname" .) | quote }}
 {{- end }}

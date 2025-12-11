@@ -289,8 +289,11 @@ func TestReconcile_DeleteOrphanedNode(t *testing.T) {
 	cloudProvider := newMockCloudProvider()
 	cloudProvider.nodeClaims["orphaned-provider-id"] = testNodeClaim("orphaned", "orphaned-provider-id", time.Now().Add(-time.Hour))
 
-	// Create orphaned Node
+	// Create orphaned Node with Karpenter labels (required for garbage collection)
 	orphanedNode := testNode("orphaned-node", "orphaned-provider-id")
+	orphanedNode.Labels = map[string]string{
+		"karpenter.sh/nodepool": "test-nodepool",
+	}
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(testScheme()).

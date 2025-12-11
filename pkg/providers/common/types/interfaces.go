@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate mockgen -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
+//go:generate go run go.uber.org/mock/mockgen@latest -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
 
 package types
 
@@ -64,6 +64,12 @@ type IKSWorkerPoolProvider interface {
 
 	// ListPools returns all worker pools for a cluster
 	ListPools(ctx context.Context, clusterID string) ([]*WorkerPool, error)
+
+	// CreatePool creates a new worker pool with the specified configuration
+	CreatePool(ctx context.Context, clusterID string, request *CreatePoolRequest) (*WorkerPool, error)
+
+	// DeletePool deletes a worker pool from the cluster
+	DeletePool(ctx context.Context, clusterID, poolID string) error
 }
 
 // WorkerPool represents an IKS worker pool
@@ -76,6 +82,26 @@ type WorkerPool struct {
 	ActualSize  int               `json:"actualSize"`
 	State       string            `json:"state"`
 	Labels      map[string]string `json:"labels"`
+}
+
+// CreatePoolRequest contains parameters for creating a new worker pool
+type CreatePoolRequest struct {
+	// Name is the name for the new worker pool
+	Name string
+	// Flavor is the instance type (e.g., "bx2-4x16")
+	Flavor string
+	// Zone is the availability zone for the pool
+	Zone string
+	// SubnetID is the subnet to use for worker nodes
+	SubnetID string
+	// SizePerZone is the initial number of nodes
+	SizePerZone int
+	// Labels are key-value pairs to apply to the pool
+	Labels map[string]string
+	// DiskEncryption enables disk encryption for worker nodes
+	DiskEncryption bool
+	// VpcID is the VPC for the worker pool
+	VpcID string
 }
 
 // ProviderMode represents the provisioning mode

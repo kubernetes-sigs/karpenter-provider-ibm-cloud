@@ -178,6 +178,7 @@ func TestDiscoverClusterConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(tt.k8sObjects...)
 
 			config, err := DiscoverClusterConfig(context.Background(), client)
@@ -265,6 +266,7 @@ func TestDiscoverDNSClusterIP(t *testing.T) {
 			for i := range tt.services {
 				objects = append(objects, &tt.services[i])
 			}
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(objects...)
 
 			ip, err := discoverDNSClusterIP(context.Background(), client)
@@ -343,6 +345,7 @@ func TestDiscoverClusterCIDR(t *testing.T) {
 			for i := range tt.services {
 				objects = append(objects, &tt.services[i])
 			}
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(objects...)
 
 			cidr, err := discoverClusterCIDR(context.Background(), client)
@@ -398,6 +401,7 @@ func TestDiscoverServiceCIDR(t *testing.T) {
 					ClusterIP: tt.serviceIP,
 				},
 			}
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(kubeService)
 
 			cidr, err := discoverServiceCIDR(context.Background(), client)
@@ -498,6 +502,7 @@ func TestDetectCNIPlugin(t *testing.T) {
 			for i := range tt.configMaps {
 				objects = append(objects, &tt.configMaps[i])
 			}
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(objects...)
 
 			cni, err := detectCNIPlugin(context.Background(), client)

@@ -320,6 +320,7 @@ func getTestKubernetesService() *corev1.Service {
 			// Create fake Kubernetes client
 			scheme := runtime.NewScheme()
 			_ = corev1.AddToScheme(scheme)
+	//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// Setup mocks
@@ -419,6 +420,7 @@ func TestVPCBootstrapProvider_getClusterInfo(t *testing.T) {
 			ctx := context.Background()
 
 			// Create fake Kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// Setup mocks
@@ -513,6 +515,7 @@ func TestVPCBootstrapProvider_detectContainerRuntime(t *testing.T) {
 			ctx := context.Background()
 
 			// Create fake Kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// Setup mocks
@@ -526,76 +529,6 @@ func TestVPCBootstrapProvider_detectContainerRuntime(t *testing.T) {
 
 			// Validate result
 			assert.Equal(t, tt.expectedRuntime, result)
-		})
-	}
-}
-
-func TestVPCBootstrapProvider_buildKubeletConfig(t *testing.T) {
-	tests := []struct {
-		name           string
-		clusterConfig  *commonTypes.ClusterConfig
-		validateConfig func(*testing.T, *commonTypes.KubeletConfig)
-	}{
-		{
-			name: "calico CNI configuration",
-			clusterConfig: &commonTypes.ClusterConfig{
-				DNSClusterIP: "10.96.0.10",
-				CNIPlugin:    "calico",
-				ClusterCIDR:  "10.244.0.0/16",
-			},
-			validateConfig: func(t *testing.T, config *commonTypes.KubeletConfig) {
-				assert.NotNil(t, config)
-				assert.Equal(t, []string{"10.96.0.10"}, config.ClusterDNS)
-				assert.Equal(t, "cni", config.ExtraArgs["network-plugin"])
-				assert.Equal(t, "/etc/cni/net.d", config.ExtraArgs["cni-conf-dir"])
-				assert.Equal(t, "/opt/cni/bin", config.ExtraArgs["cni-bin-dir"])
-				assert.Contains(t, config.ExtraArgs["provider-id"], "ibm://")
-			},
-		},
-		{
-			name: "cilium CNI configuration",
-			clusterConfig: &commonTypes.ClusterConfig{
-				DNSClusterIP: "10.96.0.10",
-				CNIPlugin:    "cilium",
-				ClusterCIDR:  "10.244.0.0/16",
-			},
-			validateConfig: func(t *testing.T, config *commonTypes.KubeletConfig) {
-				assert.NotNil(t, config)
-				assert.Equal(t, []string{"10.96.0.10"}, config.ClusterDNS)
-				assert.Equal(t, "cni", config.ExtraArgs["network-plugin"])
-				assert.Equal(t, "/etc/cni/net.d", config.ExtraArgs["cni-conf-dir"])
-				assert.Equal(t, "/opt/cni/bin", config.ExtraArgs["cni-bin-dir"])
-			},
-		},
-		{
-			name: "unknown CNI - basic configuration",
-			clusterConfig: &commonTypes.ClusterConfig{
-				DNSClusterIP: "10.96.0.10",
-				CNIPlugin:    "unknown",
-				ClusterCIDR:  "10.244.0.0/16",
-			},
-			validateConfig: func(t *testing.T, config *commonTypes.KubeletConfig) {
-				assert.NotNil(t, config)
-				assert.Equal(t, []string{"10.96.0.10"}, config.ClusterDNS)
-				// Should not have CNI-specific configuration for unknown plugin
-				assert.NotContains(t, config.ExtraArgs, "network-plugin")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create VPC bootstrap provider
-			provider := NewVPCBootstrapProvider(nil, nil, nil)
-
-			// Test buildKubeletConfig method
-			result := provider.buildKubeletConfig(tt.clusterConfig)
-
-			// Validate result
-			assert.NotNil(t, result)
-			if tt.validateConfig != nil {
-				tt.validateConfig(t, result)
-			}
 		})
 	}
 }
@@ -708,6 +641,7 @@ func TestVPCBootstrapProvider_getClusterCA(t *testing.T) {
 			ctx := context.Background()
 
 			// Create fake Kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// Setup mocks
@@ -829,6 +763,7 @@ func TestVPCBootstrapProvider_getClusterCA(t *testing.T) {
 			// Create fake Kubernetes client
 			scheme := runtime.NewScheme()
 			_ = corev1.AddToScheme(scheme)
+	//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// Setup mocks
@@ -1038,6 +973,7 @@ func TestVPCBootstrapProvider_ReportBootstrapStatus(t *testing.T) {
 			tt.setupMocks(mockIBMClient, mockVPCClient)
 
 			// Create fake Kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// Create VPC bootstrap provider (nil IBM client is fine for ConfigMap tests)
@@ -1126,6 +1062,7 @@ func TestVPCBootstrapProvider_GetBootstrapStatus(t *testing.T) {
 			tt.setupMocks(mockIBMClient, mockVPCClient)
 
 			// Create fake Kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeClient := fake.NewSimpleClientset()
 
 			// For successful test case, create the ConfigMap
@@ -1295,6 +1232,7 @@ func TestVPCBootstrapProvider_GetClusterDNS(t *testing.T) {
 			for i := range tt.configMaps {
 				k8sObjects = append(k8sObjects, &tt.configMaps[i])
 			}
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			k8sClient := fake.NewSimpleClientset(k8sObjects...)
 
 			provider := &VPCBootstrapProvider{
@@ -1353,6 +1291,7 @@ func TestVPCBootstrapProvider_PollInstanceBootstrapStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a simple mock that implements the interface correctly
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			provider := &VPCBootstrapProvider{
 				client:    nil, // For error testing - will fail VPC client creation
 				k8sClient: fake.NewSimpleClientset(),
@@ -1416,6 +1355,7 @@ func TestGetUserDataWithInstanceIDAndType_ArchitectureDetectionFallback(t *testi
 			ctx := context.Background()
 
 			// Create basic test setup
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			fakeK8sClient := fake.NewSimpleClientset()
 
 			// Add minimal required k8s objects for bootstrap
@@ -1514,6 +1454,7 @@ func TestArchitectureDetectionPriorityOrder(t *testing.T) {
 	// This test verifies the logic structure without needing real IBM API calls
 	t.Run("code coverage verification", func(t *testing.T) {
 		// Create a provider without IBM client to test error handling
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		provider := &VPCBootstrapProvider{
 			client:     nil,
 			k8sClient:  fake.NewSimpleClientset(),

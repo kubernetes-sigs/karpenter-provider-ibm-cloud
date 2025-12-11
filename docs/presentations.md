@@ -1,6 +1,6 @@
-# Presentations and Talks
+# Presentations, Talks, and Blog Posts
 
-This page contains links to presentations, talks, and demos about the Karpenter IBM Cloud Provider.
+This page contains links to presentations, talks, demos, and blog posts about the Karpenter IBM Cloud Provider.
 
 ## Conference Talks
 
@@ -18,6 +18,14 @@ This page contains links to presentations, talks, and demos about the Karpenter 
 [![asciicast](https://asciinema.org/a/Y6tSuDXvRXz7jEZogi52dDMRV.svg)](https://asciinema.org/a/Y6tSuDXvRXz7jEZogi52dDMRV)
 
 This interactive demo showcases the Karpenter IBM Cloud Provider performing automatic node provisioning and scaling based on pod demand.
+
+## Blog Posts
+
+### IBM Community
+#### [Introducing Karpenter Cluster Autoscaler for IBM Cloud](https://community.ibm.com/community/user/blogs/josephine-pfeiffer/2025/11/27/introducing-karpenter-cluster-autoscaler)
+- **Author**: Josephine Pfeiffer
+- **Date**: November 27, 2025
+- **Description**: Announcement of the v1.0.0 release of Karpenter Provider for IBM Cloud. Covers key capabilities including smart instance selection, multi-zone high availability, automatic bootstrap configuration, cost optimization through workload consolidation, and flexible deployment options for both self-managed Kubernetes clusters and IBM Kubernetes Service.
 
 ## Community Talks
 

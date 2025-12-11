@@ -451,11 +451,71 @@ authorization:
   mode: Webhook
 clusterDomain: cluster.local
 clusterDNS:
+{{- if .KubeletConfig }}
+  {{- if .KubeletConfig.ClusterDNS }}
+    {{- range .KubeletConfig.ClusterDNS }}
+  - {{ . }}
+    {{- end }}
+  {{- else }}
   - ${CLUSTER_DNS}
+  {{- end }}
+{{- else }}
+  - ${CLUSTER_DNS}
+{{- end }}
 rotateCertificates: true
 serverTLSBootstrap: true
 registerNode: true
 cgroupDriver: systemd
+{{- if .KubeletConfig }}
+  {{- if .KubeletConfig.MaxPods }}
+maxPods: {{ .KubeletConfig.MaxPods }}
+  {{- end }}
+  {{- if .KubeletConfig.PodsPerCore }}
+podsPerCore: {{ .KubeletConfig.PodsPerCore }}
+  {{- end }}
+  {{- if .KubeletConfig.KubeReserved }}
+kubeReserved:
+    {{- range $k, $v := .KubeletConfig.KubeReserved }}
+  "{{ $k }}": "{{ $v }}"
+    {{- end }}
+  {{- end }}
+  {{- if .KubeletConfig.SystemReserved }}
+systemReserved:
+    {{- range $k, $v := .KubeletConfig.SystemReserved }}
+  "{{ $k }}": "{{ $v }}"
+    {{- end }}
+  {{- end }}
+  {{- if .KubeletConfig.EvictionHard }}
+evictionHard:
+    {{- range $k, $v := .KubeletConfig.EvictionHard }}
+  "{{ $k }}": "{{ $v }}"
+    {{- end }}
+  {{- end }}
+  {{- if .KubeletConfig.EvictionSoft }}
+evictionSoft:
+    {{- range $k, $v := .KubeletConfig.EvictionSoft }}
+  "{{ $k }}": "{{ $v }}"
+    {{- end }}
+  {{- end }}
+  {{- if .KubeletConfig.EvictionSoftGracePeriod }}
+evictionSoftGracePeriod:
+    {{- range $k, $v := .KubeletConfig.EvictionSoftGracePeriod }}
+  "{{ $k }}": "{{ $v.Duration }}"
+    {{- end }}
+  {{- end }}
+  {{- if .KubeletConfig.EvictionMaxPodGracePeriod }}
+evictionMaxPodGracePeriod: {{ .KubeletConfig.EvictionMaxPodGracePeriod }}
+  {{- end }}
+  {{- if .KubeletConfig.ImageGCHighThresholdPercent }}
+imageGCHighThresholdPercent: {{ .KubeletConfig.ImageGCHighThresholdPercent }}
+  {{- end }}
+  {{- if .KubeletConfig.ImageGCLowThresholdPercent }}
+imageGCLowThresholdPercent: {{ .KubeletConfig.ImageGCLowThresholdPercent }}
+  {{- end }}
+  {{- if .KubeletConfig.CPUCFSQuota }}
+cpuCFSQuota: {{ .KubeletConfig.CPUCFSQuota }}
+  {{- end }}
+{{- end }}
 registerWithTaints:
 {{ range .Taints }}
 - key: {{ .Key }}
@@ -503,7 +563,7 @@ EOF
 # Configure kubelet service with bootstrap kubeconfig
 cat > /etc/systemd/system/kubelet.service.d/10-karpenter.conf << EOF
 [Service]
-Environment="KUBELET_EXTRA_ARGS=--hostname-override=${HOSTNAME} --node-ip=${PRIVATE_IP} --provider-id=${PROVIDER_ID} --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubeconfig --sync-frequency=30s{{ if .KubeletExtraArgs }} {{ .KubeletExtraArgs }}{{ end }}"
+Environment="KUBELET_EXTRA_ARGS=--hostname-override=${HOSTNAME} --node-ip=${PRIVATE_IP} --provider-id=${PROVIDER_ID} --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubeconfig --sync-frequency=30s"
 EOF
 
 # Create kubelet service override
@@ -973,10 +1033,8 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	// Build template data
 	data := struct {
 		types.Options
-		KubeletExtraArgs string
 	}{
-		Options:          options,
-		KubeletExtraArgs: p.buildKubeletExtraArgs(options.KubeletConfig),
+		Options: options,
 	}
 
 	// Execute template
@@ -1003,18 +1061,4 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	script = InjectBootstrapEnvVars(script)
 
 	return script, nil
-}
-
-// buildKubeletExtraArgs builds kubelet extra arguments string
-func (p *VPCBootstrapProvider) buildKubeletExtraArgs(config *types.KubeletConfig) string {
-	if config == nil || len(config.ExtraArgs) == 0 {
-		return ""
-	}
-
-	var args []string
-	for key, value := range config.ExtraArgs {
-		args = append(args, fmt.Sprintf("--%s=%s", key, value))
-	}
-
-	return strings.Join(args, " ")
 }

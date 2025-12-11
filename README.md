@@ -9,7 +9,7 @@
 
 This repository contains the Karpenter Provider implementation for IBM Cloud, enabling dynamic node provisioning in IBM Cloud Kubernetes clusters using Karpenter.
 
-**[View Full Documentation](https://karpenter-ibm.sh/)** | 🚀 **[Getting Started Guide](https://karpenter-ibm.sh//getting-started/)**
+**[View Full Documentation](https://karpenter-ibm.sh/)** | **[Getting Started Guide](https://karpenter-ibm.sh/getting-started/)**
 
 ## Overview
 
@@ -34,7 +34,14 @@ Karpenter is an open-source node provisioning project for Kubernetes. This provi
 | 1.35 | ✅ Supported |
 | 1.36+ | ⚠️ Untested |
 
-*Based on dependency analysis. Generated on 2025-09-24.*
+*Based on dependency analysis. Generated on 2025-11-30.*
+
+## Container Images
+
+Multi-architecture images (amd64, arm64, s390x) are published to `quay.io/karpenter-provider-ibm-cloud/controller`.
+
+See [Container Images](docs/container-images.md) for details on pulling images, supported architectures, and [Nightly Builds](docs/nightly-builds.md) for testing pre-release versions.
+
 ## Development
 
 ### Testing and CI
@@ -69,9 +76,9 @@ These CI workflows ensure chart quality through pre-merge validation and maintai
 
 ### Community Support
 
-- 💬 **[Join our Slack](https://cloud-native.slack.com/archives/C094SDPCVLN)** - Get help from the community and maintainers
-- 🐛 **[Report Issues](https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/issues)** - Found a bug or have a feature request?
-- 📖 **[Documentation](https://karpenter-ibm.sh/)** - Complete guides and API reference
+- **[Join our Slack](https://cloud-native.slack.com/archives/C094SDPCVLN)** - Get help from the community and maintainers
+- **[Report Issues](https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/issues)** - Found a bug or have a feature request?
+- **[Documentation](https://karpenter-ibm.sh/)** - Complete guides and API reference
 
 ## Contributing
 

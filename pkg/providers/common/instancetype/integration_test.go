@@ -52,7 +52,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 
 	// Test List function
 	t.Run("list_instance_types", func(t *testing.T) {
-		instanceTypes, err := provider.List(ctx)
+		instanceTypes, err := provider.List(ctx, nil)
 		if err != nil {
 			t.Errorf("Failed to list instance types: %v", err)
 			return
@@ -85,7 +85,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 		// Try to get a common instance type
 		knownInstanceType := "bx2-2x8"
 
-		instanceType, err := provider.Get(ctx, knownInstanceType)
+		instanceType, err := provider.Get(ctx, knownInstanceType, nil)
 		if err != nil {
 			t.Errorf("Failed to get instance type %s: %v", knownInstanceType, err)
 			return
@@ -119,7 +119,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 	t.Run("get_nonexistent_instance_type", func(t *testing.T) {
 		nonExistentType := "nonexistent-instance-type"
 
-		instanceType, err := provider.Get(ctx, nonExistentType)
+		instanceType, err := provider.Get(ctx, nonExistentType, nil)
 		if err == nil {
 			t.Errorf("Expected error for non-existent instance type %s, but got success", nonExistentType)
 			return

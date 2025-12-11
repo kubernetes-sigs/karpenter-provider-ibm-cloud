@@ -61,7 +61,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	region := c.getRegion()
 
 	// Refresh instance types by listing them
-	if _, err := c.instanceTypeProvider.List(ctx); err != nil {
+	if _, err := c.instanceTypeProvider.List(ctx, nil); err != nil {
 		metrics.ApiRequests.WithLabelValues("ListInstanceTypes", "500", region).Inc()
 		return reconciler.Result{}, fmt.Errorf("refreshing instance types: %w", err)
 	}

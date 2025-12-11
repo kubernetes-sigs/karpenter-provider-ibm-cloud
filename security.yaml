@@ -1,0 +1,128 @@
+header:
+  schema-version: 2.0.0
+  last-updated: '2025-12-03'
+  last-reviewed: '2025-12-03'
+  url: https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
+  comment: >-
+    This file contains all possible information for both project and repository,
+    though it is not required to include all of this information every time. Nor
+    is it required to include both a project and repository section if the
+    project section is intended to be inherited by repositories via
+    header.project-si-source
+project:
+  name: karpenter-provider-ibm-cloud
+  homepage: https://karpenter-ibm.sh
+  funding: ''
+  roadmap: https://github.com/orgs/kubernetes-sigs/projects/128/views/1
+  steward:
+    uri: https://josie.lol
+    comment: Lead Maintainer
+  administrators:
+    - name: Josephine Pfeiffer
+      affiliation: Red Hat
+      email: josie@redhat.com
+      social: https://github.com/pfeifferj
+      primary: true
+  documentation:
+    quickstart-guide: https://karpenter-ibm.sh/getting-started/
+    detailed-guide: https://karpenter-ibm.sh/bootstrap-methods/
+    code-of-conduct: >-
+      https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/code-of-conduct.md
+    release-process: ''
+    support-policy: ''
+    signature-verification: ''
+  repositories:
+    - name: karpenter-provider-ibm-cloud
+      url: https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
+      comment: ''
+  vulnerability-reporting:
+    reports-accepted: true
+    bug-bounty-available: false
+    bug-bounty-program: ''
+    contact:
+      name: Josephine Pfeiffer
+      email: josie@redhat.com
+      primary: true
+    security-policy: >-
+      https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/SECURITY.md
+    in-scope:
+      - ''
+    out-of-scope:
+      - ''
+    pgp-key: ''
+    comment: ''
+repository:
+  url: >-
+    https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/CONTRIBUTING.md
+  status: active
+  bug-fixes-only: false
+  accepts-change-request: true
+  accepts-automated-change-request: false
+  no-third-party-packages: false
+  core-team:
+    - name: ''
+      affiliation: ''
+      email: ''
+      social: ''
+      primary: false
+  documentation:
+    contributing-guide: ''
+    review-policy: ''
+    security-policy: ''
+    governance: ''
+    dependency-management-policy: ''
+  release:
+    changelog: ''
+    automated-pipeline: false
+    attestations:
+      - name: ''
+        predicate-uri: ''
+        location: ''
+        comment: ''
+    distribution-points:
+      - uri: ''
+        comment: ''
+    license:
+      url: ''
+      expression: ''
+  security:
+    assessments:
+      self:
+        evidence: ''
+        date: ''
+        comment: ''
+      third-party:
+        - evidence: ''
+          date: ''
+          comment: ''
+    champions:
+      - name: ''
+        email: ''
+        primary: false
+    tools:
+      - name: ''
+        type: ''
+        version: ''
+        rulesets:
+          - ''
+        results:
+          adhoc:
+            name: ''
+            predicate-uri: ''
+            location: ''
+            comment: ''
+          ci:
+            name: ''
+            predicate-uri: ''
+            location: ''
+            comment: ''
+          release:
+            name: ''
+            predicate-uri: ''
+            location: ''
+            comment: ''
+        integration:
+          adhoc: false
+          ci: false
+          release: false
+        comment: ''

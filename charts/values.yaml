@@ -7,7 +7,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller
+  repository: quay.io/karpenter-provider-ibm-cloud/controller
   tag: v0.4.0
   pullPolicy: IfNotPresent
   # digest: "sha256:98e1441aa5d15f6e23e58a466c2526942e853d49281eefffa64e22361f7a19ad"
@@ -567,3 +567,15 @@ metrics:
 
     # Additional custom rule groups
     additionalRuleGroups: []
+
+# Grafana Dashboard configuration
+grafanaDashboard:
+  # Enable Grafana dashboard ConfigMap creation
+  enabled: false
+  # Namespace to create the ConfigMap in (defaults to release namespace)
+  namespace: ""
+  # Labels to add to the ConfigMap for Grafana sidecar discovery
+  labels:
+    grafana_dashboard: "1"
+  # Annotations to add to the ConfigMap
+  annotations: {}

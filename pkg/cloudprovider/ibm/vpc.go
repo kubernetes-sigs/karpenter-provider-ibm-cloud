@@ -18,12 +18,15 @@ package ibm
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/logging"
 )
+
+//go:generate go run go.uber.org/mock/mockgen@latest -source=./vpc.go -destination=./mock/vpc_generated.go -package=mock
 
 // vpcClientInterface defines the interface for the VPC client
 type vpcClientInterface interface {
@@ -92,6 +95,11 @@ func NewVPCClient(baseURL, authType, apiKey, region, resourceGroupID string) (*V
 	if err != nil {
 		return nil, fmt.Errorf("creating VPC client: %w", err)
 	}
+
+	// Enable debug logging for IBM SDK
+	logDestination := log.Writer()
+	goLogger := log.New(logDestination, "", log.LstdFlags)
+	core.SetLogger(core.NewLogger(core.LevelDebug, goLogger, goLogger))
 
 	return &VPCClient{
 		baseURL:         baseURL,

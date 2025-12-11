@@ -32,6 +32,7 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 	client := &ibm.Client{}
 
 	t.Run("Nil NodeClass", func(t *testing.T) {
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
 		provider := NewVPCBootstrapProvider(client, k8sClient, kubeClient)
@@ -45,6 +46,7 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 	})
 
 	t.Run("Empty NodeClaim", func(t *testing.T) {
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
 		provider := NewVPCBootstrapProvider(client, k8sClient, kubeClient)
@@ -69,6 +71,7 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 
 	t.Run("Kubernetes API server discovery failure", func(t *testing.T) {
 		// Create a client that will return no services (simulating API discovery failure)
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
 		provider := NewVPCBootstrapProvider(client, k8sClient, kubeClient)
@@ -92,6 +95,7 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 	})
 
 	t.Run("Bootstrap token creation failure", func(t *testing.T) {
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
 		provider := NewVPCBootstrapProvider(client, k8sClient, kubeClient)
@@ -128,6 +132,7 @@ func TestNewVPCBootstrapProvider_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("Kubernetes clients without IBM client", func(t *testing.T) {
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
 		provider := NewVPCBootstrapProvider(nil, k8sClient, kubeClient)

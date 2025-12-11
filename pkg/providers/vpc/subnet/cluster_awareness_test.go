@@ -139,6 +139,7 @@ func TestGetExistingClusterSubnets(t *testing.T) {
 			},
 		}
 
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		fakeClient := fake.NewSimpleClientset(nodes)
 		p.SetKubernetesClient(fakeClient)
 
@@ -153,6 +154,7 @@ func TestGetExistingClusterSubnets(t *testing.T) {
 
 	t.Run("Handle Kubernetes API errors gracefully", func(t *testing.T) {
 		// Create client that will fail on List operation
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		fakeClient := fake.NewSimpleClientset()
 		fakeClient.PrependReactor("list", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			return true, nil, fmt.Errorf("simulated API error")

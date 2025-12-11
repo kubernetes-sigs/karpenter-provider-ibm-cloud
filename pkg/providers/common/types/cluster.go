@@ -162,7 +162,13 @@ func detectCNIPlugin(ctx context.Context, client kubernetes.Interface) (string, 
 		return "cilium", nil
 	}
 
-	// Check for Flannel
+	// Check for Flannel (in kube-flannel namespace)
+	_, err = client.AppsV1().DaemonSets("kube-flannel").Get(ctx, "kube-flannel-ds", metav1.GetOptions{})
+	if err == nil {
+		return "flannel", nil
+	}
+
+	// Also check kube-system for older Flannel installations
 	_, err = client.AppsV1().DaemonSets("kube-system").Get(ctx, "kube-flannel-ds", metav1.GetOptions{})
 	if err == nil {
 		return "flannel", nil

@@ -44,12 +44,12 @@ func (m *MockIBMClient) GetVPCClient() (*ibm.VPCClient, error) {
 	return args.Get(0).(*ibm.VPCClient), args.Error(1)
 }
 
-func (m *MockIBMClient) GetIKSClient() *ibm.IKSClient {
+func (m *MockIBMClient) GetIKSClient() (ibm.IKSClientInterface, error) {
 	args := m.Called()
 	if args.Get(0) == nil {
-		return nil
+		return nil, args.Error(1)
 	}
-	return args.Get(0).(*ibm.IKSClient)
+	return args.Get(0).(ibm.IKSClientInterface), args.Error(1)
 }
 
 // Test helpers

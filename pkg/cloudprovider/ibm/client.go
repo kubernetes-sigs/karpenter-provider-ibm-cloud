@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
@@ -32,6 +33,11 @@ type Client struct {
 	credStore   SecureCredentialManager
 	region      string
 	iamClient   *IAMClient
+
+	// IKS client lazy initialization
+	iksClient    IKSClientInterface
+	iksClientErr error
+	iksOnce      sync.Once
 }
 
 // NewClient creates a new IBM Cloud client using environment variables
@@ -94,10 +100,14 @@ func (c *Client) GetGlobalCatalogClient() (*GlobalCatalogClient, error) {
 	return NewGlobalCatalogClient(c.iamClient), nil
 }
 
-// GetIKSClient returns a configured IKS API client interface
-func (c *Client) GetIKSClient() IKSClientInterface {
-	// Use pure API client with proper IBM Cloud Kubernetes Service REST API
-	return NewIKSClient(c)
+// GetIKSClient returns a configured IKS API client interface.
+// Uses lazy initialization with validation - returns error if IBM_ACCOUNT_ID
+// is not properly configured.
+func (c *Client) GetIKSClient() (IKSClientInterface, error) {
+	c.iksOnce.Do(func() {
+		c.iksClient, c.iksClientErr = NewIKSClient(c)
+	})
+	return c.iksClient, c.iksClientErr
 }
 
 // GetIAMClient returns the IAM client

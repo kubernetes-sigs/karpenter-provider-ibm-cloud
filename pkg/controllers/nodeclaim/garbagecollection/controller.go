@@ -127,6 +127,23 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		if nc := cloudNodeClaims[i]; nc.Status.ProviderID != "" && time.Since(nc.CreationTimestamp.Time) > time.Second*30 {
 			normalizedCloudID := c.normalizeProviderID(nc.Status.ProviderID)
 			if !normalizedClusterProviderIDs.Has(normalizedCloudID) {
+				// Check if the corresponding node is managed by Karpenter before garbage collecting.
+				// Nodes without Karpenter labels (e.g., IKS-managed workers) should not be garbage collected.
+				matchingNode, found := lo.Find(nodeList.Items, func(n corev1.Node) bool {
+					return c.normalizeProviderID(n.Spec.ProviderID) == normalizedCloudID
+				})
+				if found {
+					// Skip nodes that don't have Karpenter labels
+					_, hasNodePoolLabel := matchingNode.Labels[karpv1.NodePoolLabelKey]
+					_, hasNodeClassLabel := matchingNode.Labels["karpenter-ibm.sh/ibmnodeclass"]
+					if !hasNodePoolLabel && !hasNodeClassLabel {
+						log.FromContext(ctx).V(1).WithValues(
+							"provider-id", nc.Status.ProviderID,
+							"node", matchingNode.Name,
+						).Info("skipping garbage collection for non-Karpenter-managed node")
+						return
+					}
+				}
 				log.FromContext(ctx).WithValues(
 					"provider-id", nc.Status.ProviderID,
 					"normalized-id", normalizedCloudID,
@@ -287,19 +304,14 @@ func (c *Controller) removeNodeFinalizers(ctx context.Context, node *corev1.Node
 
 // isKarpenterManagedNode checks if a node is managed by Karpenter
 func (c *Controller) isKarpenterManagedNode(node *corev1.Node) bool {
-	// Check for Karpenter-specific labels that indicate management
-	if _, hasNodePool := node.Labels["karpenter.sh/nodepool"]; hasNodePool {
+	// Check for Karpenter-specific labels that indicate management.
+	// Only nodes with these labels are considered managed by Karpenter.
+	// This excludes IKS-managed worker nodes which have ibm:// providerIDs but no Karpenter labels.
+	if _, hasNodePool := node.Labels[karpv1.NodePoolLabelKey]; hasNodePool {
 		return true
 	}
-
-	// Check for IBM Cloud VPC provider ID pattern (indicates Karpenter-managed IBM node)
-	if node.Spec.ProviderID != "" {
-		ibmPrefixes := []string{"ibm://", "ibm:///eu-", "ibm:///us-", "ibm:///ca-", "ibm:///jp-", "ibm:///au-", "ibm:///br-"}
-		for _, prefix := range ibmPrefixes {
-			if strings.HasPrefix(node.Spec.ProviderID, prefix) {
-				return true
-			}
-		}
+	if _, hasNodeClass := node.Labels["karpenter-ibm.sh/ibmnodeclass"]; hasNodeClass {
+		return true
 	}
 
 	// Default to not managed to be safe

@@ -177,7 +177,7 @@ func TestIBMInstanceTypeProvider_Get(t *testing.T) {
 				client: nil, // No real client for unit tests
 			}
 
-			_, err := provider.Get(ctx, tt.instanceType)
+			_, err := provider.Get(ctx, tt.instanceType, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -195,7 +195,7 @@ func TestIBMInstanceTypeProvider_List(t *testing.T) {
 		client: nil, // No real client for unit tests
 	}
 
-	_, err := provider.List(ctx)
+	_, err := provider.List(ctx, nil)
 
 	// Should fail without real IBM client
 	assert.Error(t, err)
@@ -243,7 +243,7 @@ func TestIBMInstanceTypeProvider_FilterInstanceTypes(t *testing.T) {
 				client: nil, // No real client for unit tests
 			}
 
-			_, err := provider.FilterInstanceTypes(ctx, tt.requirements)
+			_, err := provider.FilterInstanceTypes(ctx, tt.requirements, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)

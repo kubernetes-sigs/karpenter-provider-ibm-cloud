@@ -91,9 +91,9 @@ func (p *IKSBootstrapProvider) GetClusterConfig(ctx context.Context, clusterID s
 		return nil, fmt.Errorf("IBM client not initialized")
 	}
 
-	iksClient := p.client.GetIKSClient()
-	if iksClient == nil {
-		return nil, fmt.Errorf("IKS client not available")
+	iksClient, err := p.client.GetIKSClient()
+	if err != nil {
+		return nil, fmt.Errorf("getting IKS client: %w", err)
 	}
 
 	logger.Info("Retrieving cluster config from IKS API", "cluster_id", clusterID)

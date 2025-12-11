@@ -71,6 +71,7 @@ func TestTokenController_ensureBootstrapRBAC(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fake kubernetes client
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(tt.existingRBAC...)
 
 			controller := &TokenController{
@@ -123,6 +124,7 @@ func TestTokenController_CreateBootstrapToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset()
 			controller := &TokenController{
 				client: client,
@@ -211,6 +213,7 @@ func TestTokenController_cleanupExpiredTokens(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 			client := fake.NewSimpleClientset(tt.existingSecrets...)
 			controller := &TokenController{
 				client: client,
@@ -233,6 +236,7 @@ func TestTokenController_cleanupExpiredTokens(t *testing.T) {
 }
 
 func TestTokenController_Reconcile(t *testing.T) {
+	//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 	client := fake.NewSimpleClientset()
 	controller := &TokenController{
 		client: client,

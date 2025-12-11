@@ -57,18 +57,19 @@ gen-objects: ## generate the controller-gen related objects
 	$(CONTROLLER_GEN) object paths="./..."
 
 .PHONY: gen-mocks
-gen-mocks: ## generate mocks using mockgen
+gen-mocks: ## Generate mocks using mockgen
 	@echo "Generating mocks..."
 	go generate ./pkg/providers/common/types
 	go generate ./pkg/cloudprovider/ibm
 	go generate ./pkg/providers/common/pricing
+	@echo "Mocks generated successfully"
 
 .PHONY: verify-mocks
-verify-mocks: ## verify mocks are up to date
+verify-mocks: ## Verify mocks are up to date
 	@echo "Verifying mocks are up to date..."
-	@$(MAKE) gen-mocks
 	@git diff --exit-code pkg/providers/common/types/mock/ pkg/cloudprovider/ibm/mock/ pkg/providers/common/pricing/mock/ || \
 		(echo "Error: Generated mocks are out of date. Run 'make gen-mocks' to update them." && exit 1)
+	@echo "Mocks are up to date"
 
 .PHONY: generate
 generate: gen-objects gen-mocks manifests ## generate all controller-gen files and mocks
@@ -111,6 +112,14 @@ lint:
 	@echo "Executing pre-commit for all files"
 	pre-commit run --all-files
 	@echo "pre-commit executed."
+	@echo "Validating commit messages with gitlint..."
+	@if command -v gitlint >/dev/null 2>&1; then \
+		BASE=$$(git merge-base HEAD $$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null || echo origin/main) 2>/dev/null || echo HEAD~1); \
+		gitlint --commits $$BASE..HEAD || exit 1; \
+		echo "gitlint passed."; \
+	else \
+		echo "gitlint not installed, skipping (pip install gitlint==0.19.1)"; \
+	fi
 
 .PHONY: vendor
 vendor: ## update modules and populate local vendor directory
