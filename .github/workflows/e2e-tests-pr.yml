@@ -4,134 +4,46 @@ on:
   workflow_dispatch: {}
   pull_request:
     types: [opened, synchronize, reopened]
-  issue_comment:
-    types: [created]
 
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
 
 concurrency:
-  group: e2e-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: e2e-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 env:
-  E2E_APPROVAL_COMMENT: "/ok-to-e2e"
   GO_VERSION: "1.25"
   KO_VERSION: "0.15.4"
   KUBECTL_VERSION: "1.34.3"
 
 jobs:
-  gate:
-    name: Gate (manual or approver comment)
-    runs-on: ubuntu-latest
-    outputs:
-      approved:  ${{ steps.decide.outputs.approved }}
-      pr_number: ${{ steps.decide.outputs.pr_number }}
-      head_sha:  ${{ steps.decide.outputs.head_sha }}
-      ref:       ${{ steps.decide.outputs.ref }}
-      image_tag: ${{ steps.decide.outputs.image_tag }}
-      image_ref: ${{ steps.decide.outputs.image_ref }}
-    steps:
-      - id: decide
-        uses: actions/github-script@v7
-        with:
-          script: |
-            // Check if user has write access to the repository
-            // Uses collaborator permission level which works with default permissions
-            async function checkUserPermission(username) {
-              try {
-                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  username: username
-                });
-                const permission = data.permission;
-                // admin or write permission grants e2e access
-                const hasAccess = ['admin', 'write'].includes(permission);
-                console.log(`${username} has ${permission} permission, access: ${hasAccess}`);
-                return { hasAccess, permission };
-              } catch (error) {
-                console.log(`Failed to check permission for ${username}: ${error.message}`);
-                return { hasAccess: false, permission: 'none' };
-              }
-            }
-
-            let approved = false;
-            let prNumber = '';
-            let headSHA = context.sha;
-            let ref = (context.ref || '').replace('refs/heads/', '');
-
-            if (context.eventName === 'pull_request') {
-              prNumber = String(context.payload.pull_request.number);
-              headSHA = context.payload.pull_request.head.sha;
-              ref = context.payload.pull_request.head.ref;
-
-              const author = context.payload.pull_request.user.login;
-              const permCheck = await checkUserPermission(author);
-
-              if (permCheck.hasAccess) {
-                approved = true;
-                console.log(`Auto-approved E2E for ${author} (${permCheck.permission} access)`);
-              } else {
-                console.log(`E2E requires /ok-to-e2e from maintainer for ${author} (${permCheck.permission} access)`);
-              }
-
-            } else if (context.eventName === 'issue_comment') {
-              const comment = context.payload.comment.body || '';
-              const commenter = context.payload.comment.user.login || '';
-
-              if (context.payload.issue.pull_request && comment.includes('/ok-to-e2e')) {
-                const permCheck = await checkUserPermission(commenter);
-
-                if (permCheck.hasAccess) {
-                  approved = true;
-                  console.log(`Manual E2E approval by ${commenter} (${permCheck.permission} access)`);
-
-                  const { data: pr } = await github.rest.pulls.get({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    pull_number: context.payload.issue.number
-                  });
-                  headSHA = pr.head.sha;
-                  ref = pr.head.ref;
-                  prNumber = String(context.payload.issue.number);
-                } else {
-                  console.log(`E2E approval denied for ${commenter} (${permCheck.permission} access)`);
-                }
-              }
-            } else if (context.eventName === 'workflow_dispatch') {
-              approved = true;
-            }
-
-            const tag = (prNumber ? `pr-${prNumber}-` : '') + headSHA.substring(0, 12);
-            const imageRef = `quay.io/karpenter-provider-ibm-cloud/controller:${tag}`;
-
-            console.log('Event:', context.eventName);
-            console.log('Approved:', approved);
-            console.log('PR:', prNumber);
-            console.log('Image:', imageRef);
-
-            core.setOutput('approved', approved ? 'true' : 'false');
-            core.setOutput('pr_number', prNumber);
-            core.setOutput('head_sha', headSHA);
-            core.setOutput('ref', ref);
-            core.setOutput('image_tag', tag);
-            core.setOutput('image_ref', imageRef);
-
   build:
     name: Build PR image with ko
-    needs: [gate]
-    if: ${{ needs.gate.outputs.approved == 'true' }}
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      image_ref: ${{ steps.meta.outputs.image_ref }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.gate.outputs.ref }}
           fetch-depth: 0
+
+      - name: Compute image metadata
+        id: meta
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          SHORT_SHA="${HEAD_SHA:0:12}"
+          if [ -n "$PR_NUMBER" ]; then
+            TAG="pr-${PR_NUMBER}-${SHORT_SHA}"
+          else
+            TAG="${SHORT_SHA}"
+          fi
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "image_ref=quay.io/karpenter-provider-ibm-cloud/controller:${TAG}" >> $GITHUB_OUTPUT
 
       - uses: actions/setup-go@v4
         with:
@@ -147,12 +59,11 @@ jobs:
           KO_DOCKER_REPO: quay.io/karpenter-provider-ibm-cloud/controller
         run: |
           echo "${{ secrets.QUAY_PASSWORD }}" | ko login quay.io --username ${{ secrets.QUAY_USERNAME }} --password-stdin
-          ko build ./cmd/controller --platform=linux/amd64 --bare --tags="${{ needs.gate.outputs.image_tag }}"
+          ko build ./cmd/controller --platform=linux/amd64 --bare --tags="${{ steps.meta.outputs.image_tag }}"
 
   e2e:
     name: Run E2E against PR image
-    needs: [gate, build]
-    if: ${{ needs.gate.outputs.approved == 'true' }}
+    needs: [build]
     runs-on: [self-hosted, ibm-e2e]
     timeout-minutes: 210
     container:
@@ -162,8 +73,6 @@ jobs:
       KUBECONFIG: /tmp/kubeconfig
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.gate.outputs.ref }}
 
       - name: Install dependencies
         run: |
@@ -205,7 +114,7 @@ jobs:
           echo "📋 Found container name: $CONTAINER_NAME"
 
           kubectl set image deployment/karpenter-karpenter-ibm \
-            $CONTAINER_NAME=${{ needs.gate.outputs.image_ref }} \
+            $CONTAINER_NAME=${{ needs.build.outputs.image_ref }} \
             -n karpenter
 
           kubectl rollout status deployment/karpenter-karpenter-ibm -n karpenter --timeout=300s
