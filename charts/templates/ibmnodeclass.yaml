@@ -1,0 +1,190 @@
+{{- if and .Values.customResources.enabled .Values.customResources.nodeClass.enabled }}
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: {{ .Values.customResources.nodeClass.name | default "default" }}
+  labels:
+    {{- include "karpenter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nodeclass
+    {{- if .Values.customResources.mode }}
+    karpenter-ibm.sh/mode: {{ .Values.customResources.mode }}
+    {{- end }}
+spec:
+  {{- if eq .Values.customResources.mode "vpc" }}
+  # VPC-specific configuration
+  {{- with .Values.customResources.nodeClass.vpc }}
+  {{- if .vpcId }}
+  vpcId: {{ .vpcId | quote }}
+  {{- end }}
+
+  {{- if .subnetSelection }}
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ include "karpenter.fullname" $ | quote }}
+      {{- if .subnetSelection.subnetIds }}
+      ids: {{ .subnetSelection.subnetIds | toYaml | nindent 8 }}
+      {{- end }}
+      {{- if .subnetSelection.zones }}
+      zones: {{ .subnetSelection.zones | toYaml | nindent 8 }}
+      {{- end }}
+  {{- end }}
+
+  {{- if .securityGroups }}
+  securityGroupSelectorTerms:
+    {{- if eq .securityGroups.strategy "auto" }}
+    - tags:
+        karpenter.sh/discovery: {{ include "karpenter.fullname" $ | quote }}
+    {{- else if eq .securityGroups.strategy "manual" }}
+    {{- if .securityGroups.groupIds }}
+    - ids: {{ .securityGroups.groupIds | toYaml | nindent 8 }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+
+  {{- if .bootVolume }}
+  blockDeviceMappings:
+    - deviceName: /dev/vda
+      ebs:
+        volumeType: {{ .bootVolume.volumeType | default "general-purpose" }}
+        volumeSize: {{ .bootVolume.size | default 100 }}Gi
+        encrypted: {{ .bootVolume.encrypted | default true }}
+        {{- if and (eq .bootVolume.volumeType "custom") .bootVolume.iops }}
+        iops: {{ .bootVolume.iops }}
+        {{- end }}
+  {{- end }}
+
+  {{- if .networkInterface }}
+  instanceStorePolicy: RAID0
+  {{- if .networkInterface.allowIpSpoofing }}
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: {{ $.Values.customResources.nodeClass.common.metadataService.hopLimit | default 1 }}
+    httpTokens: required
+  {{- end }}
+  {{- end }}
+  {{- end }}
+
+  {{- else if eq .Values.customResources.mode "iks" }}
+  # IKS-specific configuration
+  {{- with .Values.customResources.nodeClass.iks }}
+  {{- if .workerPoolTemplate }}
+  workerPoolTemplate:
+    machineType: {{ .workerPoolTemplate.machineType | default "bx2.4x16" }}
+    diskEncryption: {{ .workerPoolTemplate.diskEncryption | default true }}
+    operatingSystem: {{ .workerPoolTemplate.operatingSystem | default "UBUNTU_20_64" }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+
+  # Common configuration for both VPC and IKS
+  {{- with .Values.customResources.nodeClass.common }}
+  {{- if .image }}
+  {{- if eq .image.strategy "specific" }}
+  amiFamily: Custom
+  amiSelectorTerms:
+    - id: {{ .image.imageId | quote }}
+  {{- else if eq .image.strategy "family" }}
+  amiFamily: {{ .image.family | title }}
+  amiSelectorTerms:
+    - name: "{{ .image.family }}*"
+      {{- if .image.operatingSystem }}
+      tags:
+        OperatingSystem: {{ .image.operatingSystem | quote }}
+      {{- end }}
+      {{- if .image.architecture }}
+        Architecture: {{ .image.architecture | quote }}
+      {{- end }}
+  {{- else }}
+  # Default to latest Ubuntu images
+  amiFamily: Ubuntu
+  amiSelectorTerms:
+    - name: "ubuntu*"
+      tags:
+        OperatingSystem: "ubuntu"
+        Architecture: {{ .image.architecture | default "amd64" | quote }}
+  {{- end }}
+  {{- end }}
+
+  {{- if .userData }}
+  userData: |
+{{ .userData | indent 4 }}
+  {{- end }}
+
+  {{- if .tags }}
+  tags:
+    {{- range $key, $value := .tags }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    karpenter.sh/discovery: {{ include "karpenter.fullname" $ | quote }}
+    karpenter.sh/nodeclass: {{ $.Values.customResources.nodeClass.name | default "default" | quote }}
+  {{- else }}
+  tags:
+    karpenter.sh/discovery: {{ include "karpenter.fullname" $ | quote }}
+    karpenter.sh/nodeclass: {{ $.Values.customResources.nodeClass.name | default "default" | quote }}
+    ManagedBy: "karpenter"
+  {{- end }}
+  {{- end }}
+
+  {{- with .Values.customResources.nodeClass.common.kubelet }}
+  # Kubelet configuration
+  kubelet:
+    {{- if .clusterDNS }}
+    clusterDNS:
+      {{- range .clusterDNS }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .maxPods }}
+    maxPods: {{ .maxPods }}
+    {{- end }}
+    {{- if .podsPerCore }}
+    podsPerCore: {{ .podsPerCore }}
+    {{- end }}
+    {{- if .kubeReserved }}
+    kubeReserved:
+      {{- range $k, $v := .kubeReserved }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .systemReserved }}
+    systemReserved:
+      {{- range $k, $v := .systemReserved }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionHard }}
+    evictionHard:
+      {{- range $k, $v := .evictionHard }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionSoft }}
+    evictionSoft:
+      {{- range $k, $v := .evictionSoft }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionSoftGracePeriod }}
+    evictionSoftGracePeriod:
+      {{- range $k, $v := .evictionSoftGracePeriod }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if .evictionMaxPodGracePeriod }}
+    evictionMaxPodGracePeriod: {{ .evictionMaxPodGracePeriod }}
+    {{- end }}
+    {{- if .imageGCHighThresholdPercent }}
+    imageGCHighThresholdPercent: {{ .imageGCHighThresholdPercent }}
+    {{- end }}
+    {{- if .imageGCLowThresholdPercent }}
+    imageGCLowThresholdPercent: {{ .imageGCLowThresholdPercent }}
+    {{- end }}
+    {{- if .cpuCFSQuota }}
+    cpuCFSQuota: {{ .cpuCFSQuota }}
+    {{- end }}
+  {{- end }}
+
+  # Role configuration
+  role: {{ printf "%s-node-instance-profile" (include "karpenter.fullname" .) | quote }}
+{{- end }}

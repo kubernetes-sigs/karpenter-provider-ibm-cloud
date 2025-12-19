@@ -1,0 +1,20 @@
+{
+  "NodeClass": {
+    "Name": "default-nodeclass"
+  },
+  "NodePool": {
+    "Name": "default-nodepool",
+    "Architecture": ["amd64"],
+    "CapacityTypes": ["on-demand"]
+  },
+  "Workload": {
+    "Name": "default-workload",
+    "Replicas": 3,
+    "Image": "quay.io/nginx/nginx-unprivileged:1.29.1-alpine",
+    "CPURequest": "1000m",
+    "MemoryRequest": "1Gi",
+    "CPULimit": "2000m",
+    "MemoryLimit": "2Gi",
+    "PodAntiAffinity": true
+  }
+}

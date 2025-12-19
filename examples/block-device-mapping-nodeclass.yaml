@@ -1,0 +1,87 @@
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: block-device-example
+spec:
+  # Basic configuration
+  region: us-south
+  instanceProfile: bx2-4x16
+  image: ubuntu-24-04-amd64
+  vpc: r010-12345678-1234-5678-9abc-def012345678
+  subnet: 0717-197e06f4-b500-426c-bc0f-900b215f996c
+  securityGroups:
+    - r010-87654321-4321-8765-cba9-876543210fed
+
+  # Block Device Mappings - Similar to AWS Karpenter
+  blockDeviceMappings:
+    # Custom boot volume with high IOPS
+    - rootVolume: true
+      volumeSpec:
+        capacity: 200            # 200GB boot volume
+        profile: "10iops-tier"   # High performance storage
+        deleteOnTermination: true
+        encryptionKeyID: "crn:v1:bluemix:public:kms:us-south:a/123456789:key:12345678-1234-5678-9abc-def012345678"
+        tags:
+          - "boot-volume"
+          - "encrypted"
+
+    # Additional data volume for application storage
+    - deviceName: "application-data"
+      volumeSpec:
+        capacity: 500            # 500GB data volume
+        profile: "5iops-tier"    # Balanced performance
+        deleteOnTermination: false  # Persist beyond instance lifecycle
+        tags:
+          - "application-storage"
+          - "persistent"
+
+    # High-performance storage for databases
+    - deviceName: "database-storage"
+      volumeSpec:
+        capacity: 1000           # 1TB data volume
+        profile: "custom"        # Custom profile for specific IOPS
+        iops: 8000              # 8000 IOPS
+        bandwidth: 500          # 500 Mbps bandwidth
+        deleteOnTermination: false
+        encryptionKeyID: "crn:v1:bluemix:public:kms:us-south:a/123456789:key:87654321-4321-8765-cba9-876543210fed"
+        tags:
+          - "database-storage"
+          - "high-performance"
+          - "encrypted"
+
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: block-device-nodepool
+spec:
+  template:
+    metadata:
+      labels:
+        storage-tier: "high-performance"
+    spec:
+      # Reference the NodeClass with custom block devices
+      nodeClassRef:
+        apiVersion: karpenter-ibm.sh/v1alpha1
+        kind: IBMNodeClass
+        name: block-device-example
+
+      # Resource requirements
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["bx2-4x16", "bx2-8x32"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+
+      # Node configurations
+      taints:
+        - key: "storage-tier"
+          value: "high-performance"
+          effect: NoSchedule
+
+  # Disruption settings
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s

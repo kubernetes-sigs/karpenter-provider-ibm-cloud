@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "karpenter.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "karpenter.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      {{- include "karpenter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "karpenter.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "karpenter.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ end }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | default "debug" | quote }}
+            - name: IBMCLOUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: ibm_api_key
+            - name: IBMCLOUD_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: region
+            {{- if .Values.credentials.zone }}
+            - name: IBMCLOUD_ZONE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: zone
+            {{- end }}
+            {{- if .Values.credentials.resourceGroupId }}
+            - name: IBMCLOUD_RESOURCE_GROUP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: resource_group_id
+            {{- end }}
+            - name: VPC_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: vpc_url
+            - name: VPC_AUTH_TYPE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: vpc_auth_type
+            - name: VPC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-credentials
+                  key: vpc_api_key
+            - name: CONTROLLER_MANAGER_VERBOSITY
+              value: {{ .Values.controllerVerbosity | default "4" | quote }}
+            - name: CONTROLLER_MANAGER_LOG_LEVEL
+              value: {{ .Values.controllerLogLevel | default "debug" | quote }}
+            {{- if .Values.iksClusterID }}
+            - name: IKS_CLUSTER_ID
+              value: {{ .Values.iksClusterID | quote }}
+            {{- end }}
+            {{- if .Values.clusterName }}
+            - name: CLUSTER_NAME
+              value: {{ .Values.clusterName | quote }}
+            {{- end }}
+            - name: BOOTSTRAP_MODE
+              value: {{ .Values.bootstrapMode | default "auto" | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.controller.metrics.port | quote }}
+            - name: HEALTH_PROBE_PORT
+              value: {{ .Values.controller.healthProbe.port | quote }}
+            {{- if .Values.controller.orphanCleanup.enabled }}
+            - name: KARPENTER_ENABLE_ORPHAN_CLEANUP
+              value: "true"
+            {{- end }}
+            {{- if .Values.customResources.enabled }}
+            {{- include "karpenter.cr.environmentConfig" . | nindent 12 }}
+            {{- include "karpenter.cr.bootstrapConfig" . | nindent 12 }}
+            {{- end }}
+            {{- if .Values.circuitBreaker.enabled }}
+            # Circuit breaker configuration from ConfigMap
+            - name: CIRCUIT_BREAKER_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: enabled
+            - name: CIRCUIT_BREAKER_FAILURE_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: failure-threshold
+            - name: CIRCUIT_BREAKER_FAILURE_WINDOW
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: failure-window
+            - name: CIRCUIT_BREAKER_RECOVERY_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: recovery-timeout
+            - name: CIRCUIT_BREAKER_HALF_OPEN_MAX_REQUESTS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: half-open-max-requests
+            - name: CIRCUIT_BREAKER_RATE_LIMIT_PER_MINUTE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: rate-limit-per-minute
+            - name: CIRCUIT_BREAKER_MAX_CONCURRENT_INSTANCES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-circuit-breaker
+                  key: max-concurrent-instances
+            {{- end }}
+          {{- if .Values.additionalCAs.enabled }}
+          envFrom:
+            # Mount additional CA bundle for cross-VPC kubelet authentication
+            - secretRef:
+                name: {{ include "karpenter.fullname" . }}-additional-ca
+                optional: true
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.controller.metrics.port }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.controller.healthProbe.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

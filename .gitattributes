@@ -1,0 +1,3 @@
+# Mark generated CRDs as linguist-generated to exclude from language statistics
+# and prevent linting/formatting tools from modifying them
+charts/crds/*.yaml linguist-generated=true

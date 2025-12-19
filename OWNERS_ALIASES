@@ -1,0 +1,27 @@
+# See the OWNERS docs at https://go.k8s.io/owners#owners_aliases
+
+aliases:
+  # Core maintainers for the Karpenter IBM Cloud provider
+  karpenter-ibm-maintainers:
+    - pfeifferj
+    - jirn073-76
+
+  # Platform and infrastructure experts
+  platform-team:
+    - pfeifferj
+    - jirn073-76
+
+  # Security reviewers for security-sensitive changes
+  security-team:
+    - pfeifferj
+    - jirn073-76
+
+  # Documentation reviewers
+  docs-team:
+    - pfeifferj
+    - jirn073-76
+
+  # API reviewers for CRD and API changes
+  api-reviewers:
+    - pfeifferj
+    - jirn073-76

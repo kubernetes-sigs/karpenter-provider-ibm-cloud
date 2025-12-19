@@ -1,0 +1,53 @@
+name: Test Helm Chart
+
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install Helm
+      run: |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod +x get_helm.sh
+        ./get_helm.sh
+
+    - name: Create test values
+      run: |
+        cat > charts/ci-values.yaml << EOF
+        credentials:
+          ibmApiKey: "ci-test-key"
+          region: "us-south"
+          vpcApiKey: "ci-test-vpc-key"
+          vpcUrl: "https://us-south.iaas.cloud.ibm.com/v1"
+        EOF
+
+    - name: Create yamllint config
+      run: |
+        cat > .yamllint << EOF
+        extends: default
+        rules:
+          document-start: disable
+          line-length: disable
+        EOF
+
+    - name: Run tests
+      working-directory: charts
+      run: |
+        # Lint chart with test values
+        helm lint . -f ci-values.yaml
+
+        # Validate template rendering
+        helm template . -f ci-values.yaml

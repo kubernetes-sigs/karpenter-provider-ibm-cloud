@@ -1,0 +1,581 @@
+# Default values for karpenter-ibm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Self-contained chart includes base Karpenter CRDs and IBM provider
+
+replicaCount: 1
+
+image:
+  repository: quay.io/karpenter-provider-ibm-cloud/controller
+  tag: v0.4.0
+  pullPolicy: IfNotPresent
+  # digest: "sha256:98e1441aa5d15f6e23e58a466c2526942e853d49281eefffa64e22361f7a19ad"
+  # Overrides the image tag whose default is the chart appVersion.
+
+# Logging configuration
+logLevel: "debug"           # Options: debug, info, error
+controllerVerbosity: "4"    # Controller manager verbosity (0-5)
+controllerLogLevel: "debug" # Controller manager log level
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources: {}
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Pod Disruption Budget configuration
+podDisruptionBudget:
+  # The name of the PDB. If not set, it will use the release name
+  name: ""
+  # Maximum number of pods that can be unavailable
+  maxUnavailable: 1
+
+# IBM Cloud credentials configuration
+credentials:
+  # Required: ibm cloud api key for general operations
+  ibmApiKey: ""
+  # Required: ibm cloud region (e.g., us-south, eu-de)
+  region: ""
+  # Required: ibm cloud zone (e.g., us-south-1, eu-de-2)
+  zone: ""
+  # Required: ibm cloud resource group ID
+  resourceGroupId: ""
+  # Optional: vpc api endpoint url
+  # If not provided, defaults to https://{region}.iaas.cloud.ibm.com/v1
+  vpcUrl: ""
+  # Optional: vpc authentication type
+  vpcAuthType: "iam"
+  # Required: vpc api key for vpc operations
+  vpcApiKey: ""
+
+# IKS cluster configuration (for IKS integration)
+# Optional: IKS cluster ID for IKS API integration
+iksClusterID: ""
+# Optional: cluster name for identification
+clusterName: ""
+# Bootstrap mode: auto, cloud-init, or iks-api
+bootstrapMode: "auto"
+
+# Custom Resource Configuration
+customResources:
+  # Enable automatic creation of NodePools and IBMNodeClasses
+  # When enabled, you must provide configuration based on your mode:
+  # - For vpc mode: customResources.nodeClass.vpc.vpcId is required
+  # - For iks mode: iksClusterID is required
+  enabled: false
+
+  # Mode: "iks" for IBM Kubernetes Service, "vpc" for self-managed VPC clusters
+  mode: "vpc"  # Options: "iks", "vpc"
+
+  # Global settings for all node pools
+  global:
+    # Default instance types across all pools
+    instanceTypes:
+      - "bx2-2x8"
+      - "bx2-4x16"
+      - "bx2-8x32"
+
+    # Default capacity type
+    capacityType: "on-demand"  # Options: "on-demand", "spot"
+
+    # Default architecture
+    architecture: "amd64"  # Options: "amd64", "arm64"
+
+    # Default disruption settings
+    disruption:
+      consolidationPolicy: WhenUnderutilized
+      consolidateAfter: 30s
+      expireAfter: 720h  # 30 days
+
+    # Default resource limits
+    limits:
+      cpu: 1000
+      memory: 1000Gi
+
+    # Default taints for all nodes
+    taints: []
+    # - key: "example.com/special-nodes"
+    #   value: "true"
+    #   effect: "NoSchedule"
+
+  # NodeClass configuration (IBM-specific settings)
+  nodeClass:
+    # Create a default IBMNodeClass
+    enabled: true
+    name: "default"
+
+    # VPC-specific settings (when mode=vpc)
+    vpc:
+      # VPC ID (required for VPC mode)
+      vpcId: ""
+
+      # Subnet selection strategy
+      subnetSelection:
+        # Strategy: "all", "zone-balanced", "cost-optimized", "availability-preferred"
+        strategy: "zone-balanced"
+
+        # Specific subnet IDs (optional - overrides strategy)
+        subnetIds: []
+        # - "subnet-123"
+        # - "subnet-456"
+
+        # Availability zones to use (optional)
+        zones: []
+        # - "us-south-1"
+        # - "us-south-2"
+
+      # Security group settings
+      securityGroups:
+        # Selection strategy: "auto", "manual"
+        strategy: "auto"
+
+        # Specific security group IDs (when strategy=manual)
+        groupIds: []
+        # - "sg-123"
+        # - "sg-456"
+
+      # Boot volume configuration
+      bootVolume:
+        # Volume type: "general-purpose", "5iops-tier", "10iops-tier", "custom"
+        volumeType: "general-purpose"
+        size: 100  # GB
+        encrypted: true
+
+        # Custom IOPS (when volumeType=custom)
+        iops: null
+
+      # Network interface settings
+      networkInterface:
+        # Enable IP forwarding
+        allowIpSpoofing: false
+
+        # Primary interface subnet strategy
+        primaryInterfaceSubnetStrategy: "zone-balanced"
+
+    # IKS-specific settings (when mode=iks)
+    iks:
+      # Worker pool template settings
+      workerPoolTemplate:
+        # Machine type for IKS worker pools
+        machineType: "bx2.4x16"
+
+        # Disk encryption
+        diskEncryption: true
+
+        # Operating system
+        operatingSystem: "UBUNTU_20_64"
+
+    # Common settings for both VPC and IKS
+    common:
+      # Image selection
+      image:
+        # Image selection strategy: "latest", "specific", "family"
+        strategy: "latest"
+
+        # Specific image ID (when strategy=specific)
+        imageId: ""
+
+        # Image family (when strategy=family)
+        family: "ubuntu-minimal"
+
+        # Operating system filter
+        operatingSystem: "ubuntu"
+
+        # Architecture filter
+        architecture: "amd64"
+
+      # User data / cloud-init configuration
+      userData: ""
+
+      # Instance metadata service
+      metadataService:
+        enabled: true
+        hopLimit: 1
+
+      # Resource tags
+      tags:
+        Environment: "development"
+        ManagedBy: "karpenter"
+        # Add custom tags here
+
+  # NodePool configurations - supports multiple pools
+  nodePools:
+    # Default general-purpose pool
+    - name: "general-purpose"
+      enabled: true
+
+      # Pool-specific requirements
+      requirements:
+        # Instance types for this pool
+        instanceTypes:
+          - "bx2-2x8"
+          - "bx2-4x16"
+
+        # Capacity type
+        capacityType: "on-demand"
+
+        # Architecture
+        architecture: "amd64"
+
+        # Availability zones
+        zones: []
+        # - "us-south-1"
+        # - "us-south-2"
+
+      # Resource limits for this pool
+      limits:
+        cpu: 100
+        memory: 100Gi
+
+      # Disruption settings for this pool
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 30s
+        expireAfter: 720h
+
+      # Taints specific to this pool
+      taints: []
+
+      # Labels specific to this pool
+      labels:
+        "nodepool": "general-purpose"
+        "workload-type": "general"
+
+      # NodeClass reference (defaults to global nodeClass.name)
+      nodeClassRef: ""
+
+    # Spot instances pool
+    - name: "spot-instances"
+      enabled: false
+
+      requirements:
+        instanceTypes:
+          - "bx2-4x16"
+          - "bx2-8x32"
+        capacityType: "spot"
+        architecture: "amd64"
+
+      limits:
+        cpu: 200
+        memory: 200Gi
+
+      disruption:
+        consolidationPolicy: WhenUnderutilized
+        consolidateAfter: 10s
+        expireAfter: 12h  # Shorter expiry for spot
+
+      taints:
+        - key: "node.kubernetes.io/instance-type"
+          value: "spot"
+          effect: "NoSchedule"
+
+      labels:
+        "nodepool": "spot-instances"
+        "workload-type": "batch"
+        "cost-optimization": "enabled"
+
+    # High-memory pool for data processing
+    - name: "high-memory"
+      enabled: false
+
+      requirements:
+        instanceTypes:
+          - "mx2-8x64"
+          - "mx2-16x128"
+        capacityType: "on-demand"
+        architecture: "amd64"
+
+      limits:
+        cpu: 50
+        memory: 500Gi
+
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 60s
+        expireAfter: 168h  # 7 days
+
+      taints:
+        - key: "workload-type"
+          value: "high-memory"
+          effect: "NoSchedule"
+
+      labels:
+        "nodepool": "high-memory"
+        "workload-type": "memory-intensive"
+
+    # GPU pool for AI/ML workloads
+    - name: "gpu-pool"
+      enabled: false
+
+      requirements:
+        instanceTypes:
+          - "gx2-8x64x1v100"
+          - "gx2-16x128x2v100"
+        capacityType: "on-demand"
+        architecture: "amd64"
+
+      limits:
+        cpu: 20
+        memory: 100Gi
+
+      disruption:
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 300s  # Longer consolidation for expensive instances
+        expireAfter: 24h
+
+      taints:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NoSchedule"
+        - key: "workload-type"
+          value: "gpu"
+          effect: "NoSchedule"
+
+      labels:
+        "nodepool": "gpu-pool"
+        "workload-type": "gpu"
+        "accelerator": "nvidia-v100"
+
+# Circuit Breaker configuration
+# Protects against API rate limits and cascading failures
+circuitBreaker:
+  # Enable circuit breaker (set to false to disable all protections)
+  enabled: true
+
+  # Configuration values - supports time.Duration format (e.g., "5m", "30s")
+  config:
+    # Number of consecutive failures before opening the circuit
+    failureThreshold: 3
+
+    # Time window for counting failures
+    failureWindow: "5m"
+
+    # How long to wait before attempting recovery (half-open state)
+    recoveryTimeout: "15m"
+
+    # Maximum test requests allowed in half-open state
+    halfOpenMaxRequests: 2
+
+    # Maximum instances created per minute (rate limiting)
+    # For development/demo: increase to 10-20
+    # For production: keep at 2-5 based on IBM Cloud quotas
+    rateLimitPerMinute: 10
+
+    # Maximum instances being created simultaneously
+    maxConcurrentInstances: 5
+
+  # Preset configurations (overrides individual config values)
+  # Options: "conservative", "balanced", "aggressive", "demo", "custom"
+  preset: "balanced"
+
+  # Preset definitions (only used when preset != "custom")
+  presets:
+    conservative:
+      failureThreshold: 2
+      failureWindow: "3m"
+      recoveryTimeout: "20m"
+      halfOpenMaxRequests: 1
+      rateLimitPerMinute: 2
+      maxConcurrentInstances: 3
+
+    balanced:
+      failureThreshold: 3
+      failureWindow: "5m"
+      recoveryTimeout: "15m"
+      halfOpenMaxRequests: 2
+      rateLimitPerMinute: 5
+      maxConcurrentInstances: 5
+
+    aggressive:
+      failureThreshold: 5
+      failureWindow: "10m"
+      recoveryTimeout: "5m"
+      halfOpenMaxRequests: 3
+      rateLimitPerMinute: 10
+      maxConcurrentInstances: 10
+
+    demo:
+      failureThreshold: 10
+      failureWindow: "30m"
+      recoveryTimeout: "1m"
+      halfOpenMaxRequests: 5
+      rateLimitPerMinute: 20
+      maxConcurrentInstances: 15
+
+# Additional CA certificates for cross-VPC kubelet authentication
+additionalCAs:
+  enabled: false
+  # Map of CA certificates (key: filename, value: base64-encoded certificate)
+  # Example:
+  # certs:
+  #   rke2-ca.crt: "LS0tLS1CRUdJTi1DRVJUSUZJQ0FURS0tLS0t..."
+  #   proxy-ca.crt: "LS0tLS1CRUdJTi1DRVJUSUZJQ0FURS0tLS0t..."
+  certs: {}
+
+# Controller configuration
+controller:
+  # Orphan cleanup configuration
+  orphanCleanup:
+    # Enable cleanup of orphaned instances (instances without NodeClaims)
+    # This prevents resource leaks when NodeClaims are deleted before instances are cleaned up
+    enabled: true
+
+  metrics:
+    port: 8080
+  healthProbe:
+    port: 8081
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: health
+    initialDelaySeconds: 5
+    timeoutSeconds: 1
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: health
+    initialDelaySeconds: 5
+    timeoutSeconds: 1
+
+# Metrics configuration
+metrics:
+  # Enable ServiceMonitor creation for Prometheus scraping
+  serviceMonitor:
+    enabled: false
+    additionalLabels: {}
+    # Scraping interval for metrics collection
+    interval: 30s
+    # Timeout for each scrape
+    scrapeTimeout: 10s
+    # Relabeling configuration for the ServiceMonitor
+    relabelings: []
+    # Metric relabeling configuration for the ServiceMonitor
+    metricRelabelings: []
+    # Additional endpoint configuration
+    endpointConfig: {}
+
+  # Enable PrometheusRule creation for alerting
+  prometheusRule:
+    enabled: false
+    additionalLabels: {}
+    # Rule evaluation interval
+    interval: 30s
+    # URL for runbook documentation
+    runbookUrl: "https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/docs/troubleshooting.md"
+
+    # Alert configuration with customizable thresholds and timing
+    alerts:
+      # Controller availability alerts
+      controllerDown:
+        for: 5m
+        severity: critical
+
+      # Error rate alerts
+      highErrorRate:
+        threshold: 0.1  # 10% error rate
+        for: 10m
+        severity: warning
+
+      # Performance alerts
+      slowReconciliation:
+        threshold: 60  # 60 seconds
+        for: 15m
+        severity: warning
+
+      slowNodeProvisioning:
+        threshold: 600  # 10 minutes
+        for: 15m
+        severity: warning
+
+      # IBM Cloud API alerts
+      apiErrors:
+        threshold: 0.05  # 5% error rate
+        for: 5m
+        severity: warning
+
+      apiRateLimit:
+        threshold: 0.01  # 1% rate limit occurrence
+        for: 2m
+        severity: warning
+
+      # Node provisioning alerts (CRITICAL - impacts workload scheduling)
+      nodeProvisioningFailures:
+        threshold: 0.01  # 1% failure rate
+        for: 5m
+        severity: critical
+
+      noNodeProvisioning:
+        podThreshold: 0  # Any unschedulable pods
+        for: 10m
+        severity: critical
+
+      # Cache performance alerts
+      lowCacheHitRate:
+        threshold: 80  # 80% hit rate
+        for: 30m
+        severity: info
+
+      # Resource utilization alerts
+      highMemoryUsage:
+        threshold: 500  # 500MB
+        for: 30m
+        severity: warning
+
+      highCPUUsage:
+        threshold: 80  # 80% CPU usage
+        for: 30m
+        severity: warning
+
+    # Additional custom rule groups
+    additionalRuleGroups: []
+
+# Grafana Dashboard configuration
+grafanaDashboard:
+  # Enable Grafana dashboard ConfigMap creation
+  enabled: false
+  # Namespace to create the ConfigMap in (defaults to release namespace)
+  namespace: ""
+  # Labels to add to the ConfigMap for Grafana sidecar discovery
+  labels:
+    grafana_dashboard: "1"
+  # Annotations to add to the ConfigMap
+  annotations: {}

@@ -1,0 +1,110 @@
+# Example NodeClass configurations using the new ImageSelector functionality
+# This demonstrates how to use semantic image selection instead of hardcoded image IDs
+
+---
+# Example 1: Latest Ubuntu 22.04 minimal image for amd64 architecture
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: ubuntu-2204-latest
+spec:
+  # Semantic image selection - automatically picks latest Ubuntu 22.04 minimal amd64 image
+  imageSelector:
+    os: "ubuntu"
+    majorVersion: "22"
+    # minorVersion omitted = latest minor version (e.g., 04, 10, etc.)
+    architecture: "amd64"  # optional, defaults to amd64
+    variant: "minimal"     # optional, prefers minimal variant
+
+  region: "us-south"
+  vpc: "r010-12345678-1234-5678-9abc-def012345678"
+  securityGroups:
+    - "r010-87654321-4321-4321-4321-210987654321"
+
+---
+# Example 2: Specific Ubuntu 20.04 server image
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: ubuntu-2004-server
+spec:
+  imageSelector:
+    os: "ubuntu"
+    majorVersion: "20"
+    minorVersion: "04"     # specific minor version
+    architecture: "amd64"
+    variant: "server"      # server variant instead of minimal
+
+  region: "eu-de"
+  vpc: "r010-11111111-2222-3333-4444-555555555555"
+  securityGroups:
+    - "r010-66666666-7777-8888-9999-000000000000"
+
+---
+# Example 3: Latest RHEL 8.x for s390x (IBM Z) architecture
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: rhel-8-s390x
+spec:
+  imageSelector:
+    os: "rhel"
+    majorVersion: "8"
+    # minorVersion omitted = latest available
+    architecture: "s390x"  # IBM Z architecture
+    # variant omitted = any variant
+
+  region: "us-east"
+  vpc: "r010-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  securityGroups:
+    - "r010-ffffffff-0000-1111-2222-333333333333"
+
+---
+# Example 4: Traditional explicit image specification (still supported)
+apiVersion: karpenter-ibm.sh/v1alpha1
+kind: IBMNodeClass
+metadata:
+  name: explicit-image
+spec:
+  # Traditional approach - specific image ID or name
+  image: "r006-72b27b5c-f4b0-48bb-b954-5becc7c1dcb8"
+
+  region: "jp-tok"
+  vpc: "r010-12121212-3434-5656-7878-909090909090"
+  securityGroups:
+    - "r010-abcdabcd-1234-5678-9012-345678901234"
+
+---
+# Example NodePool using the semantic image NodeClass
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: ubuntu-nodepool
+spec:
+  template:
+    metadata:
+      labels:
+        app: "web-app"
+        environment: "production"
+    spec:
+      requirements:
+        - key: "karpenter.sh/capacity-type"
+          operator: In
+          values: ["on-demand", "spot"]
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values: ["bx2-4x16", "bx2-8x32", "bx2-16x64"]
+      nodeClassRef:
+        apiVersion: karpenter-ibm.sh/v1alpha1
+        kind: IBMNodeClass
+        name: ubuntu-2204-latest  # References the semantic image selection NodeClass
+      taints:
+        - key: "example.com/special"
+          value: "true"
+          effect: NoSchedule
+  limits:
+    cpu: 1000
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+    expireAfter: 2160h # 90 days

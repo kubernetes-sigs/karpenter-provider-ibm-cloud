@@ -1,0 +1,18 @@
+credentials:
+  ibmApiKey: "test-api-key"
+  vpcApiKey: "test-vpc-key"
+  region: "us-south"
+
+image:
+  repository: "test/karpenter-ibm"
+  tag: "latest"
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

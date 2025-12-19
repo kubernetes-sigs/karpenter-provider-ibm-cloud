@@ -1,0 +1,90 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Run at 2 AM UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      tag_suffix:
+        description: 'Tag suffix for the nightly build (e.g., alpha, beta)'
+        required: false
+        default: 'nightly'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  compute-version:
+    runs-on: ubuntu-latest
+    outputs:
+      nightly_version: ${{ steps.version.outputs.nightly_version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      commit_date: ${{ steps.version.outputs.commit_date }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate nightly version
+        id: version
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_DATE=$(git show -s --format=%cs)
+          SUFFIX="${{ github.event.inputs.tag_suffix || 'nightly' }}"
+          NIGHTLY_VERSION="${LATEST_TAG}-${COMMIT_DATE}-${SHORT_SHA}-${SUFFIX}"
+
+          echo "nightly_version=$NIGHTLY_VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "commit_date=$COMMIT_DATE" >> $GITHUB_OUTPUT
+          echo "Generated nightly version: $NIGHTLY_VERSION"
+
+  build:
+    needs: compute-version
+    uses: ./.github/workflows/build-image.yaml
+    with:
+      tag: ${{ needs.compute-version.outputs.nightly_version }}
+      additional_tags: 'nightly'
+      version: ${{ needs.compute-version.outputs.nightly_version }}
+    secrets: inherit
+
+  summary:
+    needs: [compute-version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create build summary
+        env:
+          KO_DOCKER_REPO: quay.io/karpenter-provider-ibm-cloud/controller
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          # Nightly Build Summary
+
+          ## Version Information
+          - **Nightly Version**: \`${{ needs.compute-version.outputs.nightly_version }}\`
+          - **Commit SHA**: \`${{ needs.compute-version.outputs.short_sha }}\`
+          - **Commit Date**: \`${{ needs.compute-version.outputs.commit_date }}\`
+
+          ## Images Published
+          - \`$KO_DOCKER_REPO:${{ needs.compute-version.outputs.nightly_version }}\`
+          - \`$KO_DOCKER_REPO:nightly\` (latest nightly)
+
+          ## Platforms
+          - linux/amd64
+          - linux/arm64
+          - linux/s390x
+
+          ## Usage
+
+          To use the latest nightly build:
+          \`\`\`bash
+          podman pull $KO_DOCKER_REPO:nightly
+          \`\`\`
+
+          To use this specific nightly build:
+          \`\`\`bash
+          podman pull $KO_DOCKER_REPO:${{ needs.compute-version.outputs.nightly_version }}
+          \`\`\`
+          EOF
