@@ -26,6 +26,9 @@ const (
 	// AnnotationIBMNodeClassHashVersion is the annotation key for the version of the hash function
 	AnnotationIBMNodeClassHashVersion = Group + "/nodeclass-hash-version"
 
+	// AnnotationIBMNodeClaimSubnetID is the annotation key used to record the subnet ID
+	AnnotationIBMNodeClaimSubnetID = Group + "/subnet-id"
+
 	// AnnotationIBMNodeClaimImageID stores the resolved image ID used to create a NodeClaim.
 	AnnotationIBMNodeClaimImageID = Group + "/image-id"
 )

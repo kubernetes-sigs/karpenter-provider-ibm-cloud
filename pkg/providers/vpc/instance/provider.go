@@ -810,6 +810,9 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 				"karpenter.sh/capacity-type":       "on-demand",
 				"karpenter.sh/nodepool":            nodeClaim.Labels["karpenter.sh/nodepool"],
 			},
+			Annotations: map[string]string{
+				v1alpha1.AnnotationIBMNodeClaimSubnetID: subnet,
+			},
 		},
 		Spec: corev1.NodeSpec{
 			// Use the full instance ID including the zone prefix (e.g., 02u7_uuid)
