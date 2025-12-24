@@ -29,6 +29,9 @@ const (
 	// AnnotationIBMNodeClaimSubnetID is the annotation key used to record the subnet ID
 	AnnotationIBMNodeClaimSubnetID = Group + "/subnet-id"
 
+	// AnnotationIBMNodeClaimSecurityGroups is the annotation key used to record the security groups
+	AnnotationIBMNodeClaimSecurityGroups = Group + "/security-group-ids"
+
 	// AnnotationIBMNodeClaimImageID stores the resolved image ID used to create a NodeClaim.
 	AnnotationIBMNodeClaimImageID = Group + "/image-id"
 )

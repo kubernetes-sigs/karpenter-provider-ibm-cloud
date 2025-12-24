@@ -598,9 +598,8 @@ func TestGetDefaultSecurityGroup(t *testing.T) {
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 	assert.NoError(t, err)
 	assert.NotNil(t, sg)
 	assert.Equal(t, "default-sg-id", *sg.ID)
@@ -632,9 +631,8 @@ func TestGetDefaultSecurityGroup_NotFound(t *testing.T) {
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 	assert.Error(t, err)
 	assert.Nil(t, sg)
 	assert.Contains(t, err.Error(), "default security group not found")
@@ -1315,9 +1313,8 @@ func TestGetDefaultSecurityGroup_Error(t *testing.T) {
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 	assert.Error(t, err)
 	assert.Nil(t, sg)
 	assert.Contains(t, err.Error(), "listing security groups")
@@ -1657,7 +1654,6 @@ func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
 	defer ctrl.Finish()
 
 	ctx := context.Background()
-	provider := &VPCInstanceProvider{}
 
 	t.Run("multiple security groups - finds default", func(t *testing.T) {
 		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
@@ -1679,7 +1675,7 @@ func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
 			Return(testSGs, &core.DetailedResponse{StatusCode: 200}, nil)
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 
 		assert.NoError(t, err)
 		assert.NotNil(t, sg)
@@ -1698,7 +1694,7 @@ func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
 			Return(emptySGs, &core.DetailedResponse{StatusCode: 200}, nil)
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 
 		assert.Error(t, err)
 		assert.Nil(t, sg)
@@ -1713,7 +1709,7 @@ func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
 			Return(nil, nil, fmt.Errorf("API rate limit exceeded"))
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 
 		assert.Error(t, err)
 		assert.Nil(t, sg)

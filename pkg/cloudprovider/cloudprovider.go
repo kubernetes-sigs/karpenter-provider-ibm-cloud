@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -54,6 +55,7 @@ const (
 	NodeClassHashChangedDrift        cloudprovider.DriftReason = "NodeClassHashChanged"
 	SubnetDrift                      cloudprovider.DriftReason = "SubnetDrift"
 	ImageDrift                       cloudprovider.DriftReason = "ImageDrift"
+	SecurityGroupDrift               cloudprovider.DriftReason = "SecurityGroupDrift"
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
@@ -459,9 +461,10 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	annotations := map[string]string{
-		v1alpha1.AnnotationIBMNodeClassHash:        nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
-		v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion,
-		v1alpha1.AnnotationIBMNodeClaimSubnetID:    node.Annotations[v1alpha1.AnnotationIBMNodeClaimSubnetID],
+		v1alpha1.AnnotationIBMNodeClassHash:           nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
+		v1alpha1.AnnotationIBMNodeClassHashVersion:    v1alpha1.IBMNodeClassHashVersion,
+		v1alpha1.AnnotationIBMNodeClaimSubnetID:       node.Annotations[v1alpha1.AnnotationIBMNodeClaimSubnetID],
+		v1alpha1.AnnotationIBMNodeClaimSecurityGroups: node.Annotations[v1alpha1.AnnotationIBMNodeClaimSecurityGroups],
 	}
 
 	// Store resolved image ID only if available
@@ -594,6 +597,14 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeCla
 		return driftReason, nil
 	}
 
+	driftReason, err = c.areSecurityGroupsDrifted(ctx, log, nodeClaim, nodeClass)
+	if err != nil {
+		return "", err
+	}
+	if driftReason != "" {
+		return driftReason, nil
+	}
+
 	return "", nil
 }
 
@@ -677,6 +688,43 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, log logr.Logger, no
 
 	log.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "validSubnets", validSubnets)
 	return SubnetDrift, nil
+}
+
+func (c *CloudProvider) areSecurityGroupsDrifted(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass) (cloudprovider.DriftReason, error) {
+	storedSGs := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClaimSecurityGroups]
+	if storedSGs == "" {
+		return "", nil
+	}
+
+	storedSGSet := sets.New(strings.Split(storedSGs, ",")...)
+	var currentSGs []string
+
+	if len(nodeClass.Spec.SecurityGroups) > 0 {
+		currentSGs = nodeClass.Spec.SecurityGroups
+	} else {
+		// Get default security group from VPC
+		vpcClient, err := c.ibmClient.GetVPCClient(ctx)
+		if err != nil {
+			log.Error(err, "Failed to get VPC client for security group drift check")
+			return "", fmt.Errorf("getting VPC client: %w", err)
+		}
+
+		defaultSG, err := vpcClient.GetDefaultSecurityGroup(ctx, nodeClass.Spec.VPC)
+		if err != nil {
+			log.Error(err, "Failed to get default security group", "vpcID", nodeClass.Spec.VPC)
+			return "", fmt.Errorf("getting default security group: %w", err)
+		}
+		currentSGs = []string{*defaultSG.ID}
+	}
+
+	currentSGSet := sets.New(currentSGs...)
+
+	if !storedSGSet.Equal(currentSGSet) {
+		log.Info("Security group drift detected", "storedSecurityGroups", storedSGSet.UnsortedList(), "currentSecurityGroups", currentSGSet.UnsortedList())
+		return SecurityGroupDrift, nil
+	}
+
+	return "", nil
 }
 
 func (c *CloudProvider) Name() string {
