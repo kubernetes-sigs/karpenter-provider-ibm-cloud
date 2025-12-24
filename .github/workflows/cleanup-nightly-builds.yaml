@@ -16,130 +16,122 @@ on:
         type: boolean
         default: false
 
+env:
+  QUAY_REPO: karpenter-provider-ibm-cloud/controller
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
 
     steps:
-      - name: Cleanup old nightly builds
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const retentionDays = parseInt('${{ github.event.inputs.retention_days || 7 }}');
-            const dryRun = ${{ github.event.inputs.dry_run || false }};
-            const packageName = 'karpenter-provider-ibm-cloud/controller';
+      - name: Cleanup old nightly builds from Quay.io
+        env:
+          QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+        run: |
+          set -euo pipefail
 
-            console.log(`Retention period: ${retentionDays} days`);
-            console.log(`Dry run: ${dryRun}`);
+          RETENTION_DAYS="${{ github.event.inputs.retention_days || '7' }}"
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          QUAY_API="https://quay.io/api/v1"
 
-            // Get all package versions
-            let versions = [];
-            try {
-              versions = await github.paginate(
-                github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
-                {
-                  package_type: 'container',
-                  package_name: packageName,
-                  username: context.repo.owner,
-                }
-              );
-            } catch (error) {
-              if (error.status === 404) {
-                console.log(`Package '${packageName}' not found for user '${context.repo.owner}'. No cleanup needed.`);
-                return;
-              }
-              throw error;
-            }
+          echo "Retention period: ${RETENTION_DAYS} days"
+          echo "Dry run: ${DRY_RUN}"
+          echo "Repository: ${QUAY_REPO}"
 
-            const now = new Date();
-            const cutoffDate = new Date(now.getTime() - (retentionDays * 24 * 60 * 60 * 1000));
+          # Calculate cutoff date in seconds since epoch
+          CUTOFF_DATE=$(date -d "-${RETENTION_DAYS} days" +%s)
+          echo "Cutoff date: $(date -d "@${CUTOFF_DATE}" --iso-8601=seconds)"
 
-            console.log(`Cutoff date: ${cutoffDate.toISOString()}`);
-            console.log(`Total versions found: ${versions.length}`);
+          # Fetch all tags from Quay.io
+          echo "Fetching tags from Quay.io..."
+          TAGS_RESPONSE=$(curl -s -H "Authorization: Bearer ${QUAY_TOKEN}" \
+            "${QUAY_API}/repository/${QUAY_REPO}/tag/?limit=100")
 
-            const nightlyVersions = versions.filter(v => {
-              // Check if this is a nightly build by examining tags
-              const tags = v.metadata?.container?.tags || [];
-              return tags.some(tag =>
-                tag.includes('nightly') ||
-                tag.match(/v\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}-[a-f0-9]+-/)
-              );
-            });
+          if echo "${TAGS_RESPONSE}" | jq -e '.error' > /dev/null 2>&1; then
+            echo "Error fetching tags: $(echo "${TAGS_RESPONSE}" | jq -r '.error')"
+            exit 1
+          fi
 
-            console.log(`Nightly versions found: ${nightlyVersions.length}`);
+          # Parse tags and filter nightly builds
+          TOTAL_TAGS=$(echo "${TAGS_RESPONSE}" | jq '.tags | length')
+          echo "Total tags found: ${TOTAL_TAGS}"
 
-            const versionsToDelete = nightlyVersions.filter(v => {
-              const createdAt = new Date(v.created_at);
-              return createdAt < cutoffDate;
-            });
+          # Filter nightly tags (contain 'nightly' or match version pattern with date)
+          NIGHTLY_TAGS=$(echo "${TAGS_RESPONSE}" | jq -r '.tags[] | select(
+            (.name | contains("nightly")) or
+            (.name | test("v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]+-"))
+          )')
 
-            console.log(`Versions to delete: ${versionsToDelete.length}`);
+          NIGHTLY_COUNT=$(echo "${NIGHTLY_TAGS}" | jq -s 'length')
+          echo "Nightly tags found: ${NIGHTLY_COUNT}"
 
-            if (versionsToDelete.length === 0) {
-              console.log('No old nightly builds to clean up');
-              return;
-            }
+          if [ "${NIGHTLY_COUNT}" -eq 0 ]; then
+            echo "No nightly builds found. Nothing to clean up."
+            exit 0
+          fi
 
-            // Create summary
-            let summary = '# Nightly Build Cleanup Summary\n\n';
-            summary += `- **Retention Period**: ${retentionDays} days\n`;
-            summary += `- **Cutoff Date**: ${cutoffDate.toISOString()}\n`;
-            summary += `- **Total Nightly Versions**: ${nightlyVersions.length}\n`;
-            summary += `- **Versions to Delete**: ${versionsToDelete.length}\n`;
-            summary += `- **Dry Run**: ${dryRun}\n\n`;
+          # Create summary header
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          # Nightly Build Cleanup Summary
 
-            summary += '## Versions to be deleted:\n\n';
-            summary += '| Version | Created At | Tags |\n';
-            summary += '|---------|------------|------|\n';
+          - **Retention Period**: ${RETENTION_DAYS} days
+          - **Cutoff Date**: $(date -d "@${CUTOFF_DATE}" --iso-8601=seconds)
+          - **Total Tags**: ${TOTAL_TAGS}
+          - **Nightly Tags**: ${NIGHTLY_COUNT}
+          - **Dry Run**: ${DRY_RUN}
 
-            for (const version of versionsToDelete) {
-              const tags = version.metadata?.container?.tags || [];
-              summary += `| ${version.name} | ${version.created_at} | ${tags.join(', ')} |\n`;
+          ## Tags to be deleted:
 
-              if (!dryRun) {
-                try {
-                  // First, try to get the version to confirm it exists
-                  try {
-                    await github.rest.packages.getPackageVersionForUser({
-                      package_type: 'container',
-                      package_name: packageName,
-                      username: context.repo.owner,
-                      package_version_id: version.id,
-                    });
-                  } catch (getError) {
-                    if (getError.status === 404) {
-                      console.warn(`Version ${version.name} (${version.id}) not found, skipping deletion.`);
-                      continue;
-                    }
-                    throw getError;
-                  }
+          | Tag | Last Modified |
+          |-----|---------------|
+          EOF
 
-                  // Version exists, proceed with deletion
-                  await github.rest.packages.deletePackageVersionForUser({
-                    package_type: 'container',
-                    package_name: packageName,
-                    username: context.repo.owner,
-                    package_version_id: version.id,
-                  });
-                  console.log(`Deleted version: ${version.name}`);
-                } catch (error) {
-                  if (error.status === 404) {
-                    console.warn(`Version ${version.name} (${version.id}) not found during deletion, skipping.`);
-                  } else {
-                    console.error(`Failed to delete version ${version.name}: ${error.message}`);
-                  }
-                }
-              }
-            }
+          DELETED_COUNT=0
 
-            // Write summary
-            const fs = require('fs');
-            fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          # Process each nightly tag
+          echo "${TAGS_RESPONSE}" | jq -c '.tags[] | select(
+            (.name | contains("nightly")) or
+            (.name | test("v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]+-"))
+          )' | while read -r TAG_JSON; do
+            TAG_NAME=$(echo "${TAG_JSON}" | jq -r '.name')
+            LAST_MODIFIED=$(echo "${TAG_JSON}" | jq -r '.last_modified')
 
-            if (dryRun) {
-              console.log('Dry run completed - no versions were actually deleted');
-            } else {
-              console.log('Cleanup completed');
-            }
+            # Skip the 'nightly' tag itself (it's the floating latest tag)
+            if [ "${TAG_NAME}" = "nightly" ]; then
+              echo "Skipping floating 'nightly' tag"
+              continue
+            fi
+
+            # Convert last_modified to epoch (format: "Tue, 25 Feb 2025 15:12:53 -0000")
+            TAG_DATE=$(date -d "${LAST_MODIFIED}" +%s 2>/dev/null || echo "0")
+
+            if [ "${TAG_DATE}" -lt "${CUTOFF_DATE}" ]; then
+              echo "| ${TAG_NAME} | ${LAST_MODIFIED} |" >> $GITHUB_STEP_SUMMARY
+
+              if [ "${DRY_RUN}" = "false" ]; then
+                echo "Deleting tag: ${TAG_NAME}"
+                DELETE_RESPONSE=$(curl -s -X DELETE \
+                  -H "Authorization: Bearer ${QUAY_TOKEN}" \
+                  "${QUAY_API}/repository/${QUAY_REPO}/tag/${TAG_NAME}")
+
+                if echo "${DELETE_RESPONSE}" | jq -e '.error' > /dev/null 2>&1; then
+                  echo "Warning: Failed to delete ${TAG_NAME}: $(echo "${DELETE_RESPONSE}" | jq -r '.error')"
+                else
+                  echo "Deleted: ${TAG_NAME}"
+                  DELETED_COUNT=$((DELETED_COUNT + 1))
+                fi
+              else
+                echo "Would delete: ${TAG_NAME}"
+              fi
+            fi
+          done
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Dry run completed - no tags were actually deleted**" >> $GITHUB_STEP_SUMMARY
+            echo "Dry run completed - no tags were actually deleted"
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Cleanup completed**" >> $GITHUB_STEP_SUMMARY
+            echo "Cleanup completed"
+          fi
