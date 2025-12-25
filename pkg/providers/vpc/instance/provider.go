@@ -343,6 +343,8 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		logger.Info("No resource group specified for VNI, using account default")
 	}
 
+	var actualSecurityGroups []string
+
 	// Add security groups if specified, otherwise use default
 	if len(nodeClass.Spec.SecurityGroups) > 0 {
 		var securityGroups []vpcv1.SecurityGroupIdentityIntf
@@ -350,16 +352,18 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 			securityGroups = append(securityGroups, &vpcv1.SecurityGroupIdentityByID{ID: &sg})
 		}
 		vniPrototype.SecurityGroups = securityGroups
+		actualSecurityGroups = nodeClass.Spec.SecurityGroups
 		logger.Info("Applying security groups to VNI", "security_groups", nodeClass.Spec.SecurityGroups, "count", len(securityGroups))
 	} else {
 		// Get default security group for VPC
-		defaultSG, sgErr := p.getDefaultSecurityGroup(ctx, vpcClient, nodeClass.Spec.VPC)
+		defaultSG, sgErr := vpcClient.GetDefaultSecurityGroup(ctx, nodeClass.Spec.VPC)
 		if sgErr != nil {
 			return nil, fmt.Errorf("getting default security group for VPC %s: %w", nodeClass.Spec.VPC, sgErr)
 		}
 		vniPrototype.SecurityGroups = []vpcv1.SecurityGroupIdentityIntf{
 			&vpcv1.SecurityGroupIdentityByID{ID: defaultSG.ID},
 		}
+		actualSecurityGroups = []string{*defaultSG.ID}
 		logger.Info("Using default security group for VNI", "security_group", *defaultSG.ID)
 	}
 
@@ -811,7 +815,8 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 				"karpenter.sh/nodepool":            nodeClaim.Labels["karpenter.sh/nodepool"],
 			},
 			Annotations: map[string]string{
-				v1alpha1.AnnotationIBMNodeClaimSubnetID: subnet,
+				v1alpha1.AnnotationIBMNodeClaimSubnetID:       subnet,
+				v1alpha1.AnnotationIBMNodeClaimSecurityGroups: strings.Join(actualSecurityGroups, ","),
 			},
 		},
 		Spec: corev1.NodeSpec{
@@ -1101,29 +1106,6 @@ func extractInstanceIDFromProviderID(providerID string) string {
 		return parts[len(parts)-1]
 	}
 	return ""
-}
-
-// getDefaultSecurityGroup gets the default security group for a VPC
-func (p *VPCInstanceProvider) getDefaultSecurityGroup(ctx context.Context, vpcClient *ibm.VPCClient, vpcID string) (*vpcv1.SecurityGroup, error) {
-	// List security groups for the VPC to find the default one
-	options := &vpcv1.ListSecurityGroupsOptions{
-		VPCID: &vpcID,
-	}
-
-	securityGroups, _, err := vpcClient.ListSecurityGroupsWithContext(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing security groups for VPC %s: %w", vpcID, err)
-	}
-
-	// Find the default security group
-	for _, sg := range securityGroups.SecurityGroups {
-		if sg.Name != nil && *sg.Name == "default" {
-			return &sg, nil
-		}
-	}
-
-	// If no default security group found, return an error
-	return nil, fmt.Errorf("default security group not found for VPC %s", vpcID)
 }
 
 // isIBMInstanceNotFoundError checks if the error indicates an instance was not found in IBM Cloud VPC

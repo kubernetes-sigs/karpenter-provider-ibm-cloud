@@ -124,6 +124,110 @@ func (s *E2ETestSuite) createTestNodeClassWithoutInstanceProfile(t *testing.T, t
 	return nodeClass
 }
 
+// createTestNodeClassWithPlacementStrategy creates a NodeClass using PlacementStrategy
+// instead of explicit Subnet - used for testing subnet pool drift scenarios
+func (s *E2ETestSuite) createTestNodeClassWithPlacementStrategy(t *testing.T, testName string) *v1alpha1.IBMNodeClass {
+	instanceType := s.GetAvailableInstanceType(t)
+	bootstrapMode := "cloud-init"
+
+	t.Logf("Creating NodeClass with PlacementStrategy:")
+	t.Logf("  VPC: %s", s.testVPC)
+	t.Logf("  Region: %s", s.testRegion)
+	t.Logf("  InstanceProfile: %s", instanceType)
+
+	nodeClass := &v1alpha1.IBMNodeClass{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
+			Kind:       "IBMNodeClass",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-nodeclass", testName),
+			Labels: map[string]string{
+				"test-name": testName,
+			},
+		},
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Region: s.testRegion,
+			// Zone intentionally omitted - PlacementStrategy will select
+			InstanceProfile: instanceType,
+			Image:           s.testImage,
+			VPC:             s.testVPC,
+			// Subnet intentionally omitted - PlacementStrategy will select
+			PlacementStrategy: &v1alpha1.PlacementStrategy{
+				ZoneBalance: "Balanced",
+			},
+			SecurityGroups:    []string{s.testSecurityGroup},
+			APIServerEndpoint: s.APIServerEndpoint,
+			ResourceGroup:     s.testResourceGroup,
+			BootstrapMode:     &bootstrapMode,
+			SSHKeys:           []string{s.testSshKeyId},
+			Tags: map[string]string{
+				"test":       "e2e",
+				"test-name":  testName,
+				"created-by": "karpenter-e2e",
+				"purpose":    "placement-strategy-test",
+			},
+		},
+	}
+
+	err := s.kubeClient.Create(context.Background(), nodeClass)
+	require.NoError(t, err, "Failed to create NodeClass with PlacementStrategy")
+	t.Logf("OK: Created NodeClass %s with PlacementStrategy", nodeClass.Name)
+
+	return nodeClass
+}
+
+// createTestNodeClassWithoutSecurityGroups creates a NodeClass without explicit security groups
+// This is used to test default VPC security group drift scenarios
+func (s *E2ETestSuite) createTestNodeClassWithoutSecurityGroups(t *testing.T, testName string) *v1alpha1.IBMNodeClass {
+	instanceType := s.GetAvailableInstanceType(t)
+	bootstrapMode := "cloud-init"
+
+	t.Logf("Creating NodeClass without explicit security groups:")
+	t.Logf("  VPC: %s", s.testVPC)
+	t.Logf("  Subnet: %s", s.testSubnet)
+	t.Logf("  Region: %s", s.testRegion)
+	t.Logf("  Zone: %s", s.testZone)
+
+	nodeClass := &v1alpha1.IBMNodeClass{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "karpenter-ibm.sh/v1alpha1",
+			Kind:       "IBMNodeClass",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-nodeclass", testName),
+			Labels: map[string]string{
+				"test-name": testName,
+			},
+		},
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Region:          s.testRegion,
+			Zone:            s.testZone,
+			InstanceProfile: instanceType,
+			Image:           s.testImage,
+			VPC:             s.testVPC,
+			Subnet:          s.testSubnet,
+			// SecurityGroups intentionally omitted - uses VPC default
+			APIServerEndpoint: s.APIServerEndpoint,
+			ResourceGroup:     s.testResourceGroup,
+			BootstrapMode:     &bootstrapMode,
+			SSHKeys:           []string{s.testSshKeyId},
+			Tags: map[string]string{
+				"test":       "e2e",
+				"test-name":  testName,
+				"created-by": "karpenter-e2e",
+				"purpose":    "default-sg-test",
+			},
+		},
+	}
+
+	err := s.kubeClient.Create(context.Background(), nodeClass)
+	require.NoError(t, err, "Failed to create NodeClass without security groups")
+	t.Logf("OK: Created NodeClass %s without explicit security groups", nodeClass.Name)
+
+	return nodeClass
+}
+
 // createTestNodePool creates a standard test NodePool
 func (s *E2ETestSuite) createTestNodePool(t *testing.T, testName, nodeClassName string) *karpv1.NodePool {
 	expireAfter := karpv1.MustParseNillableDuration("5m")

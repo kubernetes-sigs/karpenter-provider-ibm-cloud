@@ -341,6 +341,31 @@ func (c *VPCClient) ListSecurityGroupsWithContext(ctx context.Context, options *
 	return c.client.ListSecurityGroupsWithContext(ctx, options)
 }
 
+// GetDefaultSecurityGroup returns the default security group for a VPC
+func (c *VPCClient) GetDefaultSecurityGroup(ctx context.Context, vpcID string) (*vpcv1.SecurityGroup, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("VPC client not initialized")
+	}
+
+	options := &vpcv1.ListSecurityGroupsOptions{
+		VPCID: &vpcID,
+	}
+
+	securityGroups, _, err := c.client.ListSecurityGroupsWithContext(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("listing security groups for VPC %s: %w", vpcID, err)
+	}
+
+	// Find the default security group
+	for _, sg := range securityGroups.SecurityGroups {
+		if sg.Name != nil && *sg.Name == "default" {
+			return &sg, nil
+		}
+	}
+
+	return nil, fmt.Errorf("default security group not found for VPC %s", vpcID)
+}
+
 // ListVolumes lists volumes in the VPC
 func (c *VPCClient) ListVolumes(ctx context.Context, options *vpcv1.ListVolumesOptions) (*vpcv1.VolumeCollection, error) {
 	if c.client == nil {
