@@ -44,6 +44,16 @@ See [Container Images](docs/container-images.md) for details on pulling images, 
 
 ## Development
 
+### Git Hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to run linting checks before commits. Hooks are **automatically installed** when you run `make build` or `make test`.
+
+To manually install hooks:
+
+```bash
+make install-git-hooks
+```
+
 ### Testing and CI
 
 The project includes automated testing and continuous integration workflows:

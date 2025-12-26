@@ -16,11 +16,6 @@ repos:
         entry: gofmt -l -w .
         language: system
         types: [go]
-      - id: go-test
-        name: go test
-        entry: go test ./...
-        language: system
-        pass_filenames: false
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.6.2
     hooks:

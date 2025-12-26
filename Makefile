@@ -33,7 +33,7 @@ CONTROLLER_GEN = ~/.local/share/go/bin/controller-gen
 all: build
 
 .PHONY: build
-build: generate ## Build binary for current platform
+build: ensure-hooks generate ## Build binary for current platform
 	CGO_ENABLED=$(CGO_ENABLED) go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) cmd/controller/main.go
 
 .PHONY: build-multiarch
@@ -84,7 +84,7 @@ manifests: ## generate the controller-gen kubernetes manifests
 	GOFLAGS="-mod=mod" $(CONTROLLER_GEN) rbac:roleName=karpenter-manager paths="./pkg/controllers/..." output:rbac:dir=charts/templates
 
 .PHONY: test
-test: vendor unit
+test: ensure-hooks vendor unit
 
 .PHONY: ci
 ci: vendor unit lint ## Run all CI checks (tests + linting)
@@ -151,12 +151,21 @@ verify-license: ## Verify all Go files have license headers
 pre-commit: ## Run pre-commit checks (license headers + linting)
 	hack/pre-commit.sh
 
+.PHONY: ensure-hooks
+ensure-hooks: ## Ensure git hooks are installed (runs automatically)
+	@if [ ! -f .git/hooks/pre-commit ]; then \
+		echo "Installing pre-commit hooks..."; \
+		pre-commit install; \
+	fi
+
 .PHONY: lint-commits install-git-hooks
 lint-commits: ## Lint commit messages since main
 	gitlint --commits origin/main..HEAD
 
-install-git-hooks: ## Install gitlint git hooks
+install-git-hooks: ## Install git hooks (pre-commit + gitlint)
+	pre-commit install
 	gitlint install-hook
+	@echo "Git hooks installed successfully."
 
 .PHONY: k8s-support-table
 k8s-support-table: ## Generate Kubernetes version support table
