@@ -115,7 +115,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 
 	// Check if orphan cleanup is enabled
 	if !isOrphanCleanupEnabled() {
-		logger.V(1).Info("orphan cleanup is disabled, skipping")
+		logger.V(1).Info("Orphan cleanup is disabled, skipping")
 		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
@@ -161,7 +161,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 
 	// Always check for orphaned instances, even if there are no current Karpenter nodes
 	// This handles cases where all NodeClaims were deleted but instances remain
-	logger.V(1).Info("checking for orphaned instances", "managedInstances", len(instanceIDs))
+	logger.V(1).Info("Checking for orphaned instances", "managedInstances", len(instanceIDs))
 
 	// Get all instances from IBM Cloud to check for orphans
 	allInstances, err := c.getAllVPCInstances(ctx)
@@ -171,7 +171,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	}
 
 	if len(allInstances) == 0 {
-		logger.V(1).Info("no VPC instances found")
+		logger.V(1).Info("No VPC instances found")
 		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
 
@@ -202,10 +202,10 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 				// Check if this instance was created by Karpenter by checking tags
 				// This is the primary method for identifying Karpenter-managed instances
 				if c.isKarpenterManagedInstance(ctx, instanceID) {
-					logger.V(1).Info("found Karpenter-managed orphaned instance", "instance-id", instanceID)
+					logger.V(1).Info("Found Karpenter-managed orphaned instance", "instance-id", instanceID)
 					orphanedInstanceIDs = append(orphanedInstanceIDs, instanceID)
 				} else {
-					logger.V(2).Info("instance not managed by Karpenter, skipping", "instance-id", instanceID)
+					logger.V(2).Info("Instance not managed by Karpenter, skipping", "instance-id", instanceID)
 				}
 			}
 		}
@@ -214,7 +214,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	}
 
 	if len(orphanedInstanceIDs) == 0 {
-		logger.V(1).Info("no orphaned instances found")
+		logger.V(1).Info("No orphaned instances found")
 		c.successfulCount++
 		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
@@ -418,7 +418,7 @@ func (c *Controller) checkInstanceTagsWithGlobalTaggingAPI(ctx context.Context, 
 		}
 	}
 
-	logger.V(2).Info("no Karpenter tags found via Global Tagging API", "instance-id", instanceID, "tags-count", len(tagResults.Items))
+	logger.V(2).Info("No Karpenter tags found via Global Tagging API", "instance-id", instanceID, "tags-count", len(tagResults.Items))
 	return false
 }
 

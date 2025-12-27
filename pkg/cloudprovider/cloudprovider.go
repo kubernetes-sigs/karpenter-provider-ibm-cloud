@@ -101,8 +101,7 @@ func New(kubeClient client.Client,
 }
 
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.NodeClaim, error) {
-	log := log.FromContext(ctx).WithValues("providerID", providerID)
-	log.Info("Getting instance details")
+	logger := log.FromContext(ctx).WithValues("providerID", providerID)
 
 	// For Get operations without NodeClass, use a minimal NodeClass with default provider mode
 	nodeClass := &v1alpha1.IBMNodeClass{}
@@ -114,25 +113,26 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	// Get the appropriate instance provider
 	instanceProvider, err := c.providerFactory.GetInstanceProvider(nodeClass)
 	if err != nil {
-		log.Error(err, "Failed to get instance provider")
+		logger.Error(err, "Failed to get instance provider")
 		return nil, fmt.Errorf("getting instance provider, %w", err)
 	}
 
 	// Get the instance details
 	node, err := instanceProvider.Get(ctx, providerID)
 	if err != nil {
-		log.Error(err, "Failed to get instance")
+		logger.Error(err, "Failed to get instance")
 		return nil, fmt.Errorf("getting instance, %w", err)
 	}
+	logger.Info("Got instance details")
 
 	// Extract instance info from node
 	instanceTypeName := node.Labels["node.kubernetes.io/instance-type"]
 	zone := node.Labels["topology.kubernetes.io/zone"]
-	log.Info("Found instance", "type", instanceTypeName, "zone", zone)
+	logger.Info("Found instance", "type", instanceTypeName, "zone", zone)
 
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
-		log.Error(err, "Failed to list instance types")
+		logger.Error(err, "Failed to list instance types")
 		return nil, fmt.Errorf("listing instance types, %w", err)
 	}
 
@@ -140,7 +140,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		return i.Name == instanceTypeName
 	})
 	if instanceType != nil {
-		log.Info("Resolved instance type", "type", instanceType.Name)
+		logger.Info("Resolved instance type", "type", instanceType.Name)
 	}
 
 	nc := &karpv1.NodeClaim{
@@ -154,7 +154,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		nc.Status.Allocatable = instanceType.Allocatable()
 	}
 
-	log.Info("Successfully retrieved NodeClaim",
+	logger.Info("Successfully retrieved NodeClaim",
 		"providerID", nc.Status.ProviderID,
 		"capacity", nc.Status.Capacity,
 		"allocatable", nc.Status.Allocatable)
@@ -162,8 +162,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
-	log := log.FromContext(ctx)
-	log.Info("Listing all instances")
+	logger := log.FromContext(ctx)
 
 	// Get all nodes from the Kubernetes API
 	nodeList := &corev1.NodeList{}
@@ -195,7 +194,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 
 		instanceProvider, err := c.providerFactory.GetInstanceProvider(nodeClass)
 		if err != nil {
-			log.Error(err, "Failed to get instance provider", "node", node.Name, "providerID", node.Spec.ProviderID)
+			logger.Error(err, "Failed to get instance provider", "node", node.Name, "providerID", node.Spec.ProviderID)
 			providerErrors = append(providerErrors, fmt.Errorf("node %s: %w", node.Name, err))
 			continue
 		}
@@ -204,10 +203,10 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 		if err != nil {
 			// Check if this is an IKS managed cluster that doesn't allow Karpenter management
 			if strings.Contains(err.Error(), "not configured for Karpenter management") {
-				log.V(1).Info("Skipping IKS managed node - cluster not configured for Karpenter", "node", node.Name)
+				logger.V(1).Info("Skipping IKS managed node - cluster not configured for Karpenter", "node", node.Name)
 				continue
 			}
-			log.Error(err, "Failed to get instance details", "node", node.Name)
+			logger.Error(err, "Failed to get instance details", "node", node.Name)
 			continue
 		}
 
@@ -221,46 +220,47 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 
 	// Report any provider errors that occurred during listing
 	if len(providerErrors) > 0 {
-		log.Info("Some nodes were excluded from list due to provider errors",
+		logger.Info("Some nodes were excluded from list due to provider errors",
 			"excludedNodeCount", len(providerErrors),
 			"totalNodes", len(nodeList.Items),
 			"includedNodes", len(nodeClaims))
 		// Log first few errors for debugging context
 		for i, err := range providerErrors {
 			if i >= 3 { // Only log first 3 to avoid spam
-				log.Info("Additional provider errors omitted for brevity", "remainingErrors", len(providerErrors)-3)
+				logger.Info("Additional provider errors omitted for brevity", "remainingErrors", len(providerErrors)-3)
 				break
 			}
-			log.V(1).Info("Provider error detail", "error", err.Error())
+			logger.V(1).Info("Provider error detail", "error", err.Error())
 		}
 	}
 
+	logger.Info("Listed all instances")
 	return nodeClaims, nil
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
-	log := log.FromContext(ctx).WithValues(
+	logger := log.FromContext(ctx).WithValues(
 		"nodeClaim", nodeClaim.Name,
 		"requirements", nodeClaim.Spec.Requirements,
 		"resources", nodeClaim.Spec.Resources)
-	log.Info("Starting node creation")
+	logger.Info("Started node creation")
 
 	nodeClass := &v1alpha1.IBMNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		if errors.IsNotFound(err) {
-			log.Error(err, "Failed to resolve NodeClass")
+			logger.Error(err, "Failed to resolve NodeClass")
 			c.recorder.Publish(ibmevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
 		}
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
 	}
-	log.Info("Resolved NodeClass", "nodeClass", nodeClass.Name)
+	logger.Info("Resolved NodeClass", "nodeClass", nodeClass.Name)
 
 	// Log bootstrap mode for debugging
 	bootstrapMode := "cloud-init"
 	if nodeClass.Spec.BootstrapMode != nil {
 		bootstrapMode = *nodeClass.Spec.BootstrapMode
 	}
-	log.Info("NodeClass configuration",
+	logger.Info("NodeClass configuration",
 		"apiServerEndpoint", nodeClass.Spec.APIServerEndpoint,
 		"bootstrapMode", bootstrapMode,
 		"securityGroups", nodeClass.Spec.SecurityGroups,
@@ -283,11 +283,11 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	if readyCondition.Status == metav1.ConditionFalse {
-		log.Error(fmt.Errorf("%s", readyCondition.Message), "NodeClass not ready")
+		logger.Error(fmt.Errorf("%s", readyCondition.Message), "NodeClass not ready")
 		return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("%s", readyCondition.Message))
 	}
 	if readyCondition.Status == metav1.ConditionUnknown {
-		log.Error(fmt.Errorf("%s", readyCondition.Message), "NodeClass readiness unknown")
+		logger.Error(fmt.Errorf("%s", readyCondition.Message), "NodeClass readiness unknown")
 		return nil, fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", readyCondition.Message)
 	}
 
@@ -298,16 +298,16 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// For IKS mode, skip VPC instance type filtering - IKS provider handles its own flavor selection
 	if providerMode == commonTypes.IKSMode {
-		log.Info("IKS mode detected, skipping VPC instance type filtering")
+		logger.Info("IKS mode detected, skipped VPC instance type filtering")
 		// For IKS, we pass nil compatible list - the IKS provider will handle flavor selection
 		compatible = nil
 	} else {
-		log.Info("Resolving instance types")
 		instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 		if err != nil {
-			log.Error(err, "Failed to resolve instance types")
+			logger.Error(err, "Failed to resolve instance types")
 			return nil, fmt.Errorf("resolving instance types, %w", err)
 		}
+		logger.Info("Resolved instance types")
 
 		reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 		compatible = lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
@@ -316,18 +316,18 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 			resourcesFit := resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 
 			if reqErr != nil {
-				log.Info("Instance type incompatible with requirements",
+				logger.Info("Instance type incompatible with requirements",
 					"type", i.Name,
 					"error", reqErr)
 				return false
 			}
 			if !offeringsCompatible {
-				log.Info("No compatible offerings available",
+				logger.Info("No compatible offerings available",
 					"type", i.Name)
 				return false
 			}
 			if !resourcesFit {
-				log.Info("Resources don't fit",
+				logger.Info("Resources don't fit",
 					"type", i.Name,
 					"requested", nodeClaim.Spec.Resources.Requests,
 					"allocatable", i.Allocatable())
@@ -337,19 +337,17 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		})
 
 		if len(compatible) == 0 {
-			log.Error(nil, "No compatible instance types found")
+			logger.Error(nil, "No compatible instance types found")
 			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 		}
-		log.Info("Found compatible instance types", "count", len(compatible), "types", lo.Map(compatible, func(it *cloudprovider.InstanceType, _ int) string { return it.Name }))
+		logger.Info("Found compatible instance types", "count", len(compatible), "types", lo.Map(compatible, func(it *cloudprovider.InstanceType, _ int) string { return it.Name }))
 	}
-
-	log.Info("Creating instance")
 
 	// Per-NodeClass circuit breaker check - validate against failure rate and concurrency safeguards
 	if cbErr := c.circuitBreakerManager.CanProvision(ctx, nodeClass.Name, nodeClass.Spec.Region, 0); cbErr != nil {
 		// Get circuit breaker status for enhanced logging
 		if cbStatus, statusErr := c.circuitBreakerManager.GetStateForNodeClass(nodeClass.Name, nodeClass.Spec.Region); statusErr == nil {
-			log.Error(cbErr, "Circuit breaker blocked provisioning",
+			logger.Error(cbErr, "Circuit breaker blocked provisioning",
 				"nodeClass", nodeClass.Name,
 				"region", nodeClass.Spec.Region,
 				"circuitBreakerState", cbStatus.State,
@@ -357,7 +355,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 				"failureThreshold", cbStatus.FailureThreshold,
 				"timeToRecovery", cbStatus.TimeToRecovery)
 		} else {
-			log.Error(cbErr, "Circuit breaker blocked provisioning",
+			logger.Error(cbErr, "Circuit breaker blocked provisioning",
 				"nodeClass", nodeClass.Name,
 				"region", nodeClass.Spec.Region)
 		}
@@ -368,7 +366,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// Get the appropriate instance provider based on NodeClass configuration
 	instanceProvider, err := c.providerFactory.GetInstanceProvider(nodeClass)
 	if err != nil {
-		log.Error(err, "Failed to get instance provider")
+		logger.Error(err, "Failed to get instance provider")
 		c.circuitBreakerManager.RecordFailure(nodeClass.Name, nodeClass.Spec.Region, err)
 		return nil, fmt.Errorf("getting instance provider, %w", err)
 	}
@@ -376,7 +374,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	node, err := instanceProvider.Create(ctx, nodeClaim, compatible)
 	if err != nil {
 		// Log the actual error details for better troubleshooting
-		log.Error(err, "Failed to create instance",
+		logger.Error(err, "Failed to create instance",
 			"nodeClass", nodeClass.Name,
 			"region", nodeClass.Spec.Region,
 			"zone", nodeClass.Spec.Zone,
@@ -384,16 +382,17 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		c.circuitBreakerManager.RecordFailure(nodeClass.Name, nodeClass.Spec.Region, err)
 		return nil, fmt.Errorf("creating instance, %w", err)
 	}
+	logger.Info("Created instance")
 
 	// Record successful provisioning for this specific NodeClass
 	c.circuitBreakerManager.RecordSuccess(nodeClass.Name, nodeClass.Spec.Region)
-	log.Info("Successfully created instance", "providerID", node.Spec.ProviderID)
+	logger.Info("Successfully created instance", "providerID", node.Spec.ProviderID)
 
 	instanceType, _ := lo.Find(compatible, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == node.Labels["node.kubernetes.io/instance-type"]
 	})
 	if instanceType != nil {
-		log.Info("Selected instance type", "type", instanceType.Name, "capacity", instanceType.Capacity)
+		logger.Info("Selected instance type", "type", instanceType.Name, "capacity", instanceType.Capacity)
 	}
 
 	nc := &karpv1.NodeClaim{
@@ -471,7 +470,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	nc.Annotations = lo.Assign(nc.Annotations, annotations)
 
-	log.Info("Node creation completed successfully",
+	logger.Info("Node creation completed successfully",
 		"providerID", nc.Status.ProviderID,
 		"capacity", nc.Status.Capacity,
 		"allocatable", nc.Status.Allocatable)
@@ -479,8 +478,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
-	log := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
-	log.Info("Deleting node")
+	logger := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
 
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -511,43 +509,44 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// Get the appropriate instance provider
 	instanceProvider, err := c.providerFactory.GetInstanceProvider(nodeClass)
 	if err != nil {
-		log.Error(err, "Failed to get instance provider")
+		logger.Error(err, "Failed to get instance provider")
 		return fmt.Errorf("getting instance provider, %w", err)
 	}
 
 	if err := instanceProvider.Delete(ctx, node); err != nil {
 		// Return NodeClaimNotFoundError unchanged - this is expected during cleanup
 		if cloudprovider.IsNodeClaimNotFoundError(err) {
-			log.Info("Instance already deleted or not found")
+			logger.Info("Instance already deleted or not found")
 			return err
 		}
-		log.Error(err, "Failed to delete node")
+		logger.Error(err, "Failed to delete node")
 		return err
 	}
 
-	log.Info("Successfully deleted node")
+	logger.Info("Deleted node")
+	logger.Info("Successfully deleted node")
 	return nil
 }
 
 func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.NodePool) ([]*cloudprovider.InstanceType, error) {
-	log := log.FromContext(ctx).WithValues("nodePool", nodePool.Name)
-	log.Info("Getting instance types for NodePool")
+	logger := log.FromContext(ctx).WithValues("nodePool", nodePool.Name)
 
 	nodeClass := &v1alpha1.IBMNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		if errors.IsNotFound(err) {
-			log.Error(err, "Failed to resolve NodeClass")
+			logger.Error(err, "Failed to resolve NodeClass")
 			c.recorder.Publish(ibmevents.NodePoolFailedToResolveNodeClass(nodePool))
 		}
 		return nil, err
 	}
-	log.Info("Resolved NodeClass", "name", nodeClass.Name)
+	logger.Info("Resolved NodeClass", "name", nodeClass.Name)
 
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
-		log.Error(err, "Failed to list instance types")
+		logger.Error(err, "Failed to list instance types")
 		return nil, err
 	}
+	logger.Info("Got instance types for NodePool")
 
 	// Filter instance types based on NodePool requirements
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodePool.Spec.Template.Spec.Requirements...)
@@ -555,15 +554,14 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 		return reqs.Compatible(it.Requirements, scheduling.AllowUndefinedWellKnownLabels) == nil
 	})
 
-	log.Info("Successfully retrieved and filtered instance types",
+	logger.Info("Successfully retrieved and filtered instance types",
 		"total", len(instanceTypes),
 		"compatible", len(compatible))
 	return compatible, nil
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
-	log := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
-	log.Info("Checking if node has drifted")
+	logger := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
 
 	// Get the NodeClass
 	nodeClass, driftReason, err := c.getNodeClassForDrift(ctx, log, nodeClaim)
@@ -594,6 +592,7 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeCla
 		return driftReason, nil
 	}
 
+	logger.Info("Checked if node has drifted")
 	return "", nil
 }
 
@@ -601,7 +600,7 @@ func (c *CloudProvider) getNodeClassForDrift(ctx context.Context, log logr.Logge
 	nodeClass := &v1alpha1.IBMNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		if errors.IsNotFound(err) {
-			log.Error(err, "NodeClass not found")
+			logger.Error(err, "NodeClass not found")
 			return nil, NodeClassNotFoundDrift, nil
 		}
 		return nil, "", fmt.Errorf("getting nodeclass, %w", err)
@@ -615,7 +614,7 @@ func (c *CloudProvider) isNodeClassHashVersionDrifted(ctx context.Context, log l
 
 	// Check if the hash version matches
 	if currentVersion != v1alpha1.IBMNodeClassHashVersion {
-		log.Info("NodeClass hash version mismatch", "current", currentVersion, "expected", v1alpha1.IBMNodeClassHashVersion)
+		logger.Info("NodeClass hash version mismatch", "current", currentVersion, "expected", v1alpha1.IBMNodeClassHashVersion)
 		return NodeClassHashVersionChangedDrift
 	}
 	return ""
@@ -628,7 +627,7 @@ func (c *CloudProvider) isNodeClassHashDrifted(ctx context.Context, log logr.Log
 
 	// Check if the hash matches
 	if expectedHash != currentHash {
-		log.Info("NodeClass hash mismatch", "current", currentHash, "expected", expectedHash)
+		logger.Info("NodeClass hash mismatch", "current", currentHash, "expected", expectedHash)
 		return NodeClassHashChangedDrift
 	}
 	return ""
@@ -641,7 +640,7 @@ func (c *CloudProvider) isImageDrifted(ctx context.Context, log logr.Logger, nod
 
 	// Check if the ImageID matches
 	if storedImageID != "" && currentImageID != "" && storedImageID != currentImageID {
-		log.Info("Node image drift detected", "storedImageID", storedImageID, "currentImageID", currentImageID)
+		logger.Info("Node image drift detected", "storedImageID", storedImageID, "currentImageID", currentImageID)
 		return ImageDrift
 	}
 	return ""
@@ -656,7 +655,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, log logr.Logger, no
 	// Case 1: Explicit subnet in spec - compare directly
 	if nodeClass.Spec.Subnet != "" {
 		if storedSubnetID != nodeClass.Spec.Subnet {
-			log.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "specSubnet", nodeClass.Spec.Subnet)
+			logger.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "specSubnet", nodeClass.Spec.Subnet)
 			return SubnetDrift, nil
 		}
 		return "", nil
@@ -665,7 +664,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, log logr.Logger, no
 	// Case 2: PlacementStrategy - check against Status.SelectedSubnets
 	validSubnets := nodeClass.Status.SelectedSubnets
 	if len(validSubnets) == 0 {
-		log.Info("No subnets in Status.SelectedSubnets, skipping drift check", "nodeClass", nodeClass.Name)
+		logger.Info("No subnets in Status.SelectedSubnets, skipping drift check", "nodeClass", nodeClass.Name)
 		return "", nil
 	}
 
@@ -675,7 +674,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, log logr.Logger, no
 		}
 	}
 
-	log.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "validSubnets", validSubnets)
+	logger.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "validSubnets", validSubnets)
 	return SubnetDrift, nil
 }
 
