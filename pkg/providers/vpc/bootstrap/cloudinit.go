@@ -1006,7 +1006,7 @@ func InjectBootstrapEnvVars(ctx context.Context, script string) string {
 	}
 
 	if bootstrapVars.Len() > 0 {
-		logger.V(1).Info("injecting bootstrap environment variables", "count", strings.Count(bootstrapVars.String(), "\n"))
+		logger.V(1).Info("Injecting bootstrap environment variables", "count", strings.Count(bootstrapVars.String(), "\n"))
 
 		// Handle different shebang styles
 		if strings.HasPrefix(script, "#!/bin/bash\nset -euo pipefail\n") {
@@ -1051,11 +1051,11 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	// Add additional CA environment variable if available from secret
 	logger := log.FromContext(ctx)
 	if additionalCA := os.Getenv("ca_crt"); additionalCA != "" {
-		logger.V(1).Info("found ca_crt environment variable", "length", len(additionalCA))
+		logger.V(1).Info("Found ca_crt environment variable", "length", len(additionalCA))
 		// Inject KARPENTER_ADDITIONAL_CA environment variable at the beginning of the script
 		envVar := fmt.Sprintf("export KARPENTER_ADDITIONAL_CA=\"%s\"\n", additionalCA)
 		script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n", "#!/bin/bash\nset -euo pipefail\n\n"+envVar, 1)
-		logger.V(1).Info("injected KARPENTER_ADDITIONAL_CA into cloud-init script")
+		logger.V(1).Info("Injected KARPENTER_ADDITIONAL_CA into cloud-init script")
 	}
 
 	// Inject BOOTSTRAP_* environment variables
