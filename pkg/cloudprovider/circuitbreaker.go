@@ -160,7 +160,7 @@ func (cb *CircuitBreaker) CanProvision(ctx context.Context, nodeClass, region st
 		cb.halfOpenRequests++
 	}
 
-	cb.logger.Info("Provisioning allowed",
+	cb.logger.Info("Provisioning was allowed",
 		"nodeClass", nodeClass,
 		"region", region,
 		"state", cb.state,

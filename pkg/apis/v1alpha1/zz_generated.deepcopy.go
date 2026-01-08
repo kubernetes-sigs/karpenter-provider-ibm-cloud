@@ -181,6 +181,11 @@ func (in *IBMNodeClassStatus) DeepCopyInto(out *IBMNodeClassStatus) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.ResolvedSecurityGroups != nil {
+		in, out := &in.ResolvedSecurityGroups, &out.ResolvedSecurityGroups
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))

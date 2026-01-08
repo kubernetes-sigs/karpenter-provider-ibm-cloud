@@ -603,7 +603,7 @@ func TestControllerReconcile(t *testing.T) {
 
 			result, err := controller.Reconcile(ctx, req)
 			assert.NoError(t, err, "Reconcile should not return error")
-			assert.Equal(t, reconcile.Result{}, result, "Should not requeue")
+			assert.Equal(t, 24*time.Hour, result.RequeueAfter, "Should requeue periodically for status refresh")
 
 			// Verify
 			var updatedNodeClass v1alpha1.IBMNodeClass
@@ -925,7 +925,7 @@ func TestControllerWithRealIBMCloud(t *testing.T) {
 
 			result, err := controller.Reconcile(timeoutCtx, req)
 			assert.NoError(t, err, "Reconcile should not return error")
-			assert.Equal(t, reconcile.Result{}, result, "Should not requeue")
+			assert.Equal(t, 24*time.Hour, result.RequeueAfter, "Should requeue periodically for status refresh")
 
 			// Verify status was updated
 			var updatedNodeClass v1alpha1.IBMNodeClass
@@ -2297,6 +2297,23 @@ func TestValidateIBMCloudResources_SecurityGroupsAndSSHKeys(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSecurityGroupResolution_ExplicitSGsMirroredToStatus(t *testing.T) {
+	ctx := context.Background()
+
+	nodeClass := &v1alpha1.IBMNodeClass{
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Region:         "us-south",
+			VPC:            "r010-12345678-1234-5678-9abc-def012345678",
+			Image:          "ubuntu-20-04-amd64",
+			SecurityGroups: []string{"sg-explicit-1", "sg-explicit-2"},
+		},
+	}
+
+	controller := NewTestController(nil)
+	err := controller.validateIBMCloudResources(ctx, nodeClass)
+	assert.NoError(t, err)
 }
 
 func TestRegister(t *testing.T) {

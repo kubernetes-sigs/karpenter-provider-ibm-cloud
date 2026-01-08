@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -427,7 +428,7 @@ func TestCircuitBreakerConfigParsing(t *testing.T) {
 				assert.False(t, opts.CircuitBreakerEnabled)
 				assert.Equal(t, 5, opts.CircuitBreakerFailureThreshold)
 				assert.Equal(t, 10*time.Minute, opts.CircuitBreakerFailureWindow)
-				assert.Equal(t, 30*time.Minute, opts.CircuitBreakerRecoveryTimeout)
+				assert.Equal(t, constants.DefaultVPCClientCacheTTL, opts.CircuitBreakerRecoveryTimeout)
 				assert.Equal(t, 3, opts.CircuitBreakerHalfOpenMaxRequests)
 				assert.Equal(t, 20, opts.CircuitBreakerRateLimitPerMinute)
 				assert.Equal(t, 10, opts.CircuitBreakerMaxConcurrentInstances)

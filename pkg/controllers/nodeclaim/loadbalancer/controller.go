@@ -143,7 +143,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 func (c *Controller) handleRegistration(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass, logger logr.Logger) (reconcile.Result, error) {
 	// Check if NodeClaim has an associated instance
 	if nodeClaim.Status.ProviderID == "" {
-		logger.Info("NodeClaim doesn't have provider ID yet, waiting")
+		logger.Info("NodeClaim did not have provider ID yet, waiting")
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -180,7 +180,7 @@ func (c *Controller) handleRegistration(ctx context.Context, nodeClaim *karpv1.N
 	}
 
 	// Register with load balancers
-	logger.Info("Registering NodeClaim with load balancers", "instanceID", instanceID, "instanceIP", instanceIP)
+	logger.Info("Registered NodeClaim with load balancers", "instanceID", instanceID, "instanceIP", instanceIP)
 
 	if err := c.loadBalancerProvider.RegisterInstance(ctx, nodeClass, instanceID, instanceIP); err != nil {
 		logger.Error(err, "Failed to register with load balancers")
@@ -210,7 +210,7 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 			logger.Error(err, "Failed to extract instance ID, removing finalizer anyway", "providerID", nodeClaim.Status.ProviderID)
 		} else {
 			// Deregister from load balancers
-			logger.Info("Deregistering NodeClaim from load balancers", "instanceID", instanceID)
+			logger.Info("Deregistered NodeClaim from load balancers", "instanceID", instanceID)
 
 			if err := c.loadBalancerProvider.DeregisterInstance(ctx, nodeClass, instanceID); err != nil {
 				logger.Error(err, "Failed to deregister from load balancers, continuing with cleanup")

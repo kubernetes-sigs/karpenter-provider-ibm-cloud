@@ -76,7 +76,7 @@ func (m *Manager) GetVPCClient(ctx context.Context) (*ibm.VPCClient, error) {
 		return nil, fmt.Errorf("getting VPC client: IBM client is nil")
 	}
 
-	client, err := m.client.GetVPCClient()
+	client, err := m.client.GetVPCClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting VPC client: %w", err)
 	}

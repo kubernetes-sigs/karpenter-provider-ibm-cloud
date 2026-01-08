@@ -79,7 +79,7 @@ func (m *NodeClassCircuitBreakerManager) RecordSuccess(nodeClass, region string)
 		breaker.RecordSuccess(nodeClass, region)
 	} else {
 		// This shouldn't happen in normal flow, but log it for debugging
-		m.logger.Info("Recording success for non-existent circuit breaker",
+		m.logger.Info("Recorded success for non-existent circuit breaker",
 			"nodeClass", nodeClass,
 			"region", region)
 	}

@@ -218,7 +218,7 @@ func (c *IKSClient) GetVPCInstanceIDFromWorker(ctx context.Context, clusterID, w
 	}
 
 	// Use VPC client to find instance by subnet and IP
-	vpcClient, err := c.client.GetVPCClient()
+	vpcClient, err := c.client.GetVPCClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("getting VPC client: %w", err)
 	}

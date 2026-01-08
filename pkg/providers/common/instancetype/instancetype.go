@@ -36,6 +36,7 @@ import (
 
 	v1alpha1 "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
@@ -59,7 +60,7 @@ func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider 
 	return &IBMInstanceTypeProvider{
 		client:           client,
 		pricingProvider:  pricingProvider,
-		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
+		vpcClientManager: vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
 		zonesCache:       make(map[string][]string),
 	}
 }
@@ -131,7 +132,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string, nodeClas
 		vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to get VPC client: %w", err)
-			logger.V(1).Info("Failed to get VPC client, will retry",
+			logger.V(1).Info("Failing to get VPC client, retrying",
 				"error", err,
 				"duration", time.Since(attemptStart))
 			return false, nil // Retry
@@ -179,7 +180,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string, nodeClas
 					return false, lastErr // Don't retry conversion errors
 				}
 				instanceType = it
-				logger.V(1).Info("Successfully retrieved instance type",
+				logger.V(1).Info("Retrieving instance type",
 					"name", name,
 					"duration", time.Since(attemptStart))
 				return true, nil // Success
@@ -437,7 +438,7 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context, nodeClass *v1
 		vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 		if err != nil {
 			lastErr = fmt.Errorf("getting VPC client: %w", err)
-			logger.V(1).Info("Failed to get VPC client, will retry",
+			logger.V(1).Info("Failing to get VPC client, retrying",
 				"error", err,
 				"duration", time.Since(attemptStart))
 			return false, nil // Retry
@@ -504,7 +505,7 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context, nodeClass *v1
 		}
 
 		instanceTypes = types
-		logger.V(1).Info("Successfully listed instance types from VPC API",
+		logger.V(1).Info("Listing instance types from VPC API",
 			"count", len(instanceTypes),
 			"duration", time.Since(attemptStart))
 		return true, nil // Success, stop retrying
@@ -585,7 +586,7 @@ func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region 
 	}
 
 	// Get the SDK client directly for zone listing
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.client.GetVPCClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VPC client: %w", err)
 	}

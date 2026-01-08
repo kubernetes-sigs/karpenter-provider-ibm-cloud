@@ -49,10 +49,22 @@ func TestAnnotationIBMNodeClassHashVersion(t *testing.T) {
 	}
 }
 
+func TestAnnotationIBMNodeClaimImageID(t *testing.T) {
+	expected := Group + "/image-id"
+	if AnnotationIBMNodeClaimImageID != expected {
+		t.Errorf("AnnotationIBMNodeClaimImageID = %v, want %v", AnnotationIBMNodeClaimImageID, expected)
+	}
+
+	if !strings.HasPrefix(AnnotationIBMNodeClaimImageID, Group) {
+		t.Errorf("AnnotationIBMNodeClaimImageID should start with Group prefix: %v", Group)
+	}
+}
+
 func TestAnnotationConstants(t *testing.T) {
 	annotations := []string{
 		AnnotationIBMNodeClassHash,
 		AnnotationIBMNodeClassHashVersion,
+		AnnotationIBMNodeClaimImageID,
 	}
 
 	for _, annotation := range annotations {

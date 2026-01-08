@@ -34,6 +34,14 @@ type Client struct {
 	region      string
 	iamClient   *IAMClient
 
+	// VPC client lazy initialization
+	vpcClient   *VPCClient
+	vpcClientMu sync.RWMutex
+
+	// Global Catalog client lazy initialization
+	globalCatalogClient   *GlobalCatalogClient
+	globalCatalogClientMu sync.RWMutex
+
 	// IKS client lazy initialization
 	iksClient    IKSClientInterface
 	iksClientErr error
@@ -86,18 +94,61 @@ func NewClient() (*Client, error) {
 }
 
 // GetVPCClient returns a configured VPC API client
-func (c *Client) GetVPCClient() (*VPCClient, error) {
-	ctx := context.Background()
+func (c *Client) GetVPCClient(ctx context.Context) (*VPCClient, error) {
+	// Fast path (read lock): return cached client if already initialized
+	c.vpcClientMu.RLock()
+	client := c.vpcClient
+	c.vpcClientMu.RUnlock()
+
+	if client != nil {
+		return client, nil
+	}
+
+	// Slow path (write lock): initialize once
+	c.vpcClientMu.Lock()
+	defer c.vpcClientMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if c.vpcClient != nil {
+		return c.vpcClient, nil
+	}
+
 	vpcAPIKey, err := c.credStore.GetVPCAPIKey(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting VPC API key: %w", err)
 	}
-	return NewVPCClient(c.vpcURL, c.vpcAuthType, vpcAPIKey, c.region, "")
+
+	vpc, err := NewVPCClient(c.vpcURL, c.vpcAuthType, vpcAPIKey, c.region, "")
+	if err != nil {
+		return nil, err
+	}
+
+	c.vpcClient = vpc
+	return vpc, nil
 }
 
 // GetGlobalCatalogClient returns a configured Global Catalog API client
 func (c *Client) GetGlobalCatalogClient() (*GlobalCatalogClient, error) {
-	return NewGlobalCatalogClient(c.iamClient), nil
+	// Fast path
+	c.globalCatalogClientMu.RLock()
+	client := c.globalCatalogClient
+	c.globalCatalogClientMu.RUnlock()
+
+	if client != nil {
+		return client, nil
+	}
+
+	// Slow path
+	c.globalCatalogClientMu.Lock()
+	defer c.globalCatalogClientMu.Unlock()
+
+	// Double-check
+	if c.globalCatalogClient != nil {
+		return c.globalCatalogClient, nil
+	}
+
+	c.globalCatalogClient = NewGlobalCatalogClient(c.iamClient)
+	return c.globalCatalogClient, nil
 }
 
 // GetIKSClient returns a configured IKS API client interface.
@@ -159,7 +210,7 @@ func (c *Client) GetResourceGroupIDByName(ctx context.Context, resourceGroupName
 
 // VPCInstanceExists checks if a VPC instance exists by its ID
 func (c *Client) VPCInstanceExists(ctx context.Context, instanceID string) (bool, error) {
-	vpcClient, err := c.GetVPCClient()
+	vpcClient, err := c.GetVPCClient(ctx)
 	if err != nil {
 		return false, fmt.Errorf("getting VPC client: %w", err)
 	}

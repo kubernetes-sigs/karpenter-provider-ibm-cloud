@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -266,7 +267,7 @@ func TestUnavailableOfferings_MultipleExpiredEntries(t *testing.T) {
 	cache.Add("expired-1", now.Add(-2*time.Hour))
 	cache.Add("expired-2", now.Add(-1*time.Hour))
 	cache.Add("valid-1", now.Add(1*time.Hour))
-	cache.Add("expired-3", now.Add(-30*time.Minute))
+	cache.Add("expired-3", now.Add(-constants.DefaultVPCClientCacheTTL))
 	cache.Add("valid-2", now.Add(2*time.Hour))
 
 	// Run cleanup

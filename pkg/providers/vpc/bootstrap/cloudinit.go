@@ -21,6 +21,8 @@ import (
 	"strings"
 	"text/template"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
 
@@ -989,7 +991,8 @@ echo "$(date): ===== Bootstrap completed ====="
 
 // InjectBootstrapEnvVars injects BOOTSTRAP_* environment variables into a script
 // This function works with any bash script by inserting exports after the shebang
-func InjectBootstrapEnvVars(script string) string {
+func InjectBootstrapEnvVars(ctx context.Context, script string) string {
+	logger := log.FromContext(ctx)
 	var bootstrapVars strings.Builder
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, "BOOTSTRAP_") {
@@ -1003,8 +1006,7 @@ func InjectBootstrapEnvVars(script string) string {
 	}
 
 	if bootstrapVars.Len() > 0 {
-		fmt.Printf("DEBUG: Injecting %d BOOTSTRAP_* environment variables into script\n",
-			strings.Count(bootstrapVars.String(), "\n"))
+		logger.V(1).Info("Injecting bootstrap environment variables", "count", strings.Count(bootstrapVars.String(), "\n"))
 
 		// Handle different shebang styles
 		if strings.HasPrefix(script, "#!/bin/bash\nset -euo pipefail\n") {
@@ -1047,18 +1049,17 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	script := buf.String()
 
 	// Add additional CA environment variable if available from secret
+	logger := log.FromContext(ctx)
 	if additionalCA := os.Getenv("ca_crt"); additionalCA != "" {
-		fmt.Printf("DEBUG: Found ca_crt environment variable, length: %d\n", len(additionalCA))
+		logger.V(1).Info("Found ca_crt environment variable", "length", len(additionalCA))
 		// Inject KARPENTER_ADDITIONAL_CA environment variable at the beginning of the script
 		envVar := fmt.Sprintf("export KARPENTER_ADDITIONAL_CA=\"%s\"\n", additionalCA)
 		script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n", "#!/bin/bash\nset -euo pipefail\n\n"+envVar, 1)
-		fmt.Printf("DEBUG: Injected KARPENTER_ADDITIONAL_CA into cloud-init script\n")
-	} else {
-		fmt.Printf("DEBUG: No ca_crt environment variable found\n")
+		logger.V(1).Info("Injected KARPENTER_ADDITIONAL_CA into cloud-init script")
 	}
 
 	// Inject BOOTSTRAP_* environment variables
-	script = InjectBootstrapEnvVars(script)
+	script = InjectBootstrapEnvVars(ctx, script)
 
 	return script, nil
 }

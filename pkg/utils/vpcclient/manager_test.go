@@ -26,13 +26,14 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 )
 
 func TestNewManager(t *testing.T) {
 	t.Run("creates manager with default TTL", func(t *testing.T) {
 		manager := NewManager(nil, 0)
 		assert.NotNil(t, manager)
-		assert.Equal(t, 30*time.Minute, manager.cacheTTL)
+		assert.Equal(t, constants.DefaultVPCClientCacheTTL, manager.cacheTTL)
 	})
 
 	t.Run("creates manager with custom TTL", func(t *testing.T) {

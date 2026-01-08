@@ -167,7 +167,7 @@ func TestStatusControllerIntegration(t *testing.T) {
 
 			result, err := statusController.Reconcile(ctx, req)
 			assert.NoError(t, err)
-			assert.Equal(t, reconcile.Result{}, result)
+			assert.Equal(t, 24*time.Hour, result.RequeueAfter, "Should requeue periodically for status refresh")
 
 			// Verify status was updated
 			var updatedNodeClass v1alpha1.IBMNodeClass

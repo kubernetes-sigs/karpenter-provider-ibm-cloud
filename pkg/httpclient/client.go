@@ -133,7 +133,7 @@ func (c *IBMCloudHTTPClient) Do(ctx context.Context, config RequestConfig) (*Res
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.FromContext(ctx).V(1).Info("failed to close response body", "error", closeErr)
+			log.FromContext(ctx).V(1).Info("Failing to close response body", "error", closeErr)
 		}
 	}()
 

@@ -141,7 +141,7 @@ func NewControllers(
 	if _, err := nodeclassautoplacement.NewController(mgr, instanceTypeProvider, subnetProvider); err != nil {
 		logger.Error(err, "failed to create autoplacement controller")
 	} else {
-		logger.Info("successfully registered autoplacement controller")
+		logger.Info("Successfully registered autoplacement controller")
 	}
 
 	if statusCtrl, err := nodeclaasstatus.NewController(kubeClient, mgr.GetAPIReader()); err != nil {
@@ -178,7 +178,7 @@ func NewControllers(
 	if err := startupTaintCtrl.Register(ctx, mgr); err != nil {
 		logger.Error(err, "failed to register startup taint lifecycle controller")
 	} else {
-		logger.Info("registered startup taint lifecycle controller")
+		logger.Info("Registered startup taint lifecycle controller")
 	}
 
 	// Add tagging controller (VPC mode only)
@@ -190,7 +190,7 @@ func NewControllers(
 
 	// Add load balancer controller (VPC mode only)
 	if ibmClient != nil {
-		vpcClient, err := ibmClient.GetVPCClient()
+		vpcClient, err := ibmClient.GetVPCClient(ctx)
 		if err != nil {
 			logger.Error(err, "failed to get VPC client for load balancer controller")
 		} else {
@@ -198,7 +198,7 @@ func NewControllers(
 			if err := loadBalancerCtrl.Register(ctx, mgr); err != nil {
 				logger.Error(err, "failed to register load balancer controller")
 			} else {
-				logger.Info("registered load balancer controller")
+				logger.Info("Registered load balancer controller")
 			}
 		}
 	}
@@ -224,11 +224,11 @@ func NewControllers(
 	if ibmClient != nil && isOrphanCleanupEnabled() {
 		orphanCleanupCtrl := nodeorphancleanup.NewController(kubeClient, ibmClient)
 		controllers = append(controllers, orphanCleanupCtrl)
-		logger.Info("enabled orphaned node cleanup controller")
+		logger.Info("Enabled orphaned node cleanup controller")
 	} else if ibmClient == nil {
-		logger.Info("IBM client not available, skipping orphaned node cleanup controller")
+		logger.Info("IBM client not available, Skipped orphaned node cleanup controller")
 	} else {
-		logger.Info("orphaned node cleanup controller is disabled")
+		logger.Info("Orphaned node cleanup controller is disabled")
 	}
 
 	// Add IKS pool cleanup controller for dynamic pool lifecycle management
@@ -237,7 +237,7 @@ func NewControllers(
 		if err := poolCleanupCtrl.Register(ctx, mgr); err != nil {
 			logger.Error(err, "failed to register IKS pool cleanup controller")
 		} else {
-			logger.Info("enabled IKS pool cleanup controller")
+			logger.Info("Enabled IKS pool cleanup controller")
 		}
 	}
 

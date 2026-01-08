@@ -69,7 +69,7 @@ func (c *Controller) Register(ctx context.Context, mgr manager.Manager) error {
 
 func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	logger := log.FromContext(ctx).WithName("startuptaint.lifecycle")
-	logger.V(1).Info("reconciling NodeClaim for startup taint lifecycle", "nodeclaim", req.NamespacedName)
+	logger.V(1).Info("Reconciling NodeClaim for startup taint lifecycle", "nodeclaim", req.NamespacedName)
 
 	// Get the NodeClaim
 	nodeClaim := &karpv1.NodeClaim{}
@@ -86,7 +86,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	if !controllerutil.ContainsFinalizer(nodeClaim, StartupTaintLifecycleFinalizer) {
 		// Double-check deletion timestamp hasn't changed during reconciliation
 		if !nodeClaim.DeletionTimestamp.IsZero() {
-			logger.V(1).Info("NodeClaim entered deletion during reconciliation, skipping finalizer addition")
+			logger.V(1).Info("Skipping finalizer addition as NodeClaim entered deletion during reconciliation")
 			return reconcile.Result{}, nil
 		}
 
@@ -103,23 +103,23 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		if err := c.kubeClient.Patch(ctx, nodeClaim, patch); err != nil {
 			return reconcile.Result{}, fmt.Errorf("adding finalizer and lifecycle label: %w", err)
 		}
-		logger.V(1).Info("added startup taint finalizer to nodeclaim")
+		logger.V(1).Info("Adding startup taint finalizer to NodeClaim")
 		return reconcile.Result{Requeue: true}, nil
 	}
 
 	// Finalizer already present, continue with normal processing
-	logger.V(1).Info("startup taint finalizer already present, continuing with lifecycle management")
+	logger.V(1).Info("Startup taint finalizer already present, continuing with lifecycle management")
 
 	// Skip if NodeClaim doesn't have an associated Node yet
 	if nodeClaim.Status.NodeName == "" {
-		logger.V(1).Info("NodeClaim has no associated Node, skipping")
+		logger.V(1).Info("Skipping as NodeClaim has no associated Node")
 		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// Get the associated Node
 	node := &corev1.Node{}
 	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClaim.Status.NodeName}, node); err != nil {
-		logger.Error(err, "failed to get Node", "node", nodeClaim.Status.NodeName)
+		logger.Error(err, "Failed to get Node", "node", nodeClaim.Status.NodeName)
 		return reconcile.Result{RequeueAfter: 10 * time.Second}, client.IgnoreNotFound(err)
 	}
 
@@ -137,7 +137,7 @@ func (c *Controller) processStartupTaintLifecycle(ctx context.Context, nodeClaim
 	hasRegularTaints := len(nodeClaim.Spec.Taints) > 0
 	startupTaintsRemoved := c.areStartupTaintsRemoved(node)
 
-	logger.Info("processing startup taint lifecycle",
+	logger.Info("Processed startup taint lifecycle",
 		"startupTaintsApplied", startupTaintsApplied,
 		"regularTaintsApplied", regularTaintsApplied,
 		"hasStartupTaints", hasStartupTaints,
@@ -149,7 +149,7 @@ func (c *Controller) processStartupTaintLifecycle(ctx context.Context, nodeClaim
 	if !hasStartupTaints {
 		// Skip startup phase, go straight to regular taints if needed
 		if hasRegularTaints && !regularTaintsApplied {
-			logger.Info("no startup taints defined, applying regular taints immediately")
+			logger.Info("No startup taints defined, applied regular taints immediately")
 			return c.applyRegularTaints(ctx, nodeClaim, node)
 		}
 		// Nothing to do if no taints defined at all
@@ -165,14 +165,14 @@ func (c *Controller) processStartupTaintLifecycle(ctx context.Context, nodeClaim
 	if startupTaintsApplied && !startupTaintsRemoved {
 		// Check if node is Ready
 		if !c.isNodeReady(node) {
-			logger.V(1).Info("waiting for node to become ready before removing startup taints")
+			logger.V(1).Info("Waiting for node to become ready before removing startup taints")
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		// Check if other system startup taints (Cilium, etc.) are still present
 		hasOtherSystemTaints := c.hasOtherSystemStartupTaints(node)
 		if hasOtherSystemTaints {
-			logger.V(1).Info("waiting for system pods to remove their startup taints (Cilium, etc.)")
+			logger.V(1).Info("Waiting for system pods to remove their startup taints (Cilium, etc.)")
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
@@ -186,13 +186,13 @@ func (c *Controller) processStartupTaintLifecycle(ctx context.Context, nodeClaim
 	}
 
 	// All phases complete
-	logger.V(1).Info("startup taint lifecycle complete")
+	logger.V(1).Info("Completing startup taint lifecycle")
 	return reconcile.Result{}, nil
 }
 
 func (c *Controller) applyStartupTaints(ctx context.Context, nodeClaim *karpv1.NodeClaim, node *corev1.Node) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("applying startup taints only")
+	logger.Info("Applied startup taints only")
 
 	modified := false
 	originalTaints := make([]corev1.Taint, len(node.Spec.Taints))
@@ -201,7 +201,7 @@ func (c *Controller) applyStartupTaints(ctx context.Context, nodeClaim *karpv1.N
 	// Add startup taints to node
 	for _, startupTaint := range nodeClaim.Spec.StartupTaints {
 		if !c.hasTaint(node, startupTaint) {
-			logger.Info("adding startup taint to node", "key", startupTaint.Key, "effect", startupTaint.Effect)
+			logger.Info("Added startup taint to node", "key", startupTaint.Key, "effect", startupTaint.Effect)
 			node.Spec.Taints = append(node.Spec.Taints, startupTaint)
 			modified = true
 		}
@@ -229,7 +229,7 @@ func (c *Controller) applyStartupTaints(ctx context.Context, nodeClaim *karpv1.N
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("updating node with startup taints: %w", err)
 		}
-		logger.Info("successfully applied startup taints to node")
+		logger.Info("Successfully applied startup taints to node")
 	}
 
 	// Mark startup taints as applied with retry on conflict
@@ -256,7 +256,7 @@ func (c *Controller) applyStartupTaints(ctx context.Context, nodeClaim *karpv1.N
 
 func (c *Controller) applyRegularTaints(ctx context.Context, nodeClaim *karpv1.NodeClaim, node *corev1.Node) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("applying regular taints after startup taints removed")
+	logger.Info("Applied regular taints after startup taints were removed")
 
 	modified := false
 	originalTaints := make([]corev1.Taint, len(node.Spec.Taints))
@@ -265,7 +265,7 @@ func (c *Controller) applyRegularTaints(ctx context.Context, nodeClaim *karpv1.N
 	// Add regular taints to node
 	for _, regularTaint := range nodeClaim.Spec.Taints {
 		if !c.hasTaint(node, regularTaint) {
-			logger.Info("adding regular taint to node", "key", regularTaint.Key, "effect", regularTaint.Effect)
+			logger.Info("Added regular taint to node", "key", regularTaint.Key, "effect", regularTaint.Effect)
 			node.Spec.Taints = append(node.Spec.Taints, regularTaint)
 			modified = true
 		}
@@ -293,7 +293,7 @@ func (c *Controller) applyRegularTaints(ctx context.Context, nodeClaim *karpv1.N
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("updating node with regular taints: %w", err)
 		}
-		logger.Info("successfully applied regular taints to node")
+		logger.Info("Successfully applied regular taints to node")
 	}
 
 	// Mark regular taints as applied with retry on conflict
@@ -315,7 +315,7 @@ func (c *Controller) applyRegularTaints(ctx context.Context, nodeClaim *karpv1.N
 		return reconcile.Result{}, fmt.Errorf("updating NodeClaim labels: %w", err)
 	}
 
-	logger.Info("startup taint lifecycle completed successfully")
+	logger.Info("Startup taint lifecycle completed successfully")
 	return reconcile.Result{}, nil
 }
 
@@ -345,7 +345,7 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 
 	// Only remove finalizer if present
 	if !controllerutil.ContainsFinalizer(nodeClaim, StartupTaintLifecycleFinalizer) {
-		logger.V(1).Info("startup taint finalizer not present, nothing to clean up")
+		logger.V(1).Info("Skipping cleanup as startup taint finalizer is not present")
 		return reconcile.Result{}, nil
 	}
 
@@ -355,7 +355,7 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 	fresh := &karpv1.NodeClaim{}
 	if err := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(nodeClaim), fresh); err != nil {
 		if apierrors.IsNotFound(err) {
-			logger.V(1).Info("NodeClaim already deleted, nothing to do")
+			logger.V(1).Info("Skipping as NodeClaim is already deleted")
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, fmt.Errorf("getting fresh NodeClaim: %w", err)
@@ -363,7 +363,7 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 
 	// Check again if finalizer is present in fresh copy
 	if !controllerutil.ContainsFinalizer(fresh, StartupTaintLifecycleFinalizer) {
-		logger.V(1).Info("startup taint finalizer already removed by another reconciliation")
+		logger.V(1).Info("Skipping as startup taint finalizer was already removed by another reconciliation")
 		return reconcile.Result{}, nil
 	}
 
@@ -373,14 +373,14 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 
 	if err := c.kubeClient.Patch(ctx, fresh, patch); err != nil {
 		if apierrors.IsConflict(err) {
-			logger.V(1).Info("conflict removing finalizer, will retry")
+			logger.V(1).Info("Retrying due to conflict when removing finalizer")
 			return reconcile.Result{Requeue: true}, nil
 		}
-		logger.Error(err, "failed to remove startup taint finalizer, will retry")
+		logger.Error(err, "Failed to remove startup taint finalizer, will retry")
 		return reconcile.Result{}, fmt.Errorf("removing startup taint finalizer: %w", err)
 	}
 
-	logger.Info("successfully removed startup taint finalizer, cleanup complete")
+	logger.Info("Successfully removed startup taint finalizer, cleanup complete")
 	return reconcile.Result{}, nil
 }
 
@@ -422,7 +422,7 @@ func (c *Controller) hasOtherSystemStartupTaints(node *corev1.Node) bool {
 // removeKarpenterStartupTaint removes the karpenter.sh/unregistered taint from the node
 func (c *Controller) removeKarpenterStartupTaint(ctx context.Context, node *corev1.Node) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("removing karpenter startup taint from node")
+	logger.Info("Removed karpenter startup taint from node")
 
 	// Remove karpenter.sh/unregistered taint with retry on conflict
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -444,7 +444,7 @@ func (c *Controller) removeKarpenterStartupTaint(ctx context.Context, node *core
 		return reconcile.Result{}, fmt.Errorf("removing karpenter startup taint: %w", err)
 	}
 
-	logger.Info("successfully removed karpenter startup taint from node")
+	logger.Info("Successfully removed karpenter startup taint from node")
 	// Requeue immediately to verify all taints are removed and proceed to next phase
 	return reconcile.Result{RequeueAfter: time.Millisecond}, nil
 }

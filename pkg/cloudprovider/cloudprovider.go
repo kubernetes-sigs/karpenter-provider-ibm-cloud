@@ -23,11 +23,14 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
+	"github.com/go-logr/logr"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -46,6 +49,15 @@ import (
 )
 
 const CloudProviderName = "ibmcloud"
+
+const (
+	NodeClassNotFoundDrift           cloudprovider.DriftReason = "NodeClassNotFound"
+	NodeClassHashVersionChangedDrift cloudprovider.DriftReason = "NodeClassHashVersionChanged"
+	NodeClassHashChangedDrift        cloudprovider.DriftReason = "NodeClassHashChanged"
+	SubnetDrift                      cloudprovider.DriftReason = "SubnetDrift"
+	ImageDrift                       cloudprovider.DriftReason = "ImageDrift"
+	SecurityGroupDrift               cloudprovider.DriftReason = "SecurityGroupDrift"
+)
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
@@ -93,7 +105,6 @@ func New(kubeClient client.Client,
 
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.NodeClaim, error) {
 	log := log.FromContext(ctx).WithValues("providerID", providerID)
-	log.Info("Getting instance details")
 
 	// For Get operations without NodeClass, use a minimal NodeClass with default provider mode
 	nodeClass := &v1alpha1.IBMNodeClass{}
@@ -115,6 +126,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		log.Error(err, "Failed to get instance")
 		return nil, fmt.Errorf("getting instance, %w", err)
 	}
+	log.Info("Got instance details")
 
 	// Extract instance info from node
 	instanceTypeName := node.Labels["node.kubernetes.io/instance-type"]
@@ -154,7 +166,6 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	log := log.FromContext(ctx)
-	log.Info("Listing all instances")
 
 	// Get all nodes from the Kubernetes API
 	nodeList := &corev1.NodeList{}
@@ -226,6 +237,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 		}
 	}
 
+	log.Info("Listed all instances")
 	return nodeClaims, nil
 }
 
@@ -234,7 +246,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		"nodeClaim", nodeClaim.Name,
 		"requirements", nodeClaim.Spec.Requirements,
 		"resources", nodeClaim.Spec.Resources)
-	log.Info("Starting node creation")
+	log.Info("Started node creation")
 
 	nodeClass := &v1alpha1.IBMNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
@@ -289,16 +301,16 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// For IKS mode, skip VPC instance type filtering - IKS provider handles its own flavor selection
 	if providerMode == commonTypes.IKSMode {
-		log.Info("IKS mode detected, skipping VPC instance type filtering")
+		log.Info("IKS mode detected, skipped VPC instance type filtering")
 		// For IKS, we pass nil compatible list - the IKS provider will handle flavor selection
 		compatible = nil
 	} else {
-		log.Info("Resolving instance types")
 		instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 		if err != nil {
 			log.Error(err, "Failed to resolve instance types")
 			return nil, fmt.Errorf("resolving instance types, %w", err)
 		}
+		log.Info("Resolved instance types")
 
 		reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 		compatible = lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
@@ -333,8 +345,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		}
 		log.Info("Found compatible instance types", "count", len(compatible), "types", lo.Map(compatible, func(it *cloudprovider.InstanceType, _ int) string { return it.Name }))
 	}
-
-	log.Info("Creating instance")
 
 	// Per-NodeClass circuit breaker check - validate against failure rate and concurrency safeguards
 	if cbErr := c.circuitBreakerManager.CanProvision(ctx, nodeClass.Name, nodeClass.Spec.Region, 0); cbErr != nil {
@@ -375,6 +385,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		c.circuitBreakerManager.RecordFailure(nodeClass.Name, nodeClass.Spec.Region, err)
 		return nil, fmt.Errorf("creating instance, %w", err)
 	}
+	log.Info("Created instance")
 
 	// Record successful provisioning for this specific NodeClass
 	c.circuitBreakerManager.RecordSuccess(nodeClass.Name, nodeClass.Spec.Region)
@@ -449,10 +460,19 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		nc.Status.Allocatable = instanceType.Allocatable()
 	}
 
-	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
-		v1alpha1.AnnotationIBMNodeClassHash:        nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
-		v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion,
-	})
+	annotations := map[string]string{
+		v1alpha1.AnnotationIBMNodeClassHash:           nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
+		v1alpha1.AnnotationIBMNodeClassHashVersion:    v1alpha1.IBMNodeClassHashVersion,
+		v1alpha1.AnnotationIBMNodeClaimSubnetID:       node.Annotations[v1alpha1.AnnotationIBMNodeClaimSubnetID],
+		v1alpha1.AnnotationIBMNodeClaimSecurityGroups: node.Annotations[v1alpha1.AnnotationIBMNodeClaimSecurityGroups],
+	}
+
+	// Store resolved image ID only if available
+	if nodeClass.Status.ResolvedImageID != "" {
+		annotations[v1alpha1.AnnotationIBMNodeClaimImageID] = nodeClass.Status.ResolvedImageID
+	}
+
+	nc.Annotations = lo.Assign(nc.Annotations, annotations)
 
 	log.Info("Node creation completed successfully",
 		"providerID", nc.Status.ProviderID,
@@ -463,7 +483,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	log := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
-	log.Info("Deleting node")
 
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -514,7 +533,6 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.NodePool) ([]*cloudprovider.InstanceType, error) {
 	log := log.FromContext(ctx).WithValues("nodePool", nodePool.Name)
-	log.Info("Getting instance types for NodePool")
 
 	nodeClass := &v1alpha1.IBMNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
@@ -531,6 +549,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 		log.Error(err, "Failed to list instance types")
 		return nil, err
 	}
+	log.Info("Got instance types for NodePool")
 
 	// Filter instance types based on NodePool requirements
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodePool.Spec.Template.Spec.Requirements...)
@@ -544,37 +563,164 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	return compatible, nil
 }
 
-func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (driftReason cloudprovider.DriftReason, err error) {
 	log := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
-	log.Info("Checking if node has drifted")
 
-	// Get the current hash from the node's annotations
-	currentHash := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClassHash]
-	currentVersion := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClassHashVersion]
+	nodeClassName := nodeClaim.Spec.NodeClassRef.Name
+	start := time.Now()
+	defer func() {
+		metrics.DriftDetectionDuration.WithLabelValues(
+			nodeClassName,
+		).Observe(time.Since(start).Seconds())
+
+		if driftReason != "" {
+			metrics.DriftDetectionsTotal.WithLabelValues(string(driftReason), nodeClassName).Inc()
+		}
+	}()
 
 	// Get the NodeClass
+	nodeClass, driftReason, err := c.getNodeClassForDrift(ctx, log, nodeClaim)
+	if err != nil {
+		return "", err
+	}
+	if driftReason != "" {
+		return driftReason, nil
+	}
+
+	if driftReason = c.isNodeClassHashVersionDrifted(ctx, log, nodeClaim); driftReason != "" {
+		return driftReason, nil
+	}
+
+	if driftReason = c.isNodeClassHashDrifted(ctx, log, nodeClaim, nodeClass); driftReason != "" {
+		return driftReason, nil
+	}
+
+	if driftReason = c.isImageDrifted(ctx, log, nodeClaim, nodeClass); driftReason != "" {
+		return driftReason, nil
+	}
+
+	driftReason, err = c.isSubnetDrifted(ctx, log, nodeClaim, nodeClass)
+	if err != nil {
+		return "", err
+	}
+	if driftReason != "" {
+		return driftReason, nil
+	}
+
+	driftReason, err = c.areSecurityGroupsDrifted(ctx, log, nodeClaim, nodeClass)
+	if err != nil {
+		return "", err
+	}
+	if driftReason != "" {
+		return driftReason, nil
+	}
+
+	log.Info("Checked if node has drifted")
+	return "", nil
+}
+
+func (c *CloudProvider) getNodeClassForDrift(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim) (*v1alpha1.IBMNodeClass, cloudprovider.DriftReason, error) {
 	nodeClass := &v1alpha1.IBMNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		if errors.IsNotFound(err) {
 			log.Error(err, "NodeClass not found")
-			return "NodeClassNotFound", nil
+			return nil, NodeClassNotFoundDrift, nil
 		}
-		return "", fmt.Errorf("getting nodeclass, %w", err)
+		return nil, "", fmt.Errorf("getting nodeclass, %w", err)
 	}
+	return nodeClass, "", nil
+}
+
+func (c *CloudProvider) isNodeClassHashVersionDrifted(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim) cloudprovider.DriftReason {
+	// Get the current hash version from the node's annotations
+	currentVersion := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClassHashVersion]
 
 	// Check if the hash version matches
 	if currentVersion != v1alpha1.IBMNodeClassHashVersion {
 		log.Info("NodeClass hash version mismatch", "current", currentVersion, "expected", v1alpha1.IBMNodeClassHashVersion)
-		return "NodeClassHashVersionChanged", nil
+		return NodeClassHashVersionChangedDrift
 	}
+	return ""
+}
+
+func (c *CloudProvider) isNodeClassHashDrifted(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass) cloudprovider.DriftReason {
+	// Get the current hash from the node's annotations
+	currentHash := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClassHash]
+	expectedHash := nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash]
 
 	// Check if the hash matches
-	expectedHash := nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash]
 	if expectedHash != currentHash {
 		log.Info("NodeClass hash mismatch", "current", currentHash, "expected", expectedHash)
-		return "NodeClassHashChanged", nil
+		return NodeClassHashChangedDrift
+	}
+	return ""
+}
+
+func (c *CloudProvider) isImageDrifted(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass) cloudprovider.DriftReason {
+	// Get the stored image id from the node's annotations
+	storedImageID := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClaimImageID]
+	currentImageID := nodeClass.Status.ResolvedImageID
+
+	// Check if the ImageID matches
+	if storedImageID != "" && currentImageID != "" && storedImageID != currentImageID {
+		log.Info("Node image drift detected", "storedImageID", storedImageID, "currentImageID", currentImageID)
+		return ImageDrift
+	}
+	return ""
+}
+
+func (c *CloudProvider) isSubnetDrifted(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass) (cloudprovider.DriftReason, error) {
+	storedSubnetID := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClaimSubnetID]
+	if storedSubnetID == "" {
+		return "", nil
 	}
 
+	// Case 1: Explicit subnet in spec - compare directly
+	if nodeClass.Spec.Subnet != "" {
+		if storedSubnetID != nodeClass.Spec.Subnet {
+			log.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "specSubnet", nodeClass.Spec.Subnet)
+			return SubnetDrift, nil
+		}
+		return "", nil
+	}
+
+	// Case 2: PlacementStrategy - check against Status.SelectedSubnets
+	validSubnets := nodeClass.Status.SelectedSubnets
+	if len(validSubnets) == 0 {
+		log.Info("No subnets in Status.SelectedSubnets, skipping drift check", "nodeClass", nodeClass.Name)
+		return "", nil
+	}
+
+	for _, curSubnet := range validSubnets {
+		if curSubnet == storedSubnetID {
+			return "", nil
+		}
+	}
+
+	log.Info("Subnet drift detected", "storedSubnetID", storedSubnetID, "validSubnets", validSubnets)
+	return SubnetDrift, nil
+}
+
+func (c *CloudProvider) areSecurityGroupsDrifted(ctx context.Context, log logr.Logger, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass) (cloudprovider.DriftReason, error) {
+	storedSGs := nodeClaim.Annotations[v1alpha1.AnnotationIBMNodeClaimSecurityGroups]
+	if storedSGs == "" {
+		return "", nil
+	}
+
+	storedSGSet := sets.New(strings.Split(storedSGs, ",")...)
+
+	// Use resolved security groups from status (populated by status controller)
+	if len(nodeClass.Status.ResolvedSecurityGroups) == 0 {
+		log.Info("No security groups in Status.ResolvedSecurityGroups, skipping drift check", "nodeClass", nodeClass.Name)
+		return "", nil
+	}
+
+	currentSGSet := sets.New(nodeClass.Status.ResolvedSecurityGroups...)
+
+	if !storedSGSet.Equal(currentSGSet) {
+		log.Info("Security group drift detected", "storedSecurityGroups", storedSGSet.UnsortedList(), "currentSecurityGroups", currentSGSet.UnsortedList())
+		return SecurityGroupDrift, nil
+	}
 	return "", nil
 }
 

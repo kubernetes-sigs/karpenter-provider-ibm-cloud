@@ -130,7 +130,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 
 		// Add interruption annotations to the node
 		if err := c.markNodeAsInterrupted(ctx, &node, reason); err != nil {
-			log.FromContext(ctx).Error(err, "failed to mark node as interrupted", "node", node.Name)
+			log.FromContext(ctx).Error(err, "Failed to mark node as interrupted", "node", node.Name)
 			continue
 		}
 
@@ -140,7 +140,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 
 		// Handle interruption based on deployment mode (VPC vs IKS)
 		if err := c.handleInterruption(ctx, &node, reason); err != nil {
-			log.FromContext(ctx).Error(err, "failed to handle interruption", "node", node.Name, "reason", reason)
+			log.FromContext(ctx).Error(err, "Failed to handle interruption", "node", node.Name, "reason", reason)
 			continue
 		}
 	}
@@ -159,21 +159,21 @@ func (c *Controller) isNodeInterrupted(ctx context.Context, node *v1.Node) (bool
 
 	// 1. Check node readiness and health conditions
 	if reason := c.checkNodeConditions(node); reason != "" {
-		logger.V(1).Info("detected interruption from node conditions", "reason", reason)
+		logger.V(1).Info("Detecting interruption from node conditions", "reason", reason)
 		return true, reason
 	}
 
 	// 2. Check IBM Cloud-specific metadata (if instance ID is available)
 	if instanceID := c.getInstanceIDFromNode(node); instanceID != "" {
 		if reason := c.checkInstanceMetadata(ctx, instanceID); reason != "" {
-			logger.V(1).Info("detected interruption from instance metadata", "reason", reason)
+			logger.V(1).Info("Detecting interruption from instance metadata", "reason", reason)
 			return true, reason
 		}
 	}
 
 	// 3. Check for capacity-related issues from node events or annotations
 	if reason := c.checkCapacitySignals(node); reason != "" {
-		logger.V(1).Info("detected capacity-related interruption", "reason", reason)
+		logger.V(1).Info("Detecting capacity-related interruption", "reason", reason)
 		return true, reason
 	}
 
@@ -420,7 +420,7 @@ func (c *Controller) handleInterruption(ctx context.Context, node *v1.Node, reas
 	// Get the node class to determine deployment mode
 	nodeClass, err := c.getNodeClassForNode(ctx, node)
 	if err != nil {
-		logger.V(1).Info("could not determine node class, defaulting to VPC mode handling", "error", err)
+		logger.V(1).Info("Failing to determine node class, defaulting to VPC mode handling", "error", err)
 		// Default to VPC mode handling if we can't determine the mode
 		return c.handleVPCInterruption(ctx, node, reason)
 	}
@@ -434,7 +434,7 @@ func (c *Controller) handleInterruption(ctx context.Context, node *v1.Node, reas
 		mode = c.inferModeFromNode(node)
 	}
 
-	logger.V(1).Info("handling interruption", "mode", mode)
+	logger.V(1).Info("Handling interruption", "mode", mode)
 
 	// Handle based on deployment mode
 	switch mode {
@@ -443,7 +443,7 @@ func (c *Controller) handleInterruption(ctx context.Context, node *v1.Node, reas
 	case types.VPCMode:
 		return c.handleVPCInterruption(ctx, node, reason)
 	default:
-		logger.Info("unknown deployment mode, defaulting to VPC handling", "mode", mode)
+		logger.Info("Unknown deployment mode was encountered, defaulted to VPC handling", "mode", mode)
 		return c.handleVPCInterruption(ctx, node, reason)
 	}
 }
@@ -458,7 +458,7 @@ func (c *Controller) handleVPCInterruption(ctx context.Context, node *v1.Node, r
 		zone := node.Labels["topology.kubernetes.io/zone"]
 		if instanceType != "" && zone != "" {
 			c.unavailableOfferings.Add(instanceType+":"+zone, time.Now().Add(time.Hour))
-			logger.Info("marked instance type as unavailable due to capacity issue",
+			logger.Info("Marked instance type as unavailable due to capacity issue",
 				"instanceType", instanceType, "zone", zone)
 		}
 	}
@@ -470,7 +470,7 @@ func (c *Controller) handleVPCInterruption(ctx context.Context, node *v1.Node, r
 		if err := c.kubeClient.Update(ctx, nodeCopy); err != nil {
 			return fmt.Errorf("failed to cordon node: %w", err)
 		}
-		logger.Info("cordoned node for interruption")
+		logger.Info("Cordoned node for interruption")
 	}
 
 	// Delete the node to trigger immediate replacement
@@ -479,7 +479,7 @@ func (c *Controller) handleVPCInterruption(ctx context.Context, node *v1.Node, r
 			return fmt.Errorf("failed to delete node: %w", err)
 		}
 	}
-	logger.Info("deleted node to trigger replacement")
+	logger.Info("Deleted node to trigger replacement")
 
 	return nil
 }
@@ -497,7 +497,7 @@ func (c *Controller) handleIKSInterruption(ctx context.Context, node *v1.Node, r
 		zone := node.Labels["topology.kubernetes.io/zone"]
 		if instanceType != "" && zone != "" {
 			c.unavailableOfferings.Add(instanceType+":"+zone, time.Now().Add(time.Hour))
-			logger.Info("marked instance type as unavailable due to capacity issue",
+			logger.Info("Marked instance type as unavailable due to capacity issue",
 				"instanceType", instanceType, "zone", zone)
 		}
 	}
@@ -509,7 +509,7 @@ func (c *Controller) handleIKSInterruption(ctx context.Context, node *v1.Node, r
 		if err := c.kubeClient.Update(ctx, nodeCopy); err != nil {
 			return fmt.Errorf("failed to cordon node: %w", err)
 		}
-		logger.Info("cordoned node for interruption, letting IKS worker pool management handle replacement")
+		logger.Info("Cordoned node for interruption and left replacement to IKS worker pool management")
 	}
 
 	// For non-capacity issues (like maintenance), we might want to delete the node
@@ -521,7 +521,7 @@ func (c *Controller) handleIKSInterruption(ctx context.Context, node *v1.Node, r
 				return fmt.Errorf("failed to delete node: %w", err)
 			}
 		}
-		logger.Info("deleted node to trigger replacement for non-capacity interruption")
+		logger.Info("Deleted node to trigger replacement for non-capacity interruption")
 	}
 
 	return nil

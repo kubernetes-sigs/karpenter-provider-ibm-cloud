@@ -34,10 +34,13 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/image"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
+
+const nodeClassStatusRefreshInterval = 24 * time.Hour
 
 // Controller reconciles an IBMNodeClass object to update its status
 type Controller struct {
@@ -76,7 +79,7 @@ func NewController(kubeClient client.Client, apiReader client.Reader) (*Controll
 		ibmClient:        ibmClient,
 		subnetProvider:   subnetProvider,
 		cache:            zoneSubnetCache,
-		vpcClientManager: vpcclient.NewManager(ibmClient, 30*time.Minute),
+		vpcClientManager: vpcclient.NewManager(ibmClient, constants.DefaultVPCClientCacheTTL),
 	}, nil
 }
 
@@ -135,7 +138,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			}
 			return reconcile.Result{}, err
 		}
-		return reconcile.Result{}, nil
+		return reconcile.Result{RequeueAfter: nodeClassStatusRefreshInterval}, nil
 	}
 
 	// Validation passed - clear any previous validation error and set Ready condition
@@ -160,7 +163,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, err
 	}
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{RequeueAfter: nodeClassStatusRefreshInterval}, nil
 }
 
 // validateNodeClass performs comprehensive validation of the IBMNodeClass configuration
@@ -179,7 +182,7 @@ func (c *Controller) validateNodeClass(ctx context.Context, nc *v1alpha1.IBMNode
 
 	// Phase 3: IBM Cloud resource validation
 	if err := c.validateIBMCloudResources(ctx, nc); err != nil {
-		logger.V(1).Info("IBM Cloud resource validation failed", "error", err)
+		logger.V(1).Info("Failing IBM Cloud resource validation", "error", err)
 		return fmt.Errorf("IBM Cloud resource validation failed: %w", err)
 	}
 
@@ -188,7 +191,7 @@ func (c *Controller) validateNodeClass(ctx context.Context, nc *v1alpha1.IBMNode
 		return fmt.Errorf("business logic validation failed: %w", err)
 	}
 
-	logger.V(1).Info("NodeClass validation succeeded")
+	logger.V(1).Info("Passing NodeClass validation")
 	return nil
 }
 
@@ -321,11 +324,19 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 		return fmt.Errorf("image validation failed: %w", err)
 	}
 
-	// Validate security groups exist and are accessible
+	// Validate and resolve security groups
 	if len(nc.Spec.SecurityGroups) > 0 {
 		if err := c.validateSecurityGroups(ctx, nc.Spec.SecurityGroups, nc.Spec.VPC, nc.Spec.Region); err != nil {
 			return fmt.Errorf("security group validation failed: %w", err)
 		}
+		nc.Status.ResolvedSecurityGroups = nc.Spec.SecurityGroups
+	} else {
+		// No explicit SGs - resolve default security group from VPC
+		defaultSGID, err := c.resolveDefaultSecurityGroup(ctx, nc.Spec.VPC)
+		if err != nil {
+			return fmt.Errorf("failed to resolve default security group: %w", err)
+		}
+		nc.Status.ResolvedSecurityGroups = []string{defaultSGID}
 	}
 
 	// Validate SSH keys exist and are accessible
@@ -336,6 +347,19 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 	}
 
 	return nil
+}
+
+// resolveDefaultSecurityGroup gets the default security group ID for a VPC
+func (c *Controller) resolveDefaultSecurityGroup(ctx context.Context, vpcID string) (string, error) {
+	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting VPC client: %w", err)
+	}
+	defaultSG, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
+	if err != nil {
+		return "", err
+	}
+	return *defaultSG.ID, nil
 }
 
 // validateRegion validates that the region exists and is accessible
@@ -449,7 +473,7 @@ func (c *Controller) validateVPCInRegion(ctx context.Context, vpcID, resourceGro
 
 	// Create a new region-specific VPC client following the same pattern as GetVPCClient
 	// but with the correct regional endpoint
-	regionVPCClient, err := c.createRegionVPCClient(vpcURL, region)
+	regionVPCClient, err := c.createRegionVPCClient(ctx, vpcURL, region)
 	if err != nil {
 		return fmt.Errorf("creating region-specific VPC client for %s: %w", region, err)
 	}
@@ -479,7 +503,7 @@ func (c *Controller) validateVPCInRegion(ctx context.Context, vpcID, resourceGro
 }
 
 // createRegionVPCClient creates a VPC client for a specific region
-func (c *Controller) createRegionVPCClient(vpcURL, region string) (*ibm.VPCClient, error) {
+func (c *Controller) createRegionVPCClient(ctx context.Context, vpcURL, region string) (*ibm.VPCClient, error) {
 	// If we don't have an IBM client, we can't create a VPC client
 	if c.ibmClient == nil {
 		return nil, fmt.Errorf("IBM client not available")
@@ -487,7 +511,7 @@ func (c *Controller) createRegionVPCClient(vpcURL, region string) (*ibm.VPCClien
 
 	// Create a temporary client with the region-specific URL
 	// This follows the same pattern as the main client but uses the specified region's endpoint
-	vpcClient, err := c.ibmClient.GetVPCClient()
+	vpcClient, err := c.ibmClient.GetVPCClient(ctx)
 	if err != nil {
 		// If we can't get a VPC client from the main client,
 		// it likely means credentials are not available
@@ -652,7 +676,7 @@ func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha
 		}
 		// Store resolved image ID in status for use during provisioning
 		nc.Status.ResolvedImageID = resolvedImageID
-		logger.V(1).Info("Resolved and cached explicit image",
+		logger.V(1).Info("Resolving and caching explicit image",
 			"image", nc.Spec.Image,
 			"resolvedImageID", resolvedImageID)
 		return nil

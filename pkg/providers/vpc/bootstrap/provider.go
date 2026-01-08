@@ -35,8 +35,10 @@ import (
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/version"
 )
 
 // VPCBootstrapProvider provides VPC-specific bootstrap functionality
@@ -51,7 +53,7 @@ type VPCBootstrapProvider struct {
 func NewVPCBootstrapProvider(client *ibm.Client, k8sClient kubernetes.Interface, kubeClient client.Client) *VPCBootstrapProvider {
 	return &VPCBootstrapProvider{
 		client:           client,
-		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
+		vpcClientManager: vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
 		k8sClient:        k8sClient,
 		kubeClient:       kubeClient,
 	}
@@ -74,7 +76,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 	}
 
 	logger := log.FromContext(ctx)
-	logger.Info("Generating VPC cloud-init user data for direct kubelet bootstrap")
+	logger.Info("Generated VPC cloud-init user data for direct kubelet bootstrap")
 
 	// Detect cluster Kubernetes version to ensure compatibility
 	clusterVersion, err := p.detectClusterKubernetesVersion(ctx)
@@ -88,7 +90,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 
 	if nodeClass.Spec.APIServerEndpoint != "" {
 		clusterEndpoint = nodeClass.Spec.APIServerEndpoint
-		logger.Info("Using API server endpoint from NodeClass", "endpoint", clusterEndpoint)
+		logger.Info("Used API server endpoint from NodeClass", "endpoint", clusterEndpoint)
 	} else {
 		// Fallback to automatic discovery
 		clusterEndpoint, err = commonTypes.GetInternalAPIServerEndpoint(ctx, p.k8sClient)
@@ -115,7 +117,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 	if err != nil {
 		// Fallback to common default
 		clusterDNS = "172.21.0.10"
-		logger.Info("Using default cluster DNS", "dns", clusterDNS)
+		logger.Info("Used default cluster DNS", "dns", clusterDNS)
 	}
 
 	// Detect container runtime from existing nodes
@@ -628,7 +630,7 @@ func (p *VPCBootstrapProvider) ReportBootstrapStatus(ctx context.Context, instan
 		"phase":      phase,
 		"timestamp":  time.Now().Format(time.RFC3339),
 		"nodeclaim":  nodeClaimName,
-		"version":    "v0.3.44",
+		"version":    version.Version,
 		"instanceId": instanceID,
 	}
 
@@ -708,7 +710,7 @@ func (p *VPCBootstrapProvider) PollInstanceBootstrapStatus(ctx context.Context, 
 	// IBM Cloud VPC doesn't currently support console output API
 	// The status will be available in the instance logs via SSH or through other monitoring
 
-	logger.Info("Checking instance bootstrap status", "instanceID", instanceID)
+	logger.Info("Checked instance bootstrap status", "instanceID", instanceID)
 
 	// Try to get instance details to check if it's running
 	instance, err := vpcClient.GetInstance(ctx, instanceID)
@@ -739,7 +741,7 @@ func (p *VPCBootstrapProvider) PollInstanceBootstrapStatus(ctx context.Context, 
 func (p *VPCBootstrapProvider) GetInstanceBootstrapLogs(ctx context.Context, instanceID string) (string, error) {
 	logger := log.FromContext(ctx)
 
-	logger.Info("Bootstrap logs would be available via SSH or log forwarding",
+	logger.Info("Noted that bootstrap logs are available via SSH or log forwarding",
 		"instanceID", instanceID,
 		"logFiles", []string{
 			"/var/log/karpenter-bootstrap.log",

@@ -161,7 +161,7 @@ func (c *Controller) processPoolState(ctx context.Context, iksClient ibm.IKSClie
 				emptyTime:      time.Now(),
 				deletionErrors: 0,
 			}
-			logger.Info("Pool became empty, starting TTL countdown",
+			logger.Info("Pool became empty, started TTL countdown",
 				"pool_id", pool.ID,
 				"pool_name", pool.Name,
 				"ttl", ttl)
@@ -170,7 +170,7 @@ func (c *Controller) processPoolState(ctx context.Context, iksClient ibm.IKSClie
 
 		// Check if we've exceeded max deletion retries
 		if tracking.deletionErrors >= maxDeletionRetries {
-			logger.Info("Skipping pool deletion after max retries",
+			logger.Info("Skipped pool deletion after max retries",
 				"pool_id", pool.ID,
 				"pool_name", pool.Name,
 				"errors", tracking.deletionErrors)
@@ -179,7 +179,7 @@ func (c *Controller) processPoolState(ctx context.Context, iksClient ibm.IKSClie
 
 		// Check if TTL has expired
 		if time.Since(tracking.emptyTime) >= ttl {
-			logger.Info("Deleting empty pool after TTL",
+			logger.Info("Deleted empty pool after TTL",
 				"pool_id", pool.ID,
 				"pool_name", pool.Name,
 				"empty_duration", time.Since(tracking.emptyTime))

@@ -360,7 +360,7 @@ var IBMSecurityGroups = []vpcv1.SecurityGroup{
 		Name: core.StringPtr("default-security-group"),
 		VPC:  &vpcv1.VPCReference{ID: core.StringPtr("vpc-test")},
 		Rules: []vpcv1.SecurityGroupRuleIntf{
-			&vpcv1.SecurityGroupRuleSecurityGroupRuleProtocolAll{
+			&vpcv1.SecurityGroupRuleProtocolAny{
 				ID:        core.StringPtr("rule-inbound-all"),
 				Direction: core.StringPtr("inbound"),
 				Protocol:  core.StringPtr("all"),
@@ -368,7 +368,7 @@ var IBMSecurityGroups = []vpcv1.SecurityGroup{
 					ID: core.StringPtr("sg-default"),
 				},
 			},
-			&vpcv1.SecurityGroupRuleSecurityGroupRuleProtocolAll{
+			&vpcv1.SecurityGroupRuleProtocolAny{
 				ID:        core.StringPtr("rule-outbound-all"),
 				Direction: core.StringPtr("outbound"),
 				Protocol:  core.StringPtr("all"),

@@ -14,13 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package constants
+package version
 
-import "time"
-
-const (
-	// Group is the API group for IBM Cloud provider
-	Group = "karpenter-ibm.sh"
-	// DefaultVPCClientCacheTTL is the default TTL for VPC client cache entries
-	DefaultVPCClientCacheTTL = 30 * time.Minute
-)
+// Version is the version of the Karpenter provider, injected at build time via ldflags.
+var Version = "dev"

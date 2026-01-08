@@ -17,8 +17,12 @@ package ibm
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // MockCredentialStore implements SecureCredentialManager for testing
@@ -26,9 +30,13 @@ type MockCredentialStore struct {
 	vpcAPIKey string
 	ibmAPIKey string
 	region    string
+	vpcErr    error
 }
 
 func (m *MockCredentialStore) GetVPCAPIKey(ctx context.Context) (string, error) {
+	if m.vpcErr != nil {
+		return "", m.vpcErr
+	}
 	return m.vpcAPIKey, nil
 }
 
@@ -154,25 +162,96 @@ func TestGetVPCClient(t *testing.T) {
 		region:      "us-south",
 	}
 
-	vpcClient, err := client.GetVPCClient()
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+	ctx := context.Background()
+
+	vpcClient1, err1 := client.GetVPCClient(ctx)
+	assert.NoError(t, err1)
+	assert.NotNil(t, vpcClient1)
+
+	vpcClient2, err2 := client.GetVPCClient(ctx)
+	assert.NoError(t, err2)
+	assert.NotNil(t, vpcClient2)
+
+	// Same cached instance (sync.Once)
+	assert.Same(t, vpcClient1, vpcClient2)
+}
+
+func TestGetVPCClient_RetriesAfterCredentialFailure(t *testing.T) {
+	mockCredStore := &MockCredentialStore{
+		vpcErr: fmt.Errorf("transient error"),
 	}
-	if vpcClient == nil {
-		t.Error("expected VPC client but got nil")
+
+	client := &Client{
+		vpcURL:      "https://test.vpc.url/v1",
+		vpcAuthType: "iam",
+		credStore:   mockCredStore,
+		region:      "us-south",
+	}
+
+	ctx := context.Background()
+
+	// First call fails
+	vpcClient1, err1 := client.GetVPCClient(ctx)
+	assert.Error(t, err1)
+	assert.Nil(t, vpcClient1)
+
+	// Flip mock to succeed
+	mockCredStore.vpcErr = nil
+	mockCredStore.vpcAPIKey = "test-key"
+
+	// Second call succeeds (proves error not cached)
+	vpcClient2, err2 := client.GetVPCClient(ctx)
+	assert.NoError(t, err2)
+	assert.NotNil(t, vpcClient2)
+}
+
+func TestClient_GetVPCClient_ConcurrentCalls_SameInstance(t *testing.T) {
+	mock := &MockCredentialStore{vpcAPIKey: "test-key"}
+
+	c := &Client{
+		vpcURL:      "https://test.vpc.url/v1",
+		vpcAuthType: "iam",
+		credStore:   mock,
+		region:      "us-south",
+	}
+
+	ctx := context.Background()
+
+	const n = 25
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	results := make([]*VPCClient, n)
+	errs := make([]error, n)
+
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			results[i], errs[i] = c.GetVPCClient(ctx)
+		}()
+	}
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		assert.NoError(t, errs[i])
+		assert.NotNil(t, results[i])
+		assert.Same(t, results[0], results[i])
 	}
 }
 
-func TestGetGlobalCatalogClient(t *testing.T) {
+func TestClient_GetGlobalCatalogClient_CachesInstance(t *testing.T) {
 	client := &Client{
 		iamClient: NewIAMClient("test-key"),
 	}
 
-	catalogClient, err := client.GetGlobalCatalogClient()
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if catalogClient == nil {
-		t.Error("expected Global Catalog client but got nil")
-	}
+	c1, err1 := client.GetGlobalCatalogClient()
+	assert.NoError(t, err1)
+	assert.NotNil(t, c1)
+
+	c2, err2 := client.GetGlobalCatalogClient()
+	assert.NoError(t, err2)
+	assert.NotNil(t, c2)
+
+	assert.Same(t, c1, c2)
 }

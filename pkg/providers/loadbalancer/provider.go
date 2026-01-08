@@ -71,7 +71,7 @@ func (p *LoadBalancerProvider) RegisterInstance(ctx context.Context, nodeClass *
 	}
 
 	logger := p.logger.WithValues("instanceID", instanceID, "instanceIP", instanceIP)
-	logger.Info("Starting load balancer registration")
+	logger.Info("Started load balancer registration")
 
 	for i, target := range nodeClass.Spec.LoadBalancerIntegration.TargetGroups {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName, "port", target.Port)
@@ -100,12 +100,12 @@ func (p *LoadBalancerProvider) DeregisterInstance(ctx context.Context, nodeClass
 	}
 
 	if !autoDeregister {
-		p.logger.Info("Auto-deregistration disabled, skipping", "instanceID", instanceID)
+		p.logger.Info("Skipped auto-deregistration as it was disabled", "instanceID", instanceID)
 		return nil
 	}
 
 	logger := p.logger.WithValues("instanceID", instanceID)
-	logger.Info("Starting load balancer deregistration")
+	logger.Info("Started load balancer deregistration")
 
 	for i, target := range nodeClass.Spec.LoadBalancerIntegration.TargetGroups {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName)
@@ -180,7 +180,7 @@ func (p *LoadBalancerProvider) deregisterInstanceFromTarget(ctx context.Context,
 	}
 
 	if memberID == "" {
-		logger.Info("Instance not found in pool, skipping deregistration")
+		logger.Info("Skipped deregistration as instance was not found in pool")
 		return nil
 	}
 
@@ -233,7 +233,7 @@ func (p *LoadBalancerProvider) findMemberByInstanceID(ctx context.Context, loadB
 
 // waitForMemberHealthy waits for a pool member to become healthy
 func (p *LoadBalancerProvider) waitForMemberHealthy(ctx context.Context, loadBalancerID, poolID, memberID string, timeout time.Duration, logger logr.Logger) error {
-	logger.Info("Waiting for pool member to become healthy", "memberID", memberID, "timeout", timeout)
+	logger.Info("Started waiting for pool member to become healthy", "memberID", memberID, "timeout", timeout)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -253,11 +253,11 @@ func (p *LoadBalancerProvider) waitForMemberHealthy(ctx context.Context, loadBal
 			}
 
 			if member.Health != nil && strings.EqualFold(*member.Health, "ok") {
-				logger.Info("Pool member is healthy", "memberID", memberID, "health", *member.Health)
+				logger.Info("Found that pool member is healthy", "memberID", memberID, "health", *member.Health)
 				return nil
 			}
 
-			logger.Info("Pool member not yet healthy", "memberID", memberID, "health", getStringValue(member.Health))
+			logger.Info("Found that pool member is not yet healthy", "memberID", memberID, "health", getStringValue(member.Health))
 		}
 	}
 }

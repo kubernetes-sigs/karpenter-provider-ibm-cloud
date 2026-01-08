@@ -17,6 +17,7 @@ package cache
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -161,28 +162,91 @@ func TestDoubleCheckPatternRaceCondition(t *testing.T) {
 	assert.False(t, exists, "Expired offering should be cleaned up")
 }
 
-// TestReadPerformanceNotDegradedByLockUpgrade verifies read performance for non-expired entries
 func TestReadPerformanceNotDegradedByLockUpgrade(t *testing.T) {
-	cache := New(10 * time.Minute) // Long TTL, no expiration
+	cache := New(10 * time.Minute) // Long TTL, no expiration for normal keys
 	defer cache.Stop()
 
+	const (
+		numKeys  = 100
+		numReads = 2000
+		trials   = 9
+	)
+
 	// Add entries that won't expire
-	for i := 0; i < 100; i++ {
-		cache.Set(fmt.Sprintf("key-%d", i), fmt.Sprintf("value-%d", i))
+	keys := make([]string, numKeys)
+	for i := 0; i < numKeys; i++ {
+		keys[i] = fmt.Sprintf("key-%d", i)
+		cache.Set(keys[i], fmt.Sprintf("value-%d", i))
 	}
 
-	// Time multiple reads - these should be fast (read lock only)
-	start := time.Now()
-	const numReads = 1000
-
-	for i := 0; i < numReads; i++ {
-		cache.Get(fmt.Sprintf("key-%d", i%100))
+	timeReads := func() time.Duration {
+		start := time.Now()
+		for i := 0; i < numReads; i++ {
+			cache.Get(keys[i%numKeys])
+		}
+		return time.Since(start)
 	}
 
-	duration := time.Since(start)
+	medianDuration := func(fn func() time.Duration) time.Duration {
+		_ = fn() // warmup to reduce one-time effects
 
-	// Should be very fast - less than 10ms for 1000 reads
-	assert.Less(t, duration, 10*time.Millisecond, "Read performance should not be degraded")
+		durs := make([]time.Duration, trials)
+		for i := 0; i < trials; i++ {
+			durs[i] = fn()
+		}
+		sort.Slice(durs, func(i, j int) bool { return durs[i] < durs[j] })
+		return durs[trials/2]
+	}
+
+	// 1) Baseline: no upgrade locks running.
+	baseline := medianDuration(timeReads)
+
+	// 2) Contended: force the lock-upgrade path repeatedly in another goroutine.
+	const expiredKey = "expired-key"
+
+	forceExpired := func() {
+		cache.mu.Lock()
+		cache.items[expiredKey] = &Entry{
+			Value:      "x",
+			Expiration: time.Now().Add(-time.Second),
+		}
+		cache.mu.Unlock()
+	}
+
+	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				forceExpired()
+				// Expected slow-path:
+				// RLock -> see expired -> RUnlock -> Lock -> delete -> Unlock
+				cache.Get(expiredKey)
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	}()
+
+	contended := medianDuration(timeReads)
+
+	close(stopCh)
+	wg.Wait()
+
+	maxMultiplier := 2.0
+
+	assert.LessOrEqual(
+		t,
+		float64(contended),
+		float64(baseline)*maxMultiplier,
+		"Read performance degraded too much under lock-upgrade contention (baseline=%s contended=%s)",
+		baseline, contended,
+	)
 }
 
 // TestLockUpgradeDoesNotDeadlock verifies no deadlocks occur during lock upgrade

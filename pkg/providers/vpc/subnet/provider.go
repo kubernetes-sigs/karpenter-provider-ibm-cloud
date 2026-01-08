@@ -27,6 +27,7 @@ import (
 	v1alpha1 "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,7 +75,7 @@ func NewProvider(client *ibm.Client) Provider {
 		client:           client,
 		kubeClient:       nil,                        // Will be set when needed via SetKubernetesClient
 		subnetCache:      cache.New(5 * time.Minute), // Cache subnets for 5 minutes
-		vpcClientManager: vpcclient.NewManager(client, 30*time.Minute),
+		vpcClientManager: vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
 	}
 }
 

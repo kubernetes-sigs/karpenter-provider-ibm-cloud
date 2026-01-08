@@ -211,7 +211,7 @@ func (p *IBMPricingProvider) fetchPricingData(ctx context.Context) (map[string]m
 
 // getAllRegionsAndZones fetches all regions and their zones from VPC API
 func (p *IBMPricingProvider) getAllRegionsAndZones(ctx context.Context) (map[string][]string, error) {
-	vpcClient, err := p.client.GetVPCClient()
+	vpcClient, err := p.client.GetVPCClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting VPC client: %w", err)
 	}

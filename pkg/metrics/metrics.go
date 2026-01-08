@@ -78,6 +78,23 @@ var (
 		},
 		[]string{"operation", "region"},
 	)
+
+	DriftDetectionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "karpenter_ibm_drift_detections_total",
+			Help: "Total number of drift detections by reason and nodeclass",
+		},
+		[]string{"drift_reason", "nodeclass"},
+	)
+
+	DriftDetectionDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "karpenter_ibm_drift_detection_duration_seconds",
+			Help:    "Duration of drift detection checks in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"nodeclass"},
+	)
 )
 
 func init() {
@@ -89,5 +106,7 @@ func init() {
 		InstanceLifecycle,
 		ErrorsByType,
 		TimeoutErrors,
+		DriftDetectionsTotal,
+		DriftDetectionDuration,
 	)
 }

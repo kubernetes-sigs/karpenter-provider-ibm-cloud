@@ -578,36 +578,30 @@ func TestGetDefaultSecurityGroup(t *testing.T) {
 	defaultSGID := "default-sg-id"
 	defaultSGName := "default"
 
-	testSecurityGroups := &vpcv1.SecurityGroupCollection{
-		SecurityGroups: []vpcv1.SecurityGroup{
-			{
-				ID:   &defaultSGID,
-				Name: &defaultSGName,
-			},
-			{
-				ID:   ptrString("custom-sg-id"),
-				Name: ptrString("custom"),
-			},
+	testVPC := &vpcv1.VPC{
+		ID: &vpcID,
+		DefaultSecurityGroup: &vpcv1.SecurityGroupReference{
+			ID:   &defaultSGID,
+			Name: &defaultSGName,
 		},
 	}
 	testResponse := &core.DetailedResponse{StatusCode: 200}
 
 	mockVPC.EXPECT().
-		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-		Return(testSecurityGroups, testResponse, nil).
+		GetVPCWithContext(gomock.Any(), gomock.Any()).
+		Return(testVPC, testResponse, nil).
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 	assert.NoError(t, err)
 	assert.NotNil(t, sg)
 	assert.Equal(t, "default-sg-id", *sg.ID)
 	assert.Equal(t, "default", *sg.Name)
 }
 
-func TestGetDefaultSecurityGroup_NotFound(t *testing.T) {
+func TestGetDefaultSecurityGroup_VPCHasNoDefaultSG(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -616,28 +610,23 @@ func TestGetDefaultSecurityGroup_NotFound(t *testing.T) {
 
 	vpcID := "test-vpc-id"
 
-	testSecurityGroups := &vpcv1.SecurityGroupCollection{
-		SecurityGroups: []vpcv1.SecurityGroup{
-			{
-				ID:   ptrString("custom-sg-id"),
-				Name: ptrString("custom"),
-			},
-		},
+	testVPC := &vpcv1.VPC{
+		ID:                   &vpcID,
+		DefaultSecurityGroup: nil,
 	}
 	testResponse := &core.DetailedResponse{StatusCode: 200}
 
 	mockVPC.EXPECT().
-		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-		Return(testSecurityGroups, testResponse, nil).
+		GetVPCWithContext(gomock.Any(), gomock.Any()).
+		Return(testVPC, testResponse, nil).
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 	assert.Error(t, err)
 	assert.Nil(t, sg)
-	assert.Contains(t, err.Error(), "default security group not found")
+	assert.Contains(t, err.Error(), "has no default security group")
 }
 
 func TestSelectSubnetFromMultiZoneList(t *testing.T) {
@@ -1302,7 +1291,7 @@ func TestVPCClient_EmptyResults(t *testing.T) {
 	})
 }
 
-func TestGetDefaultSecurityGroup_Error(t *testing.T) {
+func TestGetDefaultSecurityGroup_GetVPCError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -1310,17 +1299,16 @@ func TestGetDefaultSecurityGroup_Error(t *testing.T) {
 	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
 	mockVPC.EXPECT().
-		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+		GetVPCWithContext(gomock.Any(), gomock.Any()).
 		Return(nil, nil, fmt.Errorf("API error")).
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 	assert.Error(t, err)
 	assert.Nil(t, sg)
-	assert.Contains(t, err.Error(), "listing security groups")
+	assert.Contains(t, err.Error(), "getting VPC")
 }
 
 // Helper function to create string pointers
@@ -1653,71 +1641,70 @@ func ptrInt64(i int64) *int64 {
 }
 
 func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
 	ctx := context.Background()
-	provider := &VPCInstanceProvider{}
 
-	t.Run("multiple security groups - finds default", func(t *testing.T) {
+	t.Run("renamed default SG still found via VPC reference", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
 		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
-
-		sgDefault := "default-sg-id"
-		sgCustom1 := "custom-sg-1"
-		sgCustom2 := "custom-sg-2"
-
-		testSGs := &vpcv1.SecurityGroupCollection{
-			SecurityGroups: []vpcv1.SecurityGroup{
-				{ID: &sgCustom1, Name: ptrString("custom-sg-1")},
-				{ID: &sgDefault, Name: ptrString("default")},
-				{ID: &sgCustom2, Name: ptrString("another-custom")},
-			},
-		}
+		vpcID := "test-vpc"
+		sgID := "default-sg-id"
+		renamedName := "my-custom-sg-name"
 
 		mockVPC.EXPECT().
-			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-			Return(testSGs, &core.DetailedResponse{StatusCode: 200}, nil)
+			GetVPCWithContext(gomock.Any(), gomock.Any()).
+			Return(&vpcv1.VPC{
+				ID:                   &vpcID,
+				DefaultSecurityGroup: &vpcv1.SecurityGroupReference{ID: &sgID, Name: &renamedName},
+			}, &core.DetailedResponse{StatusCode: 200}, nil)
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, sg)
-		assert.Equal(t, "default-sg-id", *sg.ID)
+		assert.Equal(t, sgID, *sg.ID)
 	})
 
-	t.Run("empty security group list", func(t *testing.T) {
-		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+	t.Run("nil DefaultSecurityGroup ID", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
 
-		emptySGs := &vpcv1.SecurityGroupCollection{
-			SecurityGroups: []vpcv1.SecurityGroup{},
-		}
+		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+		vpcID := "test-vpc"
 
 		mockVPC.EXPECT().
-			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-			Return(emptySGs, &core.DetailedResponse{StatusCode: 200}, nil)
+			GetVPCWithContext(gomock.Any(), gomock.Any()).
+			Return(&vpcv1.VPC{
+				ID:                   &vpcID,
+				DefaultSecurityGroup: &vpcv1.SecurityGroupReference{ID: nil},
+			}, &core.DetailedResponse{StatusCode: 200}, nil)
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 
 		assert.Error(t, err)
 		assert.Nil(t, sg)
-		assert.Contains(t, err.Error(), "default security group not found")
+		assert.Contains(t, err.Error(), "has no default security group")
 	})
 
-	t.Run("API error during list", func(t *testing.T) {
+	t.Run("API error during GetVPC", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
 		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
 		mockVPC.EXPECT().
-			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+			GetVPCWithContext(gomock.Any(), gomock.Any()).
 			Return(nil, nil, fmt.Errorf("API rate limit exceeded"))
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 
 		assert.Error(t, err)
 		assert.Nil(t, sg)
-		assert.Contains(t, err.Error(), "listing security groups")
+		assert.Contains(t, err.Error(), "getting VPC")
 	})
 }
 

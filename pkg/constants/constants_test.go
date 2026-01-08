@@ -18,6 +18,7 @@ package constants
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -32,5 +33,10 @@ func TestConstants(t *testing.T) {
 		assert.Contains(t, Group, ".")
 		assert.Contains(t, Group, "karpenter")
 		assert.Contains(t, Group, "ibm")
+	})
+
+	t.Run("DefaultVPCClientCacheTTL is correctly defined", func(t *testing.T) {
+		assert.Equal(t, 30*time.Minute, DefaultVPCClientCacheTTL)
+
 	})
 }

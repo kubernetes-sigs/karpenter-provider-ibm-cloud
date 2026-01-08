@@ -98,6 +98,33 @@ func TestInstanceLifecycleMetric(t *testing.T) {
 	}
 }
 
+func TestDriftDetectionsTotalMetric(t *testing.T) {
+	DriftDetectionsTotal.Reset()
+
+	if DriftDetectionsTotal == nil {
+		t.Error("DriftDetectionsTotal should not be nil")
+	}
+
+	DriftDetectionsTotal.WithLabelValues("NodeClassHashChanged", "test-nodeclass").Inc()
+
+	expected := `
+		# HELP karpenter_ibm_drift_detections_total Total number of drift detections by reason and nodeclass
+		# TYPE karpenter_ibm_drift_detections_total counter
+		karpenter_ibm_drift_detections_total{drift_reason="NodeClassHashChanged",nodeclass="test-nodeclass"} 1
+	`
+
+	if err := testutil.CollectAndCompare(DriftDetectionsTotal, strings.NewReader(expected)); err != nil {
+		t.Errorf("DriftDetectionsTotal metric mismatch: %v", err)
+	}
+}
+
+func TestDriftDetectionDurationMetric(t *testing.T) {
+	DriftDetectionDuration.Reset()
+	DriftDetectionDuration.WithLabelValues("test-nodeclass").Observe(0.5)
+	// no strict compare for histogram, just ensure metric can be used
+	t.Log("DriftDetectionDuration metric works correctly")
+}
+
 func TestMetricLabels(t *testing.T) {
 	// Test that metrics accept the expected labels
 	ApiRequests.Reset()
@@ -114,6 +141,12 @@ func TestMetricLabels(t *testing.T) {
 
 	InstanceLifecycle.Reset()
 	InstanceLifecycle.WithLabelValues("running", "bx2-2x8").Set(1)
+
+	DriftDetectionsTotal.Reset()
+	DriftDetectionsTotal.WithLabelValues("ImageDrift", "my-nodeclass").Inc()
+
+	DriftDetectionDuration.Reset()
+	DriftDetectionDuration.WithLabelValues("my-nodeclass").Observe(0.123)
 
 	t.Log("All metrics accept their expected labels")
 }
