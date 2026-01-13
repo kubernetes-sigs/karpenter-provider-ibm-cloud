@@ -1,6 +1,6 @@
 module github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 
-go 1.25.0
+go 1.25.5
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.2
@@ -28,7 +28,7 @@ require (
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/controller-runtime v0.22.4
 	sigs.k8s.io/controller-tools v0.19.0
-	sigs.k8s.io/karpenter v1.8.0
+	sigs.k8s.io/karpenter v1.8.1
 )
 
 require (
