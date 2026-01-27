@@ -144,7 +144,7 @@ func (m *mockInstanceProvider) List(ctx context.Context) ([]*corev1.Node, error)
 
 func getTestProviderFactory(kubeClient client.Client) *providers.ProviderFactory {
 	// Create a real factory with nil IBM client - tests will handle this properly
-	return providers.NewProviderFactory(nil, kubeClient, nil)
+	return providers.NewProviderFactory(context.Background(), nil, kubeClient, nil)
 }
 
 func (m *mockInstanceProvider) Get(ctx context.Context, providerID string) (*corev1.Node, error) {
@@ -495,7 +495,7 @@ func TestCloudProvider_Create_EnhancedCircuitBreakerLogging(t *testing.T) {
 		},
 	}
 
-	cloudProvider := New(kubeClient, eventRecorder, nil, mockInstanceTypes, &mockSubnetProvider{}, cbConfig)
+	cloudProvider := New(ctx, kubeClient, eventRecorder, nil, mockInstanceTypes, &mockSubnetProvider{}, cbConfig)
 
 	// Directly manipulate the circuit breaker to simulate previous failures
 	cloudProvider.circuitBreakerManager.RecordFailure("test-nodeclass", "us-south", fmt.Errorf("subnet subnet-123 not found"))

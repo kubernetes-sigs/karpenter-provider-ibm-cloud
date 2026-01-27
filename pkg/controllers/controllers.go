@@ -204,7 +204,7 @@ func NewControllers(
 	}
 
 	// Add instance type controller
-	if instanceTypeCtrl, err := providersinstancetype.NewController(); err != nil {
+	if instanceTypeCtrl, err := providersinstancetype.NewController(ctx); err != nil {
 		logger.Error(err, "failed to create instance type controller")
 	} else {
 		controllers = append(controllers, instanceTypeCtrl)
@@ -215,7 +215,7 @@ func NewControllers(
 	// - IKS Mode: Node cordoning + IKS worker pool management hybrid approach
 	var providerFactory *providers.ProviderFactory
 	if ibmClient != nil {
-		providerFactory = providers.NewProviderFactory(ibmClient, kubeClient, kubernetesClient)
+		providerFactory = providers.NewProviderFactory(ctx, ibmClient, kubeClient, kubernetesClient)
 	}
 	interruptionCtrl := interruption.NewController(kubeClient, recorderAdapter, unavailableOfferings, providerFactory)
 	controllers = append(controllers, interruptionCtrl)

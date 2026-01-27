@@ -54,6 +54,7 @@ func main() {
 
 	// Create IBM cloud provider using providers from the factory
 	ibmCloudProvider := ibmcloud.New(
+		ctx,
 		op.GetClient(),
 		op.EventRecorder,
 		op.ProviderFactory.GetClient(),

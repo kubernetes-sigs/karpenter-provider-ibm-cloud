@@ -17,6 +17,7 @@ package pricing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -28,8 +29,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/batcher"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	fakedata "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/fake"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/logging"
 )
 
 func TestPricingProviderStructure(t *testing.T) {
@@ -41,7 +45,7 @@ func TestPricingProviderStructure(t *testing.T) {
 func TestNewIBMPricingProvider(t *testing.T) {
 	// Test creating a new pricing provider with nil client
 	// In real usage, this would have a valid IBM client
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	require.NotNil(t, provider)
 	assert.Equal(t, 12*time.Hour, provider.ttl)
@@ -53,7 +57,7 @@ func TestIBMPricingProvider_Refresh(t *testing.T) {
 
 	t.Run("refresh with nil client", func(t *testing.T) {
 		// Test with nil client - this is a valid test case
-		provider := NewIBMPricingProvider(nil)
+		provider := NewIBMPricingProvider(context.Background(), nil)
 
 		// Refresh will fail with nil client, which is expected
 		err := provider.Refresh(ctx)
@@ -63,7 +67,7 @@ func TestIBMPricingProvider_Refresh(t *testing.T) {
 }
 
 func TestRefreshWithoutClient(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Test refresh fails gracefully without client
@@ -73,7 +77,7 @@ func TestRefreshWithoutClient(t *testing.T) {
 }
 
 func TestGetPricesWithoutData(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Test getting prices when no data is available
@@ -84,7 +88,7 @@ func TestGetPricesWithoutData(t *testing.T) {
 }
 
 func TestRefreshFailsWithoutClient(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Test refresh fails without client
@@ -97,7 +101,7 @@ func TestRefreshFailsWithoutClient(t *testing.T) {
 }
 
 func TestGetPriceWithoutData(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Test getting price when no data is available
@@ -113,7 +117,7 @@ func TestGetPriceWithoutData(t *testing.T) {
 }
 
 func TestGetPricesErrorHandling(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Test getting all prices when no data is available
@@ -288,7 +292,7 @@ func TestIBMPricingProviderWithMockClient(t *testing.T) {
 			// Create provider with mock client
 			// Note: This test simulates the behavior but can't fully test
 			// the IBM client integration without proper interface implementations
-			provider := NewIBMPricingProvider(nil)
+			provider := NewIBMPricingProvider(context.Background(), nil)
 
 			// Manually populate pricing map to simulate successful refresh
 			if !tt.expectError {
@@ -321,7 +325,7 @@ func TestIBMPricingProviderWithMockClient(t *testing.T) {
 }
 
 func TestIBMPricingProviderCaching(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Setup test data
@@ -356,7 +360,7 @@ func TestIBMPricingProviderCaching(t *testing.T) {
 }
 
 func TestIBMPricingProviderConcurrency(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	// Setup test data
 	provider.pricingMap = map[string]map[string]float64{
@@ -403,7 +407,7 @@ func TestIBMPricingProviderConcurrency(t *testing.T) {
 }
 
 func TestIBMPricingProviderGetPricesForZone(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Setup test data
@@ -463,7 +467,7 @@ func TestIBMPricingProviderGetPricesForZone(t *testing.T) {
 }
 
 func TestIBMPricingProviderTTLExpiration(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Setup test data with expired timestamp
@@ -482,7 +486,7 @@ func TestIBMPricingProviderTTLExpiration(t *testing.T) {
 }
 
 func TestIBMPricingProviderInitialization(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	assert.NotNil(t, provider)
 	assert.NotNil(t, provider.pricingMap)
@@ -511,7 +515,7 @@ func TestIBMPricingProviderRefreshBehavior(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var provider *IBMPricingProvider
 			if tt.clientNil {
-				provider = NewIBMPricingProvider(nil)
+				provider = NewIBMPricingProvider(context.Background(), nil)
 			}
 
 			ctx := context.Background()
@@ -528,7 +532,7 @@ func TestIBMPricingProviderRefreshBehavior(t *testing.T) {
 }
 
 func TestIBMPricingProviderRegionalPricing(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// Setup pricing data that varies by region
@@ -562,7 +566,7 @@ func TestIBMPricingProviderRegionalPricing(t *testing.T) {
 
 func TestIBMPricingProviderUseFakeData(t *testing.T) {
 	// Test using fake data for development/testing
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	// Simulate using fake pricing data
 	provider.pricingMap = make(map[string]map[string]float64)
@@ -596,7 +600,7 @@ func TestIBMPricingProviderUseFakeData(t *testing.T) {
 
 // Test fetchPricingData with nil client
 func TestFetchPricingData_NilClient(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	ctx := context.Background()
 	result, err := provider.fetchPricingData(ctx)
@@ -608,7 +612,7 @@ func TestFetchPricingData_NilClient(t *testing.T) {
 
 // Test fetchInstancePricing with nil entry ID
 func TestFetchInstancePricing_NilEntryID(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	ctx := context.Background()
 	entryName := "test-entry"
@@ -629,7 +633,7 @@ func TestFetchInstancePricing_NilEntryID(t *testing.T) {
 func TestFetchPricingFromAPI_Coverage(t *testing.T) {
 	// We can't safely test fetchPricingFromAPI directly due to nil pointer issues
 	// But we can test it indirectly through fetchPricingData
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	ctx := context.Background()
 	result, err := provider.fetchPricingData(ctx)
@@ -643,7 +647,7 @@ func TestFetchPricingFromAPI_Coverage(t *testing.T) {
 func TestRefresh_ImprovedCoverage(t *testing.T) {
 	// This test improves coverage by testing the main success/error paths
 	// without causing nil pointer panics
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	ctx := context.Background()
 
@@ -784,7 +788,7 @@ type TestablePricingProvider struct {
 
 func NewTestablePricingProvider() *TestablePricingProvider {
 	testClient := NewTestableIBMClient()
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	return &TestablePricingProvider{
 		IBMPricingProvider: provider,
@@ -934,7 +938,7 @@ func TestGetAllRegionsAndZones(t *testing.T) {
 // Test fetchPricingFromAPI error paths - testing indirectly through public methods
 func TestFetchPricingFromAPI_ErrorPaths(t *testing.T) {
 	// Instead of testing the private method directly, test it through Refresh
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 	ctx := context.Background()
 
 	// This should fail when trying to call fetchPricingFromAPI internally
@@ -1095,7 +1099,7 @@ func (t *TestablePricingProvider) testFetchInstancePricing(ctx context.Context, 
 
 // Test GetPrices with cache refresh scenario
 func TestGetPrices_CacheRefresh(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	// Set old timestamp to trigger refresh
 	provider.lastUpdate = time.Now().Add(-24 * time.Hour)
@@ -1119,7 +1123,7 @@ func TestGetPrices_CacheRefresh(t *testing.T) {
 
 // Test GetPrice with cache functionality
 func TestGetPrice_CacheHitAndMiss(t *testing.T) {
-	provider := NewIBMPricingProvider(nil)
+	provider := NewIBMPricingProvider(context.Background(), nil)
 
 	// Pre-populate pricing map
 	provider.pricingMap = map[string]map[string]float64{
@@ -1196,4 +1200,77 @@ func TestPricingEdgeCases(t *testing.T) {
 	}
 
 	assert.False(t, found2)
+}
+
+func TestFetchPricingFromAPI_WithBatcher(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("batcher returns valid pricing data", func(t *testing.T) {
+		// Create a provider with a batcher using the fake pricing API
+		fakePricing := fakedata.NewPricingAPI()
+		fakePricing.PricingByID["test-catalog-id"] = fakedata.NewPricingGet(0.15)
+
+		provider := &IBMPricingProvider{
+			pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing),
+			pricingMap:     make(map[string]map[string]float64),
+			ttl:            12 * time.Hour,
+			priceCache:     cache.New(12 * time.Hour),
+			logger:         logging.PricingLogger(),
+		}
+
+		// Call fetchPricingFromAPI - it should use the batcher
+		price, err := provider.fetchPricingFromAPI(ctx, "test-catalog-id")
+
+		require.NoError(t, err)
+		assert.Equal(t, 0.15, price)
+		assert.Equal(t, int64(1), fakePricing.GetCallCount())
+	})
+
+	t.Run("batcher returns error", func(t *testing.T) {
+		fakePricing := fakedata.NewPricingAPI()
+		fakePricing.ErrorByID["error-id"] = errors.New("upstream API error")
+
+		provider := &IBMPricingProvider{
+			pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing),
+			pricingMap:     make(map[string]map[string]float64),
+			ttl:            12 * time.Hour,
+			priceCache:     cache.New(12 * time.Hour),
+			logger:         logging.PricingLogger(),
+		}
+
+		price, err := provider.fetchPricingFromAPI(ctx, "error-id")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "calling GetPricing API")
+		assert.Equal(t, float64(0), price)
+	})
+
+	t.Run("batcher deduplicates concurrent requests", func(t *testing.T) {
+		fakePricing := fakedata.NewPricingAPI()
+		fakePricing.PricingByID["shared-id"] = fakedata.NewPricingGet(0.25)
+
+		provider := &IBMPricingProvider{
+			pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing),
+			pricingMap:     make(map[string]map[string]float64),
+			ttl:            12 * time.Hour,
+			priceCache:     cache.New(12 * time.Hour),
+			logger:         logging.PricingLogger(),
+		}
+
+		// Fire 10 concurrent requests for the same ID
+		var wg sync.WaitGroup
+		const n = 10
+		wg.Add(n)
+
+		for i := 0; i < n; i++ {
+			go func() {
+				defer wg.Done()
+				_, _ = provider.fetchPricingFromAPI(ctx, "shared-id")
+			}()
+		}
+		wg.Wait()
+
+		// Should only result in 1 upstream call due to batching
+		assert.Equal(t, int64(1), fakePricing.GetCallCount())
+	})
 }
