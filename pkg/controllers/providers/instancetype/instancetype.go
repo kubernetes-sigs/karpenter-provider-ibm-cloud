@@ -36,7 +36,7 @@ type Controller struct {
 	instanceTypeProvider instancetype.Provider
 }
 
-func NewController() (*Controller, error) {
+func NewController(ctx context.Context) (*Controller, error) {
 	// Create IBM client
 	client, err := ibm.NewClient()
 	if err != nil {
@@ -44,7 +44,7 @@ func NewController() (*Controller, error) {
 	}
 
 	// Create pricing provider
-	pricingProvider := pricing.NewIBMPricingProvider(client)
+	pricingProvider := pricing.NewIBMPricingProvider(ctx, client)
 
 	// Create instance type provider
 	provider := instancetype.NewProvider(client, pricingProvider)

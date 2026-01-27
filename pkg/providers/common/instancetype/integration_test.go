@@ -45,7 +45,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 		t.Fatalf("Failed to create IBM client: %v", err)
 	}
 
-	pricingProvider := pricing.NewIBMPricingProvider(client)
+	pricingProvider := pricing.NewIBMPricingProvider(ctx, client)
 	provider := NewProvider(client, pricingProvider)
 
 	t.Logf("Instance type provider created successfully")

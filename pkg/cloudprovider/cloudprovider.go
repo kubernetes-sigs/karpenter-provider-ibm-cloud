@@ -73,7 +73,7 @@ type CloudProvider struct {
 	circuitBreakerManager *NodeClassCircuitBreakerManager
 }
 
-func New(kubeClient client.Client,
+func New(ctx context.Context, kubeClient client.Client,
 	recorder events.Recorder,
 	ibmClient *ibm.Client,
 	instanceTypeProvider instancetype.Provider,
@@ -87,7 +87,7 @@ func New(kubeClient client.Client,
 
 	// Initialize per-NodeClass circuit breaker manager
 	// If circuitBreakerConfig is nil, circuit breakers will be disabled
-	logger := log.FromContext(context.Background()).WithName("circuit-breaker")
+	logger := log.FromContext(ctx).WithName("circuit-breaker")
 	circuitBreakerManager := NewNodeClassCircuitBreakerManager(circuitBreakerConfig, logger)
 
 	return &CloudProvider{
@@ -96,7 +96,7 @@ func New(kubeClient client.Client,
 		ibmClient:  ibmClient,
 
 		instanceTypeProvider:  instanceTypeProvider,
-		providerFactory:       providers.NewProviderFactory(ibmClient, kubeClient, nil),
+		providerFactory:       providers.NewProviderFactory(ctx, ibmClient, kubeClient, nil),
 		subnetProvider:        subnetProvider,
 		defaultProviderMode:   defaultMode,
 		circuitBreakerManager: circuitBreakerManager,

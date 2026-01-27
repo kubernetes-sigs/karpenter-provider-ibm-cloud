@@ -17,6 +17,7 @@ limitations under the License.
 package providers
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -188,7 +189,7 @@ func TestProviderFactory_GetInstanceProvider(t *testing.T) {
 
 			// Create mock IBM client
 			// Create provider factory with nil client for testing
-			factory := NewProviderFactory(nil, fakeClient, nil)
+			factory := NewProviderFactory(context.Background(), nil, fakeClient, nil)
 
 			// Test GetInstanceProvider method
 			result, err := factory.GetInstanceProvider(tt.nodeClass)
@@ -293,7 +294,7 @@ func TestProviderFactory_DetermineProviderMode(t *testing.T) {
 
 			// Create mock IBM client
 			// Create provider factory with nil client for testing
-			factory := NewProviderFactory(nil, fakeClient, nil)
+			factory := NewProviderFactory(context.Background(), nil, fakeClient, nil)
 
 			// Test determineProviderMode method
 			result := factory.determineProviderMode(tt.nodeClass)
@@ -317,7 +318,7 @@ func TestProviderFactory_EdgeCases(t *testing.T) {
 			setupFactory: func() *ProviderFactory {
 				scheme := getTestScheme()
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-				return NewProviderFactory(nil, fakeClient, nil)
+				return NewProviderFactory(context.Background(), nil, fakeClient, nil)
 			},
 			nodeClass:     getVPCNodeClass(),
 			expectError:   true,
@@ -327,7 +328,7 @@ func TestProviderFactory_EdgeCases(t *testing.T) {
 			name: "nil Kubernetes client (IBM client nil first)",
 			setupFactory: func() *ProviderFactory {
 				// Using nil IBM and kube clients for testing
-				return NewProviderFactory(nil, nil, nil)
+				return NewProviderFactory(context.Background(), nil, nil, nil)
 			},
 			nodeClass:     getVPCNodeClass(),
 			expectError:   true,
@@ -339,7 +340,7 @@ func TestProviderFactory_EdgeCases(t *testing.T) {
 				scheme := getTestScheme()
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 				// Using nil client for testing
-				return NewProviderFactory(nil, fakeClient, nil)
+				return NewProviderFactory(context.Background(), nil, fakeClient, nil)
 			},
 			nodeClass:     nil,
 			expectError:   true,
@@ -391,7 +392,7 @@ func TestProviderFactory_BootstrapModePrecedence(t *testing.T) {
 	scheme := getTestScheme()
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	// Using nil client for testing
-	factory := NewProviderFactory(nil, fakeClient, nil)
+	factory := NewProviderFactory(context.Background(), nil, fakeClient, nil)
 
 	// Test precedence: NodeClass bootstrap mode > NodeClass cluster ID > env cluster ID > default
 	tests := []struct {
