@@ -17,6 +17,7 @@ limitations under the License.
 package providers
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -44,9 +45,9 @@ type ProviderFactory struct {
 }
 
 // NewProviderFactory creates a new provider factory
-func NewProviderFactory(client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface) *ProviderFactory {
+func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface) *ProviderFactory {
 	// Create shared providers
-	pricingProvider := pricing.NewIBMPricingProvider(client)
+	pricingProvider := pricing.NewIBMPricingProvider(ctx, client)
 	subnetProvider := subnet.NewProvider(client)
 	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider)
 

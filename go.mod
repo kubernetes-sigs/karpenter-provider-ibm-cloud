@@ -1,11 +1,11 @@
 module github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 
-go 1.25.0
+go 1.25.5
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.2
-	github.com/IBM/platform-services-go-sdk v0.91.0
-	github.com/IBM/vpc-go-sdk v0.78.1
+	github.com/IBM/platform-services-go-sdk v0.93.1
+	github.com/IBM/vpc-go-sdk v0.79.0
 	github.com/awslabs/operatorpkg v0.0.0-20250909182303-e8e550b6f339
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
@@ -13,14 +13,15 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis v0.0.0-20250718142453-c2e324ac0173
 	github.com/mitchellh/hashstructure/v2 v2.0.2
-	github.com/onsi/ginkgo/v2 v2.27.3
-	github.com/onsi/gomega v1.38.3
+	github.com/onsi/ginkgo/v2 v2.27.5
+	github.com/onsi/gomega v1.39.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.1
+	golang.org/x/sync v0.18.0
 	k8s.io/api v0.35.0-alpha.3
 	k8s.io/apimachinery v0.36.0-alpha.0
 	k8s.io/client-go v0.35.0-alpha.3
@@ -28,7 +29,7 @@ require (
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/controller-runtime v0.22.4
 	sigs.k8s.io/controller-tools v0.19.0
-	sigs.k8s.io/karpenter v1.8.0
+	sigs.k8s.io/karpenter v1.8.2
 )
 
 require (
@@ -89,7 +90,6 @@ require (
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect

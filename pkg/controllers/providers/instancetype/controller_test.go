@@ -199,7 +199,7 @@ func (m *MockInstanceTypeProvider) SetSimulateSlowList(slow bool) {
 func TestController_NewController_Actual(t *testing.T) {
 	// This will fail because it tries to create real IBM client
 	// but we include it to test the actual function path
-	controller, err := NewController()
+	controller, err := NewController(context.Background())
 
 	// We expect an error due to missing IBM Cloud credentials in test environment
 	assert.Error(t, err)

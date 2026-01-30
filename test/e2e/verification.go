@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,7 +54,7 @@ func (s *E2ETestSuite) verifyPodsScheduledOnCorrectNodes(t *testing.T, deploymen
 		require.True(t, exists, "Node %s should have karpenter.sh/nodepool label", node.Name)
 		require.Equal(t, expectedNodePool, nodePoolLabel, "Pod %s should be on node from NodePool %s, but is on %s", pod.Name, expectedNodePool, nodePoolLabel)
 
-		t.Logf("✅ Pod %s correctly scheduled on node %s (NodePool: %s)", pod.Name, pod.Spec.NodeName, nodePoolLabel)
+		t.Logf("Pod %s correctly scheduled on node %s (NodePool: %s)", pod.Name, pod.Spec.NodeName, nodePoolLabel)
 	}
 }
 
@@ -126,7 +127,7 @@ func (s *E2ETestSuite) verifyInstancesUseAllowedTypes(t *testing.T, allowedTypes
 		}
 
 		require.True(t, found, "Node %s uses instance type %s, which is not in allowed types %v", node.Name, instanceType, allowedTypes)
-		t.Logf("✅ Node %s correctly uses allowed instance type %s", node.Name, instanceType)
+		t.Logf("Node %s correctly uses allowed instance type %s", node.Name, instanceType)
 	}
 }
 
@@ -194,7 +195,7 @@ func (s *E2ETestSuite) verifyInstanceUsesAllowedType(t *testing.T, nodeClaimName
 	}
 
 	require.True(t, found, "NodeClaim %s uses instance type %s, which is not in allowed types %v", nodeClaimName, instanceType, allowedTypes)
-	t.Logf("✅ NodeClaim %s correctly uses allowed instance type %s", nodeClaimName, instanceType)
+	t.Logf("NodeClaim %s correctly uses allowed instance type %s", nodeClaimName, instanceType)
 }
 
 // isNodeClaimReady checks if a NodeClaim is in a ready state
@@ -276,7 +277,7 @@ func (s *E2ETestSuite) monitorNodeStability(t *testing.T, nodePoolName string, i
 		time.Sleep(checkInterval)
 	}
 
-	t.Logf("✅ Node stability monitoring completed for %v", duration)
+	t.Logf("Node stability monitoring completed for %v", duration)
 }
 
 // getIBMCloudInstances retrieves current IBM Cloud instances (simplified implementation)
@@ -304,4 +305,46 @@ func (s *E2ETestSuite) getIBMCloudInstances(t *testing.T) (map[string]string, er
 	}
 
 	return instances, nil
+}
+
+// verifyDeploymentNotReady verifies that a deployment does not become ready within the timeout
+// This is useful for testing negative cases like taint-based scheduling prevention
+func (s *E2ETestSuite) verifyDeploymentNotReady(t *testing.T, deploymentName, namespace string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Check multiple times to ensure the deployment stays unscheduled
+	checkCount := 0
+	maxChecks := int(timeout / (5 * time.Second))
+	if maxChecks < 3 {
+		maxChecks = 3
+	}
+
+	for checkCount < maxChecks {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+			checkCount++
+			var deployment appsv1.Deployment
+			err := s.kubeClient.Get(ctx, types.NamespacedName{
+				Namespace: namespace,
+				Name:      deploymentName,
+			}, &deployment)
+			if err != nil {
+				t.Logf("Check %d: Failed to get deployment: %v", checkCount, err)
+				continue
+			}
+
+			// Verify deployment has 0 ready replicas
+			if deployment.Status.ReadyReplicas > 0 {
+				t.Errorf("Deployment %s unexpectedly has %d ready replicas - should have 0",
+					deploymentName, deployment.Status.ReadyReplicas)
+				return
+			}
+			t.Logf("Check %d: Deployment %s correctly has 0 ready replicas", checkCount, deploymentName)
+		}
+	}
+
+	t.Logf("Verified deployment %s remained unscheduled for %v", deploymentName, timeout)
 }

@@ -18,9 +18,10 @@ repos:
     hooks:
       - id: go-fmt
         name: go fmt
-        entry: gofmt -l -w .
+        entry: gofmt -l -w
         language: system
         types: [go]
+        exclude: ^vendor/
         stages: [pre-commit]
       - id: verify-codegen
         name: verify generated code

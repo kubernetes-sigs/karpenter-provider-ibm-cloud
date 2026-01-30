@@ -158,7 +158,7 @@ func (s *E2ETestSuite) createImageSelectorNodeClass(t *testing.T, testName strin
 
 	err := s.kubeClient.Create(context.Background(), nodeClass)
 	require.NoError(t, err, "Failed to create NodeClass with imageSelector")
-	t.Logf("✅ Created NodeClass with imageSelector: %s", nodeClass.Name)
+	t.Logf("Created NodeClass with imageSelector: %s", nodeClass.Name)
 
 	return nodeClass
 }
@@ -206,7 +206,7 @@ func (s *E2ETestSuite) createImageSelectorNodeClassWithPlacementStrategy(t *test
 
 	err := s.kubeClient.Create(context.Background(), nodeClass)
 	require.NoError(t, err, "Failed to create NodeClass with imageSelector and placement strategy")
-	t.Logf("✅ Created NodeClass with imageSelector and placement strategy: %s", nodeClass.Name)
+	t.Logf("Created NodeClass with imageSelector and placement strategy: %s", nodeClass.Name)
 
 	return nodeClass
 }
@@ -231,21 +231,21 @@ func (s *E2ETestSuite) verifyImageSelectorResult(t *testing.T, expectedOS string
 			require.Equal(t, "linux", osImage, "Node should have linux OS")
 
 			// Log the node with expected image verification
-			t.Logf("✅ Verified Karpenter node %s uses expected OS: %s", node.Name, osImage)
+			t.Logf("Verified Karpenter node %s uses expected OS: %s", node.Name, osImage)
 
 			// In a full implementation, we would verify the actual IBM Cloud instance image
 			// For now, we verify that the node was created successfully by Karpenter
 			// which indicates the imageSelector was processed correctly
 			if expectedMinorVersion != "" {
-				t.Logf("✅ Node %s expected to use %s %s.%s image", node.Name, expectedOS, expectedMajorVersion, expectedMinorVersion)
+				t.Logf("Node %s expected to use %s %s.%s image", node.Name, expectedOS, expectedMajorVersion, expectedMinorVersion)
 			} else {
-				t.Logf("✅ Node %s expected to use %s %s.x image", node.Name, expectedOS, expectedMajorVersion)
+				t.Logf("Node %s expected to use %s %s.x image", node.Name, expectedOS, expectedMajorVersion)
 			}
 		}
 	}
 
 	require.Greater(t, karpenterNodes, 0, "At least one Karpenter node should exist with imageSelector")
-	t.Logf("✅ Verified %d Karpenter nodes with imageSelector requirements", karpenterNodes)
+	t.Logf("Verified %d Karpenter nodes with imageSelector requirements", karpenterNodes)
 }
 
 // verifyNodePlacementStrategy verifies that nodes were placed according to the placement strategy
@@ -267,7 +267,7 @@ func (s *E2ETestSuite) verifyNodePlacementStrategy(t *testing.T) {
 			require.NotEmpty(t, zoneLabel, "Node should have zone label")
 			require.Contains(t, zoneLabel, s.testRegion, "Node should be in the correct region")
 
-			t.Logf("✅ Node %s placed in zone: %s", node.Name, zoneLabel)
+			t.Logf("Node %s placed in zone: %s", node.Name, zoneLabel)
 
 			// Verify the zone is within the expected region
 			expectedPrefix := s.testRegion + "-"
@@ -277,7 +277,7 @@ func (s *E2ETestSuite) verifyNodePlacementStrategy(t *testing.T) {
 	}
 
 	require.Greater(t, karpenterNodes, 0, "At least one Karpenter node should exist with placement strategy")
-	t.Logf("✅ Verified %d Karpenter nodes with proper placement", karpenterNodes)
+	t.Logf("Verified %d Karpenter nodes with proper placement", karpenterNodes)
 }
 
 // waitForSubnetSelection waits for the NodeClass status to populate selectedSubnets
@@ -293,11 +293,11 @@ func (s *E2ETestSuite) waitForSubnetSelection(t *testing.T, nodeClassName string
 
 		// Check if selectedSubnets is populated
 		if len(nodeClass.Status.SelectedSubnets) > 0 {
-			t.Logf("✅ NodeClass %s has selected subnets: %v", nodeClassName, nodeClass.Status.SelectedSubnets)
+			t.Logf("NodeClass %s has selected subnets: %v", nodeClassName, nodeClass.Status.SelectedSubnets)
 			return true, nil
 		}
 
-		t.Logf("⏳ Waiting for subnet selection in NodeClass %s...", nodeClassName)
+		t.Logf("Waiting for subnet selection in NodeClass %s...", nodeClassName)
 		return false, nil
 	})
 	require.NoError(t, err, "Failed to wait for subnet selection")

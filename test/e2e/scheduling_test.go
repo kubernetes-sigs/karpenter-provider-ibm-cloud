@@ -155,8 +155,8 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("Scaled deployment down to 2 replicas")
 
-	// Wait for scaling to complete
-	time.Sleep(60 * time.Second)
+	// Wait for scaling to complete by checking deployment status
+	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
 
 	// Check if consolidation occurred while respecting PDB
 	// Note: Actual consolidation timing depends on Karpenter configuration
@@ -169,7 +169,7 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 	// Cleanup
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Consolidation with PDB test completed: %s", testName)
+	t.Logf("Consolidation with PDB test completed: %s", testName)
 }
 
 // TestE2EPodDisruptionBudget tests PodDisruptionBudget behavior during node operations
@@ -223,7 +223,7 @@ func TestE2EPodDisruptionBudget(t *testing.T) {
 	t.Logf("Created restrictive PDB: %s", pdb.Name)
 
 	// Wait for PDB to be processed
-	time.Sleep(30 * time.Second)
+	suite.waitForPDBReady(t, pdb.Name, pdb.Namespace, 30*time.Second)
 
 	// Verify PDB is active
 	var updatedPDB policyv1.PodDisruptionBudget
@@ -239,7 +239,7 @@ func TestE2EPodDisruptionBudget(t *testing.T) {
 
 	// Cleanup workload explicitly (resources will be cleaned by defer)
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	t.Logf("✅ PodDisruptionBudget test completed: %s", testName)
+	t.Logf("PodDisruptionBudget test completed: %s", testName)
 }
 
 // TestE2EPodAntiAffinity tests pod anti-affinity scheduling behavior
@@ -342,7 +342,7 @@ func TestE2EPodAntiAffinity(t *testing.T) {
 	}
 
 	require.Equal(t, 3, len(nodeNames), "Pods should be spread across 3 different nodes due to anti-affinity")
-	t.Logf("✅ Verified pods are spread across %d different nodes", len(nodeNames))
+	t.Logf("Verified pods are spread across %d different nodes", len(nodeNames))
 
 	// List the nodes they're running on
 	for nodeName := range nodeNames {
@@ -352,7 +352,7 @@ func TestE2EPodAntiAffinity(t *testing.T) {
 	// Cleanup
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Pod anti-affinity test completed: %s", testName)
+	t.Logf("Pod anti-affinity test completed: %s", testName)
 }
 
 // TestE2ENodeAffinity tests node affinity scheduling behavior
@@ -470,7 +470,7 @@ func TestE2ENodeAffinity(t *testing.T) {
 		require.Equal(t, firstNodeInstanceType, nodeInstanceType,
 			"Pod should be scheduled on node with required instance type")
 
-		t.Logf("✅ Pod %s correctly scheduled on node %s with instance type %s",
+		t.Logf("Pod %s correctly scheduled on node %s with instance type %s",
 			pod.Name, pod.Spec.NodeName, nodeInstanceType)
 	}
 
@@ -478,5 +478,5 @@ func TestE2ENodeAffinity(t *testing.T) {
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestWorkload(t, initialDeployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Node affinity test completed: %s", testName)
+	t.Logf("Node affinity test completed: %s", testName)
 }

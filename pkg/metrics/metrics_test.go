@@ -125,6 +125,32 @@ func TestDriftDetectionDurationMetric(t *testing.T) {
 	t.Log("DriftDetectionDuration metric works correctly")
 }
 
+func TestBatcherBatchWindowDurationMetric(t *testing.T) {
+	BatcherBatchWindowDuration.Reset()
+
+	if BatcherBatchWindowDuration == nil {
+		t.Error("BatcherBatchWindowDuration should not be nil")
+	}
+
+	BatcherBatchWindowDuration.WithLabelValues("vpc-client").Observe(0.25)
+
+	// no strict compare for histogram, just ensure metric can be used
+	t.Log("BatcherBatchWindowDuration metric works correctly")
+}
+
+func TestBatcherBatchSizeMetric(t *testing.T) {
+	BatcherBatchSize.Reset()
+
+	if BatcherBatchSize == nil {
+		t.Error("BatcherBatchSize should not be nil")
+	}
+
+	BatcherBatchSize.WithLabelValues("vpc-client").Observe(10)
+
+	// no strict compare for histogram, just ensure metric can be used
+	t.Log("BatcherBatchSize metric works correctly")
+}
+
 func TestMetricLabels(t *testing.T) {
 	// Test that metrics accept the expected labels
 	ApiRequests.Reset()
@@ -147,6 +173,12 @@ func TestMetricLabels(t *testing.T) {
 
 	DriftDetectionDuration.Reset()
 	DriftDetectionDuration.WithLabelValues("my-nodeclass").Observe(0.123)
+
+	BatcherBatchWindowDuration.Reset()
+	BatcherBatchWindowDuration.WithLabelValues("my-batcher").Observe(0.5)
+
+	BatcherBatchSize.Reset()
+	BatcherBatchSize.WithLabelValues("my-batcher").Observe(25)
 
 	t.Log("All metrics accept their expected labels")
 }

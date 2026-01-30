@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 	"github.com/samber/lo"
@@ -44,10 +45,14 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
+type GlobalTaggingAPI interface {
+	ListTagsWithContext(ctx context.Context, listTagsOptions *globaltaggingv1.ListTagsOptions) (result *globaltaggingv1.TagList, response *core.DetailedResponse, err error)
+}
+
 type Controller struct {
 	kubeClient      client.Client
 	ibmClient       *ibm.Client
-	globalTagging   *globaltaggingv1.GlobalTaggingV1
+	globalTagging   GlobalTaggingAPI
 	orphanTimeout   time.Duration
 	successfulCount uint64
 }
@@ -164,13 +169,13 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	logger.V(1).Info("Checking for orphaned instances", "managedInstances", len(instanceIDs))
 
 	// Get all instances from IBM Cloud to check for orphans
-	allInstances, err := c.getAllVPCInstances(ctx)
+	allInstancesMap, err := c.getAllVPCInstances(ctx)
 	if err != nil {
 		logger.Error(err, "Failed to get all VPC instances")
 		return reconciler.Result{}, err
 	}
 
-	if len(allInstances) == 0 {
+	if len(allInstancesMap) == 0 {
 		logger.V(1).Info("Requeuing scan as no VPC instances were found")
 		return reconciler.Result{RequeueAfter: OrphanCheckInterval}, nil
 	}
@@ -197,11 +202,11 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	// Only proceed if we have the Global Tagging API available for reliable identification
 	orphanedInstanceIDs := make([]string, 0)
 	if c.globalTagging != nil {
-		for _, instanceID := range allInstances {
+		for instanceID, instance := range allInstancesMap {
 			if !expectedInstanceIDs.Has(instanceID) {
 				// Check if this instance was created by Karpenter by checking tags
 				// This is the primary method for identifying Karpenter-managed instances
-				if c.isKarpenterManagedInstance(ctx, instanceID) {
+				if c.hasKarpenterTags(ctx, instance.CRN, instanceID, logger) {
 					logger.V(1).Info("Identifying a Karpenter-managed orphaned instance", "instance-id", instanceID)
 					orphanedInstanceIDs = append(orphanedInstanceIDs, instanceID)
 				} else {
@@ -225,10 +230,9 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	var allErrors []error
 
 	// First, handle orphaned nodes (original logic)
-	managedInstanceIDs := sets.New(allInstances...)
 	orphanedNodes := make([]corev1.Node, 0)
 	for instanceID, node := range nodeByInstanceID {
-		if !managedInstanceIDs.Has(instanceID) {
+		if _, ok := allInstancesMap[instanceID]; !ok {
 			orphanedNodes = append(orphanedNodes, node)
 		}
 	}
@@ -280,7 +284,7 @@ func (c *Controller) extractInstanceIDFromProviderID(providerID string) string {
 }
 
 // getAllVPCInstances gets all VPC instances to check for orphans
-func (c *Controller) getAllVPCInstances(ctx context.Context) ([]string, error) {
+func (c *Controller) getAllVPCInstances(ctx context.Context) (map[string]vpcv1.Instance, error) {
 	logger := log.FromContext(ctx)
 
 	if c.ibmClient == nil {
@@ -318,13 +322,13 @@ func (c *Controller) getAllVPCInstances(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	instanceIDs := make([]string, 0, len(allInstances))
+	instancesMap := make(map[string]vpcv1.Instance)
 	for _, instance := range allInstances {
-		instanceIDs = append(instanceIDs, *instance.ID)
+		instancesMap[*instance.ID] = instance
 	}
 
-	logger.V(1).Info("Returning all retrieved VPC instances", "count", len(instanceIDs))
-	return instanceIDs, nil
+	logger.V(1).Info("Returning all retrieved VPC instances", "count", len(instancesMap))
+	return instancesMap, nil
 }
 
 // isKarpenterManagedInstance checks if an instance was created by Karpenter
@@ -377,9 +381,14 @@ func (c *Controller) checkInstanceTagsWithGlobalTaggingAPI(ctx context.Context, 
 	}
 
 	// Use the instance CRN if available, otherwise construct one
+	return c.hasKarpenterTags(ctx, instance.CRN, instanceID, logger)
+}
+
+func (c *Controller) hasKarpenterTags(ctx context.Context, instanceCRN *string, instanceID string, logger logr.Logger) bool {
+	// Use the instance CRN if available, otherwise construct one
 	var resourceCRN string
-	if instance.CRN != nil {
-		resourceCRN = *instance.CRN
+	if instanceCRN != nil {
+		resourceCRN = *instanceCRN
 	} else {
 		// Fallback: construct CRN (this may not work perfectly without more instance details)
 		logger.V(1).Info("Skipping tag check as instance CRN is not available", "instance-id", instanceID)

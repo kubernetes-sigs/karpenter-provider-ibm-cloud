@@ -2,82 +2,86 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://karpenter-ibm.sh/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/README_DOCS/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/block-device-mapping/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/bootstrap-methods/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/circuit-breaker/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/container-images/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/development/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/faq/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/getting-started/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/iks-integration/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/image-selection/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/limitations/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/load-balancer-integration/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/nightly-builds/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/presentations/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/security-considerations/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/supported-cni-cri/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/troubleshooting/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/userdata-feature/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
     </url>
     <url>
          <loc>https://karpenter-ibm.sh/vpc-integration/</loc>
-         <lastmod>2026-01-08</lastmod>
+         <lastmod>2026-01-30</lastmod>
+    </url>
+    <url>
+         <loc>https://karpenter-ibm.sh/design/batching/</loc>
+         <lastmod>2026-01-30</lastmod>
     </url>
 </urlset>

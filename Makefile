@@ -62,6 +62,8 @@ gen-mocks: ## Generate mocks using mockgen
 	go generate ./pkg/providers/common/types
 	go generate ./pkg/cloudprovider/ibm
 	go generate ./pkg/providers/common/pricing
+	@echo "Adding license headers to generated mocks..."
+	@hack/boilerplate.sh
 	@echo "Mocks generated successfully"
 
 .PHONY: verify-mocks
@@ -72,7 +74,7 @@ verify-mocks: ## Verify mocks are up to date
 	@echo "Mocks are up to date"
 
 .PHONY: generate
-generate: gen-objects gen-mocks manifests ## generate all controller-gen files and mocks
+generate: gen-objects gen-mocks manifests license ## generate all controller-gen files and mocks
 
 .PHONY: manifests
 manifests: ## generate the controller-gen kubernetes manifests

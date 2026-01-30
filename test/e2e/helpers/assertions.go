@@ -35,8 +35,9 @@ import (
 )
 
 const (
-	DefaultPollInterval = 10 * time.Second
-	DefaultTimeout      = 15 * time.Minute
+	// DefaultPollInterval should match the pollInterval in suite.go for consistency
+	DefaultPollInterval = 5 * time.Second
+	DefaultTimeout      = 10 * time.Minute
 )
 
 // NodeClassReadyAssertion waits for a NodeClass to be ready

@@ -44,7 +44,7 @@ func (s *E2ETestSuite) logDeploymentDiagnostics(t *testing.T, deploymentName, na
 		return
 	}
 
-	t.Logf("🔍 Diagnostic information for deployment %s:", deploymentName)
+	t.Logf("Diagnostic information for deployment %s:", deploymentName)
 
 	for _, pod := range podList.Items {
 		t.Logf("Pod %s status: Phase=%s, Reason=%s", pod.Name, pod.Status.Phase, pod.Status.Reason)
@@ -231,7 +231,7 @@ func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanc
 	}
 
 	for retry := 1; retry <= maxRetries; retry++ {
-		t.Logf("🔍 Attempting to SSH into instance (attempt %d/%d): %s", retry, maxRetries, floatingIP)
+		t.Logf("Attempting to SSH into instance (attempt %d/%d): %s", retry, maxRetries, floatingIP)
 
 		// Test SSH connectivity first
 		testCmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no",
@@ -249,12 +249,12 @@ func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanc
 			}
 		}
 
-		t.Logf("✅ SSH connection established to %s", floatingIP)
+		t.Logf("SSH connection established to %s", floatingIP)
 		break
 	}
 
 	// Dump log files
-	t.Logf("📋 Dumping bootstrap log files from instance %s", instanceID)
+	t.Logf("Dumping bootstrap log files from instance %s", instanceID)
 	for _, logFile := range logFiles {
 		cmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no",
 			fmt.Sprintf("root@%s", floatingIP),
@@ -270,7 +270,7 @@ func (s *E2ETestSuite) attemptBootstrapLogDump(t *testing.T, floatingIP, instanc
 	}
 
 	// Run diagnostic commands
-	t.Logf("🔧 Running diagnostic commands on instance %s", instanceID)
+	t.Logf("Running diagnostic commands on instance %s", instanceID)
 	for _, diagCmd := range commands {
 		cmd := exec.Command("ssh", "-i", sshKey, "-o", "StrictHostKeyChecking=no",
 			fmt.Sprintf("root@%s", floatingIP), diagCmd.cmd)
@@ -296,7 +296,7 @@ func (s *E2ETestSuite) logNodeClassEvents(t *testing.T, nodeClassName string) {
 		return
 	}
 
-	t.Logf("📋 Events related to NodeClass %s:", nodeClassName)
+	t.Logf("Events related to NodeClass %s:", nodeClassName)
 	eventFound := false
 
 	for _, event := range eventList.Items {
@@ -325,7 +325,7 @@ func (s *E2ETestSuite) logNodePoolStatus(t *testing.T, nodePoolName string) {
 		return
 	}
 
-	t.Logf("📊 NodePool %s status:", nodePoolName)
+	t.Logf("NodePool %s status:", nodePoolName)
 	t.Logf("  Conditions:")
 	for _, condition := range nodePool.Status.Conditions {
 		t.Logf("    - Type: %s, Status: %s, Reason: %s, Message: %s",
@@ -352,7 +352,7 @@ func (s *E2ETestSuite) logNodeClaimStatus(t *testing.T) {
 		return
 	}
 
-	t.Logf("📊 NodeClaims in cluster: %d", len(nodeClaimList.Items))
+	t.Logf("NodeClaims in cluster: %d", len(nodeClaimList.Items))
 
 	for _, nodeClaim := range nodeClaimList.Items {
 		// Only log test-related NodeClaims
@@ -383,7 +383,7 @@ func (s *E2ETestSuite) logNodeClaimStatus(t *testing.T) {
 // logClusterState logs overall cluster state for debugging
 func (s *E2ETestSuite) logClusterState(t *testing.T) {
 	ctx := context.Background()
-	t.Logf("🌐 Current cluster state:")
+	t.Logf("Current cluster state:")
 
 	// Log all nodes
 	var nodeList corev1.NodeList

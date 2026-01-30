@@ -74,27 +74,13 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	suite.waitForPodsGone(t, deployment.Name+"-workload")
 	t.Logf("Pods evicted successfully")
 
-	// Verify nodes are eventually cleaned up
-	// This might take a while as Karpenter needs to process the NodePool deletion
-	deadline := time.Now().Add(10 * time.Minute)
-	for time.Now().Before(deadline) {
-		currentNodes := suite.getKarpenterNodes(t, nodePool.Name)
-		if len(currentNodes) == 0 {
-			t.Logf("✅ All nodes cleaned up successfully")
-			break
-		}
-		t.Logf("Still waiting for %d nodes to be cleaned up", len(currentNodes))
-		time.Sleep(30 * time.Second)
-	}
-
-	// Final verification
-	finalNodes := suite.getKarpenterNodes(t, nodePool.Name)
-	require.Equal(t, 0, len(finalNodes), "All nodes should be cleaned up after NodePool deletion")
+	// Wait for nodes to be cleaned up using proper polling
+	suite.waitForNodesCleanedUp(t, nodePool.Name, 10*time.Minute)
 
 	// Cleanup remaining resources
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ NodePool cleanup test completed successfully: %s", testName)
+	t.Logf("NodePool cleanup test completed successfully: %s", testName)
 }
 
 // TestE2ECleanupNodeClassDeletion tests proper cleanup when deleting NodeClasses
@@ -143,31 +129,17 @@ func TestE2ECleanupNodeClassDeletion(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("Deleted NodePool: %s", nodePool.Name)
 
-	// Wait for NodeClaims to be cleaned up
-	deadline := time.Now().Add(10 * time.Minute)
-	for time.Now().Before(deadline) {
-		var currentNodeClaimList karpv1.NodeClaimList
-		err := suite.kubeClient.List(ctx, &currentNodeClaimList, client.MatchingLabels{
-			"karpenter.sh/nodepool": nodePool.Name,
-		})
-		require.NoError(t, err)
-
-		if len(currentNodeClaimList.Items) == 0 {
-			t.Logf("✅ All NodeClaims cleaned up")
-			break
-		}
-		t.Logf("Still waiting for %d NodeClaims to be cleaned up", len(currentNodeClaimList.Items))
-		time.Sleep(30 * time.Second)
-	}
+	// Wait for NodeClaims to be cleaned up using proper polling
+	suite.waitForNodeClaimsCleanedUp(t, nodePool.Name, 10*time.Minute)
 
 	// Now try to delete the NodeClass - it should succeed if no NodePools reference it
 	err = suite.kubeClient.Delete(ctx, nodeClass)
 	require.NoError(t, err)
-	t.Logf("✅ Successfully deleted NodeClass: %s", nodeClass.Name)
+	t.Logf("Successfully deleted NodeClass: %s", nodeClass.Name)
 
 	// Cleanup any remaining resources
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ NodeClass cleanup test completed successfully: %s", testName)
+	t.Logf("NodeClass cleanup test completed successfully: %s", testName)
 }
 
 // TestE2ECleanupOrphanedResources tests cleanup of orphaned resources
@@ -200,29 +172,8 @@ func TestE2ECleanupOrphanedResources(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("Deleted NodePool, leaving NodeClaim potentially orphaned: %s", originalNodeClaim.Name)
 
-	// Wait a bit for the controller to process the deletion
-	time.Sleep(30 * time.Second)
-
-	// Check if the NodeClaim still exists (it might be cleaned up automatically)
-	var orphanedNodeClaim karpv1.NodeClaim
-	err = suite.kubeClient.Get(ctx, client.ObjectKey{Name: originalNodeClaim.Name}, &orphanedNodeClaim)
-
-	if err == nil {
-		// NodeClaim still exists - verify it gets cleaned up eventually
-		t.Logf("NodeClaim still exists, waiting for automatic cleanup")
-		deadline := time.Now().Add(5 * time.Minute)
-
-		for time.Now().Before(deadline) {
-			err = suite.kubeClient.Get(ctx, client.ObjectKey{Name: originalNodeClaim.Name}, &orphanedNodeClaim)
-			if err != nil {
-				t.Logf("✅ Orphaned NodeClaim was automatically cleaned up")
-				break
-			}
-			time.Sleep(15 * time.Second)
-		}
-	} else {
-		t.Logf("✅ NodeClaim was already cleaned up with NodePool deletion")
-	}
+	// Wait for the orphaned NodeClaim to be automatically cleaned up
+	suite.waitForNodeClaimCleanedUp(t, originalNodeClaim.Name, 5*time.Minute)
 
 	// Clean up workload
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
@@ -233,7 +184,7 @@ func TestE2ECleanupOrphanedResources(t *testing.T) {
 
 	// Final cleanup
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Orphaned resources cleanup test completed: %s", testName)
+	t.Logf("Orphaned resources cleanup test completed: %s", testName)
 }
 
 // TestE2ECleanupIBMCloudResources tests cleanup of IBM Cloud resources
@@ -262,10 +213,7 @@ func TestE2ECleanupIBMCloudResources(t *testing.T) {
 	require.NoError(t, err)
 	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
 
-	// Wait a bit for instances to be fully created in IBM Cloud
-	time.Sleep(60 * time.Second)
-
-	// Get the list of instances after provisioning
+	// Get the list of instances after provisioning (pods scheduled means instances exist)
 	instancesAfterProvisioning, err := suite.getIBMCloudInstances(t)
 	require.NoError(t, err)
 	afterProvisioningCount := len(instancesAfterProvisioning)
@@ -285,29 +233,8 @@ func TestE2ECleanupIBMCloudResources(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("Deleted NodePool, waiting for IBM Cloud instances to be cleaned up")
 
-	// Wait for instances to be cleaned up in IBM Cloud
-	// This can take a while as IBM Cloud cleanup is not immediate
-	deadline := time.Now().Add(15 * time.Minute)
-	finalInstanceCount := afterProvisioningCount
-
-	for time.Now().Before(deadline) {
-		currentInstances, err := suite.getIBMCloudInstances(t)
-		if err != nil {
-			t.Logf("Warning: Failed to get current instance list: %v", err)
-			time.Sleep(30 * time.Second)
-			continue
-		}
-
-		finalInstanceCount = len(currentInstances)
-		t.Logf("Current instance count: %d (target: %d)", finalInstanceCount, initialInstanceCount)
-
-		if finalInstanceCount <= initialInstanceCount {
-			t.Logf("✅ IBM Cloud instances cleaned up successfully")
-			break
-		}
-
-		time.Sleep(30 * time.Second)
-	}
+	// Wait for instances to be cleaned up in IBM Cloud using proper polling
+	finalInstanceCount := suite.waitForInstanceCountReduction(t, initialInstanceCount, 15*time.Minute)
 
 	// Verify cleanup was successful (allow some tolerance for long-running instances)
 	require.LessOrEqual(t, finalInstanceCount, initialInstanceCount+1,
@@ -315,11 +242,11 @@ func TestE2ECleanupIBMCloudResources(t *testing.T) {
 		finalInstanceCount, initialInstanceCount)
 
 	if finalInstanceCount > initialInstanceCount {
-		t.Logf("⚠️  Warning: %d instances may still be cleaning up (this can take additional time)",
+		t.Logf("Warning: %d instances may still be cleaning up (this can take additional time)",
 			finalInstanceCount-initialInstanceCount)
 	}
 
 	// Cleanup remaining test resources
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ IBM Cloud resources cleanup test completed: %s", testName)
+	t.Logf("IBM Cloud resources cleanup test completed: %s", testName)
 }

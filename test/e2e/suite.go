@@ -43,8 +43,8 @@ import (
 )
 
 const (
-	testTimeout  = 15 * time.Minute // Increased timeout for node provisioning
-	pollInterval = 10 * time.Second
+	testTimeout  = 10 * time.Minute // Timeout for node provisioning
+	pollInterval = 5 * time.Second  // Faster polling for quicker test completion
 )
 
 // E2ETestSuite contains the test environment
@@ -118,7 +118,7 @@ func SetupE2ETestSuite(t *testing.T) *E2ETestSuite {
 		// Fallback to explicit kubeconfig if KUBECONFIG env is not set
 		kubeconfigPath := os.Getenv("KUBECONFIG")
 		if kubeconfigPath == "" {
-			kubeconfigPath = "../../kubecofig_test"
+			kubeconfigPath = "../../kubeconfig_test"
 		}
 		cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 		require.NoError(t, err)
@@ -156,8 +156,8 @@ func SetupE2ETestSuite(t *testing.T) *E2ETestSuite {
 		APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
 	}
 
-	// 🧹 CRITICAL: Pre-test cleanup to prevent circuit breaker issues
-	t.Logf("🧹 Performing PRE-TEST cleanup to prevent stale resource issues...")
+	// CRITICAL: Pre-test cleanup to prevent circuit breaker issues
+	t.Logf("Performing PRE-TEST cleanup to prevent stale resource issues...")
 	suite.cleanupAllStaleResources(t)
 
 	// Wait for cleanup to complete and verify cluster state
@@ -174,13 +174,13 @@ func (s *E2ETestSuite) verifyCleanState(t *testing.T) {
 	var nodeClassList v1alpha1.IBMNodeClassList
 	err := s.kubeClient.List(ctx, &nodeClassList)
 	if err == nil && len(nodeClassList.Items) > 0 {
-		t.Logf("⚠️ Warning: Found %d IBMNodeClass resources before test start:", len(nodeClassList.Items))
+		t.Logf("Warning: Warning: Found %d IBMNodeClass resources before test start:", len(nodeClassList.Items))
 		for _, nc := range nodeClassList.Items {
 			t.Logf("  - %s (VPC: %s, Age: %s)", nc.Name, nc.Spec.VPC, time.Since(nc.CreationTimestamp.Time).Round(time.Second))
 		}
 		// Force cleanup if any remain
 		if len(nodeClassList.Items) > 0 {
-			t.Logf("🧹 Force cleaning remaining IBMNodeClasses...")
+			t.Logf("Force cleaning remaining IBMNodeClasses...")
 			s.cleanupAllStaleResources(t)
 		}
 	}
@@ -188,11 +188,11 @@ func (s *E2ETestSuite) verifyCleanState(t *testing.T) {
 	var nodeClaimList karpv1.NodeClaimList
 	err = s.kubeClient.List(ctx, &nodeClaimList)
 	if err == nil && len(nodeClaimList.Items) > 0 {
-		t.Logf("⚠️ Warning: Found %d NodeClaim resources before test start", len(nodeClaimList.Items))
+		t.Logf("Warning: Warning: Found %d NodeClaim resources before test start", len(nodeClaimList.Items))
 		for _, nc := range nodeClaimList.Items {
 			t.Logf("  - %s (Conditions: %d)", nc.Name, len(nc.Status.Conditions))
 		}
 	}
 
-	t.Logf("✅ Cluster state verified - ready for testing")
+	t.Logf("Cluster state verified - ready for testing")
 }

@@ -39,7 +39,7 @@ func (s *E2ETestSuite) createTestNodeClass(t *testing.T, testName string) *v1alp
 	instanceType := s.GetAvailableInstanceType(t)
 
 	// Debug: Log exact values being used
-	t.Logf("🔍 Creating NodeClass with values from suite:")
+	t.Logf("Creating NodeClass with values from suite:")
 	t.Logf("  VPC: '%s' (len=%d)", s.testVPC, len(s.testVPC))
 	t.Logf("  ResourceGroup: '%s' (len=%d)", s.testResourceGroup, len(s.testResourceGroup))
 	t.Logf("  Subnet: '%s' (len=%d)", s.testSubnet, len(s.testSubnet))
