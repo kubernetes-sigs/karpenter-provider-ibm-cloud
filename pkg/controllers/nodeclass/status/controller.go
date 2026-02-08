@@ -570,7 +570,7 @@ func (c *Controller) validateSubnet(ctx context.Context, subnetID, vpcID, expect
 	}
 
 	// Extract region from subnet zone (e.g., "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de")
-	subnetRegion := extractRegionFromZone(subnetInfo.Zone)
+	subnetRegion := ibm.ExtractRegionFromZone(subnetInfo.Zone)
 	if subnetRegion != expectedRegion {
 		return fmt.Errorf("subnet %s is in region %s but NodeClass expects region %s (subnet zone: %s). Cross-region subnet references are not supported",
 			subnetID, subnetRegion, expectedRegion, subnetInfo.Zone)
@@ -874,24 +874,6 @@ func (c *Controller) validatePlacementStrategy(strategy *v1alpha1.PlacementStrat
 // patchNodeClassStatus patches the nodeclass status using optimistic locking
 func (c *Controller) patchNodeClassStatus(ctx context.Context, nc *v1alpha1.IBMNodeClass, stored *v1alpha1.IBMNodeClass) error {
 	return c.kubeClient.Status().Patch(ctx, nc, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
-}
-
-// extractRegionFromZone extracts the region from an IBM Cloud zone name
-// Examples: "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de", "us-south-3" -> "us-south"
-func extractRegionFromZone(zone string) string {
-	if zone == "" {
-		return ""
-	}
-
-	// IBM Cloud zone format is typically "{region}-{zone-number}"
-	// Find the last hyphen and take everything before it
-	lastHyphen := strings.LastIndex(zone, "-")
-	if lastHyphen == -1 {
-		// If no hyphen found, return the zone as-is (shouldn't happen in normal cases)
-		return zone
-	}
-
-	return zone[:lastHyphen]
 }
 
 // Register registers the controller with the manager
