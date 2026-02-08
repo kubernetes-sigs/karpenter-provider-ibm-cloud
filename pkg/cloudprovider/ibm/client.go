@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -257,4 +258,22 @@ func containsAnyString(s string, substrings []string) bool {
 		}
 	}
 	return false
+}
+
+// ExtractRegionFromZone extracts the region from an IBM Cloud zone name
+// Examples: "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de", "us-south-3" -> "us-south"
+func ExtractRegionFromZone(zone string) string {
+	if zone == "" {
+		return ""
+	}
+
+	// IBM Cloud zone format is typically "{region}-{zone-number}"
+	// Find the last hyphen and take everything before it
+	lastHyphen := strings.LastIndex(zone, "-")
+	if lastHyphen == -1 {
+		// If no hyphen found, return the zone as-is (shouldn't happen in normal cases)
+		return zone
+	}
+
+	return zone[:lastHyphen]
 }
