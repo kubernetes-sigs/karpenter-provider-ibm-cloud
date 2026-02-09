@@ -17,6 +17,7 @@ limitations under the License.
 package instance
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -32,6 +33,7 @@ import (
 )
 
 func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
+	ctx := context.Background()
 	client := &ibm.Client{}
 	kubeClient := fakeClient.NewClientBuilder().Build()
 
@@ -40,7 +42,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
-		provider, err := NewVPCInstanceProvider(client, kubeClient)
+		provider, err := NewVPCInstanceProvider(ctx, client, kubeClient)
 		require.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
@@ -49,7 +51,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		// Ensure environment variable is not set
 		_ = os.Unsetenv("IBMCLOUD_API_KEY")
 
-		_, err := NewVPCInstanceProvider(client, kubeClient)
+		_, err := NewVPCInstanceProvider(ctx, client, kubeClient)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "IBMCLOUD_API_KEY environment variable is required")
 	})
@@ -58,7 +60,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
-		_, err := NewVPCInstanceProvider(nil, kubeClient)
+		_, err := NewVPCInstanceProvider(ctx, nil, kubeClient)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "IBM client cannot be nil")
 	})
@@ -67,7 +69,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
-		_, err := NewVPCInstanceProvider(client, nil)
+		_, err := NewVPCInstanceProvider(ctx, client, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "kubernetes client cannot be nil")
 	})
@@ -79,7 +81,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 
-		provider, err := NewVPCInstanceProvider(client, kubeClient, WithKubernetesClient(k8sClient))
+		provider, err := NewVPCInstanceProvider(ctx, client, kubeClient, WithKubernetesClient(k8sClient))
 		require.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
@@ -88,7 +90,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
-		_, err := NewVPCInstanceProvider(client, kubeClient, WithKubernetesClient(nil))
+		_, err := NewVPCInstanceProvider(ctx, client, kubeClient, WithKubernetesClient(nil))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "kubernetes client cannot be nil when provided")
 	})
@@ -101,7 +103,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		k8sClient := fake.NewSimpleClientset()
 		bootstrapProvider := bootstrap.NewVPCBootstrapProvider(client, k8sClient, kubeClient)
 
-		provider, err := NewVPCInstanceProvider(client, kubeClient, WithBootstrapProvider(bootstrapProvider))
+		provider, err := NewVPCInstanceProvider(ctx, client, kubeClient, WithBootstrapProvider(bootstrapProvider))
 		require.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
@@ -110,7 +112,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
-		_, err := NewVPCInstanceProvider(client, kubeClient, WithBootstrapProvider(nil))
+		_, err := NewVPCInstanceProvider(ctx, client, kubeClient, WithBootstrapProvider(nil))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "bootstrap provider cannot be nil when provided")
 	})
@@ -121,7 +123,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 
 		manager := vpcclient.NewManager(client, 0) // Use 0 timeout for test
 
-		provider, err := NewVPCInstanceProvider(client, kubeClient, WithVPCClientManager(manager))
+		provider, err := NewVPCInstanceProvider(ctx, client, kubeClient, WithVPCClientManager(manager))
 		require.NoError(t, err)
 		assert.NotNil(t, provider)
 	})
@@ -130,7 +132,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
-		_, err := NewVPCInstanceProvider(client, kubeClient, WithVPCClientManager(nil))
+		_, err := NewVPCInstanceProvider(ctx, client, kubeClient, WithVPCClientManager(nil))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "VPC client manager cannot be nil when provided")
 	})
@@ -145,6 +147,7 @@ func TestVPCInstanceProvider_ConstructorBehavior(t *testing.T) {
 		manager := vpcclient.NewManager(client, 0)
 
 		provider, err := NewVPCInstanceProvider(
+			ctx,
 			client,
 			kubeClient,
 			WithKubernetesClient(k8sClient),
@@ -207,6 +210,7 @@ func TestOptionFunctions_Behavior(t *testing.T) {
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
 
+		ctx := context.Background()
 		client := &ibm.Client{}
 		kubeClient := fakeClient.NewClientBuilder().Build()
 		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
@@ -223,7 +227,7 @@ func TestOptionFunctions_Behavior(t *testing.T) {
 
 		for i, opts := range orders {
 			t.Run(fmt.Sprintf("order_%d", i+1), func(t *testing.T) {
-				provider, err := NewVPCInstanceProvider(client, kubeClient, opts...)
+				provider, err := NewVPCInstanceProvider(ctx, client, kubeClient, opts...)
 				require.NoError(t, err)
 				assert.NotNil(t, provider)
 			})

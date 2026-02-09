@@ -1348,7 +1348,8 @@ func TestNewVPCInstanceProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Note: NewVPCInstanceProvider requires IBMCLOUD_API_KEY environment variable
 			// These tests focus on client validation which happens before env var check
-			_, err := NewVPCInstanceProvider(tt.client, tt.kubeClient)
+			ctx := context.Background()
+			_, err := NewVPCInstanceProvider(ctx, tt.client, tt.kubeClient)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -2056,6 +2057,7 @@ func TestProviderGet_CacheHit(t *testing.T) {
 	defer instanceCache.Stop()
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
@@ -2112,6 +2114,7 @@ func TestProviderDelete_InvalidatesCache(t *testing.T) {
 	instanceCache.Set(instanceID, cachedNode)
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
@@ -2179,6 +2182,7 @@ func TestProviderGet_DeletingInstanceNotCached(t *testing.T) {
 	defer instanceCache.Stop()
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
@@ -2227,6 +2231,7 @@ func TestProviderGet_InvalidCacheEntry_NoPanic(t *testing.T) {
 	instanceCache.Set(instanceID, "this is not a node")
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
@@ -2275,6 +2280,7 @@ func TestProviderList_PopulatesCache(t *testing.T) {
 	defer instanceCache.Stop()
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
@@ -2350,6 +2356,7 @@ func TestProviderList_DeletingInstanceNotCached(t *testing.T) {
 	defer instanceCache.Stop()
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
@@ -2409,6 +2416,7 @@ func TestProviderList_CorrectRegionFromZone(t *testing.T) {
 	defer instanceCache.Stop()
 
 	provider, err := NewVPCInstanceProvider(
+		ctx,
 		&ibm.Client{},
 		&mockKubeClient{},
 		WithVPCClientManager(manager),
