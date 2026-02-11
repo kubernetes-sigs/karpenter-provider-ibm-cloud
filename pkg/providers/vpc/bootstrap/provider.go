@@ -205,9 +205,13 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 			options.Labels[k] = v
 		}
 
-		// Convert Requirements to labels using Karpenter core scheduling pattern
-		// This handles both single-value and multi-value Requirements (using first value for multi-value)
-		requirementLabels := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaimObj.Spec.Requirements...).Labels()
+		reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaimObj.Spec.Requirements...)
+		requirementLabels := make(map[string]string)
+		for key, req := range reqs {
+			if req.Operator() == corev1.NodeSelectorOpIn && req.Len() == 1 {
+				requirementLabels[key] = req.Values()[0]
+			}
+		}
 		for k, v := range requirementLabels {
 			options.Labels[k] = v
 		}
