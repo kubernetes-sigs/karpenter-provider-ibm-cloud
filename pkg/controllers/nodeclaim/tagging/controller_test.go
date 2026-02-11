@@ -225,11 +225,9 @@ func TestController_Reconcile(t *testing.T) {
 						},
 						Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 							{
-								NodeSelectorRequirement: v1.NodeSelectorRequirement{
-									Key:      "karpenter-ibm.sh/tags",
-									Operator: v1.NodeSelectorOpIn,
-									Values:   []string{"env=production", "team=platform"},
-								},
+								Key:      "karpenter-ibm.sh/tags",
+								Operator: v1.NodeSelectorOpIn,
+								Values:   []string{"env=production", "team=platform"},
 							},
 						},
 					},
@@ -353,11 +351,9 @@ func TestController_Reconcile(t *testing.T) {
 						},
 						Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 							{
-								NodeSelectorRequirement: v1.NodeSelectorRequirement{
-									Key:      "karpenter-ibm.sh/tags",
-									Operator: v1.NodeSelectorOpIn,
-									Values:   []string{"invalidtag", "valid=tag"},
-								},
+								Key:      "karpenter-ibm.sh/tags",
+								Operator: v1.NodeSelectorOpIn,
+								Values:   []string{"invalidtag", "valid=tag"},
 							},
 						},
 					},
@@ -487,11 +483,9 @@ func TestTagsExtraction(t *testing.T) {
 			name: "single tag",
 			requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "karpenter-ibm.sh/tags",
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"env=prod"},
-					},
+					Key:      "karpenter-ibm.sh/tags",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"env=prod"},
 				},
 			},
 			expectedTags: map[string]string{
@@ -502,11 +496,9 @@ func TestTagsExtraction(t *testing.T) {
 			name: "multiple tags",
 			requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "karpenter-ibm.sh/tags",
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"env=prod", "team=platform", "cost-center=engineering"},
-					},
+					Key:      "karpenter-ibm.sh/tags",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"env=prod", "team=platform", "cost-center=engineering"},
 				},
 			},
 			expectedTags: map[string]string{
@@ -519,11 +511,9 @@ func TestTagsExtraction(t *testing.T) {
 			name: "tags with equals in value",
 			requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "karpenter-ibm.sh/tags",
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"config=key1=value1"},
-					},
+					Key:      "karpenter-ibm.sh/tags",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"config=key1=value1"},
 				},
 			},
 			expectedTags: map[string]string{
@@ -534,11 +524,9 @@ func TestTagsExtraction(t *testing.T) {
 			name: "invalid tag format",
 			requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "karpenter-ibm.sh/tags",
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"invalidtag"},
-					},
+					Key:      "karpenter-ibm.sh/tags",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"invalidtag"},
 				},
 			},
 			expectedTags: map[string]string{},
@@ -552,11 +540,9 @@ func TestTagsExtraction(t *testing.T) {
 			name: "different requirement key",
 			requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"cx2-2x4"},
-					},
+					Key:      "node.kubernetes.io/instance-type",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"cx2-2x4"},
 				},
 			},
 			expectedTags: map[string]string{},

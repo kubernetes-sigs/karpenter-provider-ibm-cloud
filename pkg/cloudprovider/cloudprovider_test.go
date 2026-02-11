@@ -227,11 +227,9 @@ func getTestNodeClaim(nodeClassName string) *karpv1.NodeClaim {
 			},
 			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      corev1.LabelInstanceTypeStable,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"test-instance-type"},
-					},
+					Key:      corev1.LabelInstanceTypeStable,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"test-instance-type"},
 				},
 			},
 			Resources: karpv1.ResourceRequirements{
