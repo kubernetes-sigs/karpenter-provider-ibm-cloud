@@ -27,6 +27,7 @@ import (
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/go-logr/logr"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/batcher"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,6 +66,7 @@ type VPCInstanceProvider struct {
 	subnetProvider         subnet.Provider
 	vpcClientManager       *vpcclient.Manager
 	resourceManagerService *resourcemanagerv2.ResourceManagerV2
+	createInstanceBatcher  *batcher.CreateInstanceBatcher
 	instanceCache          *cache.Cache
 }
 
@@ -120,7 +122,7 @@ func WithInstanceCache(c *cache.Cache) Option {
 }
 
 // NewVPCInstanceProvider creates a new VPC instance provider with optional configuration
-func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts ...Option) (commonTypes.VPCInstanceProvider, error) {
+func NewVPCInstanceProvider(ctx context.Context, client *ibm.Client, kubeClient client.Client, opts ...Option) (commonTypes.VPCInstanceProvider, error) {
 	if client == nil {
 		return nil, fmt.Errorf("IBM client cannot be nil")
 	}
@@ -139,6 +141,7 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 		resourceManagerService: nil, // Will be initialized after applying options
 		instanceCache:          cache.New(constants.DefaultVPCClientCacheTTL),
 	}
+	provider.createInstanceBatcher = batcher.NewCreateInstanceBatcher(ctx, provider.vpcClientManager)
 
 	// Apply options
 	for _, opt := range opts {
@@ -172,8 +175,8 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 
 // Deprecated: Use NewVPCInstanceProvider with WithKubernetesClient option instead
 // NewVPCInstanceProviderWithKubernetesClient creates a new VPC instance provider with kubernetes client
-func NewVPCInstanceProviderWithKubernetesClient(client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface) (commonTypes.VPCInstanceProvider, error) {
-	return NewVPCInstanceProvider(client, kubeClient, WithKubernetesClient(kubernetesClient))
+func NewVPCInstanceProviderWithKubernetesClient(ctx context.Context, client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface) (commonTypes.VPCInstanceProvider, error) {
+	return NewVPCInstanceProvider(ctx, client, kubeClient, WithKubernetesClient(kubernetesClient))
 }
 
 // Create provisions a new VPC instance
@@ -692,7 +695,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 	}
 
 	// Create the instance
-	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
+	instance, err := p.createInstanceBatcher.CreateInstance(ctx, instancePrototype, zone)
 	if err != nil {
 		// Check if this is a partial failure that might have created resources
 		ibmErr := ibm.ParseError(err)
