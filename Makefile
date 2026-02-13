@@ -27,10 +27,30 @@ CGO_ENABLED = 0
 # Test settings
 GTEST_ARGS = -v -race -timeout=30m
 
-CONTROLLER_GEN = ~/.local/share/go/bin/controller-gen
+# Where go install puts binaries: GOBIN if set, else GOPATH/bin
+GOBIN ?= $(shell go env GOBIN)
+ifeq ($(GOBIN),)
+GOBIN := $(shell go env GOPATH)/bin
+endif
+CONTROLLER_GEN ?= $(GOBIN)/controller-gen
+# Single source of truth: read controller-tools version from go.mod (exact module name in column 1)
+CONTROLLER_TOOLS_VERSION := $(strip $(shell awk '$$1=="sigs.k8s.io/controller-tools"{print $$2}' go.mod))
+
 
 .PHONY: all
 all: build
+
+.PHONY: install-controller-gen
+install-controller-gen: ## Install controller-gen if not found or version mismatch
+	@installed=$$(go version -m "$(CONTROLLER_GEN)" 2>/dev/null | awk '$$1=="mod" && $$2=="sigs.k8s.io/controller-tools" {print $$3; exit}'); \
+	if [ ! -x "$(CONTROLLER_GEN)" ]; then \
+		echo "Installing controller-gen $(CONTROLLER_TOOLS_VERSION)..."; \
+		go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION); \
+	elif [ "$$installed" != "$(CONTROLLER_TOOLS_VERSION)" ]; then \
+		echo "Version mismatch (installed: $$installed, required: $(CONTROLLER_TOOLS_VERSION)), installing controller-gen $(CONTROLLER_TOOLS_VERSION)..."; \
+		go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION); \
+	fi
+
 
 .PHONY: build
 build: generate ## Build binary for current platform
@@ -53,7 +73,7 @@ help: ## Display help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 .PHONY: gen-objects
-gen-objects: ## generate the controller-gen related objects
+gen-objects: install-controller-gen ## generate the controller-gen related objects
 	$(CONTROLLER_GEN) object paths="./..."
 
 .PHONY: gen-mocks
@@ -77,7 +97,7 @@ verify-mocks: ## Verify mocks are up to date
 generate: gen-objects gen-mocks manifests license ## generate all controller-gen files and mocks
 
 .PHONY: manifests
-manifests: ## generate the controller-gen kubernetes manifests
+manifests: vendor install-controller-gen ## generate the controller-gen kubernetes manifests
 	@echo "Generating base Karpenter CRDs and IBM-specific CRDs directly to Helm chart..."
 	$(CONTROLLER_GEN) crd paths="./pkg/apis/v1alpha1" output:crd:artifacts:config=charts/crds
 	$(CONTROLLER_GEN) crd paths="./vendor/sigs.k8s.io/karpenter/pkg/apis/..." output:crd:artifacts:config=charts/crds
