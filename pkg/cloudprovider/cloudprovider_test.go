@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -142,7 +144,7 @@ func (m *mockInstanceProvider) List(ctx context.Context) ([]*corev1.Node, error)
 
 func getTestProviderFactory(kubeClient client.Client) *providers.ProviderFactory {
 	// Create a real factory with nil IBM client - tests will handle this properly
-	return providers.NewProviderFactory(nil, kubeClient, nil)
+	return providers.NewProviderFactory(context.Background(), nil, kubeClient, nil)
 }
 
 func (m *mockInstanceProvider) Get(ctx context.Context, providerID string) (*corev1.Node, error) {
@@ -225,11 +227,9 @@ func getTestNodeClaim(nodeClassName string) *karpv1.NodeClaim {
 			},
 			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      corev1.LabelInstanceTypeStable,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"test-instance-type"},
-					},
+					Key:      corev1.LabelInstanceTypeStable,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"test-instance-type"},
 				},
 			},
 			Resources: karpv1.ResourceRequirements{
@@ -493,7 +493,7 @@ func TestCloudProvider_Create_EnhancedCircuitBreakerLogging(t *testing.T) {
 		},
 	}
 
-	cloudProvider := New(kubeClient, eventRecorder, nil, mockInstanceTypes, &mockSubnetProvider{}, cbConfig)
+	cloudProvider := New(ctx, kubeClient, eventRecorder, nil, mockInstanceTypes, &mockSubnetProvider{}, cbConfig)
 
 	// Directly manipulate the circuit breaker to simulate previous failures
 	cloudProvider.circuitBreakerManager.RecordFailure("test-nodeclass", "us-south", fmt.Errorf("subnet subnet-123 not found"))
@@ -1091,6 +1091,215 @@ func TestCloudProvider_IsDrifted_SubnetDrift_WhenExplicitSubnetChanged(t *testin
 	drift, err := cp.IsDrifted(ctx, nodeClaim)
 	assert.NoError(t, err)
 	assert.Equal(t, SubnetDrift, drift)
+}
+
+func TestCloudProvider_IsDrifted_SecurityGroupDrift_WhenSGsDoNotMatch(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	nodeClass := getTestNodeClass()
+	nodeClass.Status.ResolvedSecurityGroups = []string{"sg-new-1", "sg-new-2"}
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-nodeclaim",
+			Annotations: map[string]string{
+				v1alpha1.AnnotationIBMNodeClassHashVersion:    v1alpha1.IBMNodeClassHashVersion,
+				v1alpha1.AnnotationIBMNodeClassHash:           nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
+				v1alpha1.AnnotationIBMNodeClaimImageID:        nodeClass.Status.ResolvedImageID,
+				v1alpha1.AnnotationIBMNodeClaimSecurityGroups: "sg-old-1,sg-old-2",
+			},
+		},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name},
+		},
+	}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		Build()
+
+	cp := &CloudProvider{kubeClient: kubeClient}
+
+	drift, err := cp.IsDrifted(ctx, nodeClaim)
+	assert.NoError(t, err)
+	assert.Equal(t, SecurityGroupDrift, drift)
+}
+
+func TestCloudProvider_IsDrifted_NoSecurityGroupDrift_WhenSGsMatch(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	nodeClass := getTestNodeClass()
+	nodeClass.Status.ResolvedSecurityGroups = []string{"sg-123", "sg-456"}
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-nodeclaim",
+			Annotations: map[string]string{
+				v1alpha1.AnnotationIBMNodeClassHashVersion:    v1alpha1.IBMNodeClassHashVersion,
+				v1alpha1.AnnotationIBMNodeClassHash:           nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
+				v1alpha1.AnnotationIBMNodeClaimImageID:        nodeClass.Status.ResolvedImageID,
+				v1alpha1.AnnotationIBMNodeClaimSecurityGroups: "sg-123,sg-456",
+			},
+		},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name},
+		},
+	}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		Build()
+
+	cp := &CloudProvider{kubeClient: kubeClient}
+
+	drift, err := cp.IsDrifted(ctx, nodeClaim)
+	assert.NoError(t, err)
+	assert.Equal(t, cloudprovider.DriftReason(""), drift)
+}
+
+func TestCloudProvider_IsDrifted_SecurityGroupCheck_SkipsWhenNoAnnotation(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	nodeClass := getTestNodeClass()
+	nodeClass.Status.ResolvedSecurityGroups = []string{"sg-123"}
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-nodeclaim",
+			Annotations: map[string]string{
+				v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion,
+				v1alpha1.AnnotationIBMNodeClassHash:        nodeClass.Annotations[v1alpha1.AnnotationIBMNodeClassHash],
+				v1alpha1.AnnotationIBMNodeClaimImageID:     nodeClass.Status.ResolvedImageID,
+				// No security groups annotation
+			},
+		},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name},
+		},
+	}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		Build()
+
+	cp := &CloudProvider{kubeClient: kubeClient}
+
+	drift, err := cp.IsDrifted(ctx, nodeClaim)
+	assert.NoError(t, err)
+	assert.Equal(t, cloudprovider.DriftReason(""), drift)
+}
+
+func TestCloudProvider_IsDrifted_RecordsMetrics(t *testing.T) {
+	tests := []struct {
+		name                 string
+		nodeClaim            *karpv1.NodeClaim
+		expectedDrift        cloudprovider.DriftReason
+		expectMetricRecorded bool
+	}{
+		{
+			name: "no drift - duration recorded, counter not incremented",
+			nodeClaim: &karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclaim",
+					Annotations: map[string]string{
+						v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion,
+						v1alpha1.AnnotationIBMNodeClassHash:        "12345",
+						v1alpha1.AnnotationIBMNodeClaimImageID:     "image-id-1",
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name: "test-nodeclass",
+					},
+				},
+			},
+			expectedDrift:        "",
+			expectMetricRecorded: false,
+		},
+		{
+			name: "hash drift - counter incremented",
+			nodeClaim: &karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclaim",
+					Annotations: map[string]string{
+						v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion,
+						v1alpha1.AnnotationIBMNodeClassHash:        "different-hash",
+						v1alpha1.AnnotationIBMNodeClaimImageID:     "image-id-1",
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name: "test-nodeclass",
+					},
+				},
+			},
+			expectedDrift:        NodeClassHashChangedDrift,
+			expectMetricRecorded: true,
+		},
+		{
+			name: "image drift - counter incremented",
+			nodeClaim: &karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclaim",
+					Annotations: map[string]string{
+						v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion,
+						v1alpha1.AnnotationIBMNodeClassHash:        "12345",
+						v1alpha1.AnnotationIBMNodeClaimImageID:     "old-image-id",
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name: "test-nodeclass",
+					},
+				},
+			},
+			expectedDrift:        ImageDrift,
+			expectMetricRecorded: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset metrics before each test
+			metrics.DriftDetectionsTotal.Reset()
+			metrics.DriftDetectionDuration.Reset()
+
+			ctx := context.Background()
+			scheme := getTestScheme()
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(getTestNodeClass()).
+				Build()
+
+			cp := &CloudProvider{
+				kubeClient: fakeClient,
+			}
+
+			drift, err := cp.IsDrifted(ctx, tt.nodeClaim)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedDrift, drift)
+
+			// Verify counter metric
+			if tt.expectMetricRecorded {
+				count := testutil.ToFloat64(metrics.DriftDetectionsTotal.WithLabelValues(
+					string(tt.expectedDrift),
+					tt.nodeClaim.Spec.NodeClassRef.Name,
+				))
+				assert.Equal(t, float64(1), count, "DriftDetectionsTotal should be incremented")
+			}
+
+			// Duration metric should always have observations
+			// (we can't easily check histogram values, but we verify no panic)
+		})
+	}
 }
 
 func TestCloudProvider_Get(t *testing.T) {

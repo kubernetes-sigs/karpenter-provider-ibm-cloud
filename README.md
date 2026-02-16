@@ -42,46 +42,6 @@ Multi-architecture images (amd64, arm64, s390x) are published to `quay.io/karpen
 
 See [Container Images](docs/container-images.md) for details on pulling images, supported architectures, and [Nightly Builds](docs/nightly-builds.md) for testing pre-release versions.
 
-## Development
-
-### Testing and CI
-
-The project includes automated testing and continuous integration workflows:
-
-#### Helm Chart Testing
-
-Tests run automatically on:
-
-- All pull requests (validates changes before merge)
-- Manual trigger via GitHub Actions UI
-
-The tests perform:
-
-- Chart linting for syntax and best practices
-- Template rendering validation
-- Kubernetes manifest validation
-- Custom Resource Definition (CRD) verification
-
-#### Chart Publishing
-
-After changes pass tests and are merged to main:
-
-- The chart is automatically packaged
-- The Helm repository index is updated
-- Changes are published to GitHub Pages
-
-These CI workflows ensure chart quality through pre-merge validation and maintain the Helm repository for easy installation.
-
-## Subprojects and Additional Repositories
-
-This project does not currently produce, maintain, or release any additional
-subproject codebases or separate repositories.
-
-**Status:** Not applicable
-**Intent:** The project is intentionally maintained as a single repository.
-If additional subprojects or repositories are introduced in the future, they
-will be documented in this section.
-
 ## Getting Help
 
 ### Community Support

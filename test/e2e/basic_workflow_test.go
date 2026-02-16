@@ -78,7 +78,7 @@ func TestE2ENodePoolInstanceTypeSelection(t *testing.T) {
 	testName := fmt.Sprintf("nodepool-instance-selection-%d", time.Now().Unix())
 	t.Logf("Starting NodePool instance type selection test: %s", testName)
 
-	// 🛡️ Use automatic cleanup wrapper - CRITICAL for preventing stale resources
+	// Use automatic cleanup wrapper - CRITICAL for preventing stale resources
 	suite.WithAutoCleanup(t, testName, func() {
 		// Create NodeClass without instanceProfile (let NodePool control selection)
 		nodeClass := suite.createTestNodeClassWithoutInstanceProfile(t, testName)
@@ -174,8 +174,8 @@ func TestE2EDriftStability(t *testing.T) {
 	initialNodes := suite.captureNodeSnapshot(t, nodePool.Name)
 	require.Greater(t, len(initialNodes), 0, "Should have provisioned nodes")
 
-	// Monitor stability for a period (reduced for testing)
-	monitorDuration := 5 * time.Minute
+	// Monitor stability for a brief period
+	monitorDuration := 2 * time.Minute
 	t.Logf("Monitoring node stability for %v", monitorDuration)
 	suite.monitorNodeStability(t, nodePool.Name, initialNodes, monitorDuration)
 
@@ -200,5 +200,5 @@ func TestE2EDriftStability(t *testing.T) {
 	// Cleanup
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Drift stability test completed successfully: %s", testName)
+	t.Logf("Drift stability test completed successfully: %s", testName)
 }

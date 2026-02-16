@@ -19,65 +19,80 @@ on:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
 
     steps:
       - name: Cleanup old nightly builds
         uses: actions/github-script@v7
+        env:
+          QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
         with:
           script: |
             const retentionDays = parseInt('${{ github.event.inputs.retention_days || 7 }}');
             const dryRun = ${{ github.event.inputs.dry_run || false }};
-            const packageName = 'karpenter-provider-ibm-cloud/controller';
+            const quayRepo = 'karpenter-provider-ibm-cloud/controller';
+            const quayApi = 'https://quay.io/api/v1';
+            const quayToken = process.env.QUAY_API_TOKEN;
 
             console.log(`Retention period: ${retentionDays} days`);
             console.log(`Dry run: ${dryRun}`);
 
-            // Get all package versions
-            let versions = [];
-            try {
-              versions = await github.paginate(
-                github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
-                {
-                  package_type: 'container',
-                  package_name: packageName,
-                  username: context.repo.owner,
-                }
+            if (!quayToken) {
+              console.log('Error: QUAY_API_TOKEN secret must be configured (OAuth Access Token from Quay.io)');
+              return;
+            }
+
+            // Use Bearer auth with OAuth token (required for API delete operations)
+            const authHeader = `Bearer ${quayToken}`;
+
+            // Fetch all tags with pagination
+            let allTags = [];
+            let page = 1;
+            let hasMore = true;
+
+            while (hasMore) {
+              const response = await fetch(
+                `${quayApi}/repository/${quayRepo}/tag/?limit=100&page=${page}`,
+                { headers: { 'Authorization': authHeader } }
               );
-            } catch (error) {
-              if (error.status === 404) {
-                console.log(`Package '${packageName}' not found for user '${context.repo.owner}'. No cleanup needed.`);
+
+              if (!response.ok) {
+                console.log(`Error fetching tags: ${response.status} ${response.statusText}`);
                 return;
               }
-              throw error;
+
+              const data = await response.json();
+              if (data.tags && data.tags.length > 0) {
+                allTags = allTags.concat(data.tags);
+                page++;
+                hasMore = data.has_additional;
+              } else {
+                hasMore = false;
+              }
             }
 
             const now = new Date();
             const cutoffDate = new Date(now.getTime() - (retentionDays * 24 * 60 * 60 * 1000));
 
             console.log(`Cutoff date: ${cutoffDate.toISOString()}`);
-            console.log(`Total versions found: ${versions.length}`);
+            console.log(`Total tags found: ${allTags.length}`);
 
-            const nightlyVersions = versions.filter(v => {
-              // Check if this is a nightly build by examining tags
-              const tags = v.metadata?.container?.tags || [];
-              return tags.some(tag =>
-                tag.includes('nightly') ||
-                tag.match(/v\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}-[a-f0-9]+-/)
-              );
+            // Filter nightly tags
+            const nightlyTags = allTags.filter(t => {
+              return t.name.startsWith('nightly-') ||
+                t.name.match(/^v\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}-[a-f0-9]+-/);
             });
 
-            console.log(`Nightly versions found: ${nightlyVersions.length}`);
+            console.log(`Nightly tags found: ${nightlyTags.length}`);
 
-            const versionsToDelete = nightlyVersions.filter(v => {
-              const createdAt = new Date(v.created_at);
-              return createdAt < cutoffDate;
+            // Filter old tags
+            const tagsToDelete = nightlyTags.filter(t => {
+              const lastModified = new Date(t.last_modified);
+              return lastModified < cutoffDate;
             });
 
-            console.log(`Versions to delete: ${versionsToDelete.length}`);
+            console.log(`Tags to delete: ${tagsToDelete.length}`);
 
-            if (versionsToDelete.length === 0) {
+            if (tagsToDelete.length === 0) {
               console.log('No old nightly builds to clean up');
               return;
             }
@@ -86,50 +101,35 @@ jobs:
             let summary = '# Nightly Build Cleanup Summary\n\n';
             summary += `- **Retention Period**: ${retentionDays} days\n`;
             summary += `- **Cutoff Date**: ${cutoffDate.toISOString()}\n`;
-            summary += `- **Total Nightly Versions**: ${nightlyVersions.length}\n`;
-            summary += `- **Versions to Delete**: ${versionsToDelete.length}\n`;
+            summary += `- **Total Nightly Tags**: ${nightlyTags.length}\n`;
+            summary += `- **Tags to Delete**: ${tagsToDelete.length}\n`;
             summary += `- **Dry Run**: ${dryRun}\n\n`;
 
-            summary += '## Versions to be deleted:\n\n';
-            summary += '| Version | Created At | Tags |\n';
-            summary += '|---------|------------|------|\n';
+            summary += '## Tags to be deleted:\n\n';
+            summary += '| Tag | Last Modified |\n';
+            summary += '|-----|---------------|\n';
 
-            for (const version of versionsToDelete) {
-              const tags = version.metadata?.container?.tags || [];
-              summary += `| ${version.name} | ${version.created_at} | ${tags.join(', ')} |\n`;
+            for (const tag of tagsToDelete) {
+              summary += `| ${tag.name} | ${tag.last_modified} |\n`;
 
               if (!dryRun) {
                 try {
-                  // First, try to get the version to confirm it exists
-                  try {
-                    await github.rest.packages.getPackageVersionForUser({
-                      package_type: 'container',
-                      package_name: packageName,
-                      username: context.repo.owner,
-                      package_version_id: version.id,
-                    });
-                  } catch (getError) {
-                    if (getError.status === 404) {
-                      console.warn(`Version ${version.name} (${version.id}) not found, skipping deletion.`);
-                      continue;
+                  const deleteResponse = await fetch(
+                    `${quayApi}/repository/${quayRepo}/tag/${tag.name}`,
+                    {
+                      method: 'DELETE',
+                      headers: { 'Authorization': authHeader }
                     }
-                    throw getError;
-                  }
+                  );
 
-                  // Version exists, proceed with deletion
-                  await github.rest.packages.deletePackageVersionForUser({
-                    package_type: 'container',
-                    package_name: packageName,
-                    username: context.repo.owner,
-                    package_version_id: version.id,
-                  });
-                  console.log(`Deleted version: ${version.name}`);
-                } catch (error) {
-                  if (error.status === 404) {
-                    console.warn(`Version ${version.name} (${version.id}) not found during deletion, skipping.`);
+                  if (deleteResponse.ok || deleteResponse.status === 204) {
+                    console.log(`Deleted tag: ${tag.name}`);
                   } else {
-                    console.error(`Failed to delete version ${version.name}: ${error.message}`);
+                    const errorBody = await deleteResponse.text();
+                    console.warn(`Failed to delete ${tag.name}: ${deleteResponse.status} - ${errorBody}`);
                   }
+                } catch (error) {
+                  console.error(`Failed to delete tag ${tag.name}: ${error.message}`);
                 }
               }
             }
@@ -139,7 +139,7 @@ jobs:
             fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 
             if (dryRun) {
-              console.log('Dry run completed - no versions were actually deleted');
+              console.log('Dry run completed - no tags were actually deleted');
             } else {
               console.log('Cleanup completed');
             }

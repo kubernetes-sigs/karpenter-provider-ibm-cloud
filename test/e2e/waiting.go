@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -45,7 +46,7 @@ func (s *E2ETestSuite) waitForNodeClassReady(t *testing.T, nodeClassName string)
 
 	// First, wait a brief moment to allow controller event processing
 	initialDelay := 2 * time.Second
-	t.Logf("⏳ Waiting %v for initial controller processing before validation checks...", initialDelay)
+	t.Logf("Waiting %v for initial controller processing before validation checks...", initialDelay)
 	select {
 	case <-time.After(initialDelay):
 	case <-ctx.Done():
@@ -82,13 +83,13 @@ func (s *E2ETestSuite) waitForNodeClassReady(t *testing.T, nodeClassName string)
 
 		// Log the full NodeClass spec on first successful check
 		if checkCount == 1 {
-			t.Logf("🔍 NodeClass Spec: VPC=%s, Subnet=%s, Zone=%s, Region=%s, InstanceProfile=%s",
+			t.Logf("NodeClass Spec: VPC=%s, Subnet=%s, Zone=%s, Region=%s, InstanceProfile=%s",
 				nodeClass.Spec.VPC, nodeClass.Spec.Subnet, nodeClass.Spec.Zone,
 				nodeClass.Spec.Region, nodeClass.Spec.InstanceProfile)
-			t.Logf("🔍 NodeClass ResourceGroup: %s", nodeClass.Spec.ResourceGroup)
-			t.Logf("🔍 NodeClass SecurityGroups: %v", nodeClass.Spec.SecurityGroups)
-			t.Logf("🔍 NodeClass APIServerEndpoint: %s", nodeClass.Spec.APIServerEndpoint)
-			t.Logf("🔍 NodeClass ResourceVersion: %s", nodeClass.ResourceVersion)
+			t.Logf("NodeClass ResourceGroup: %s", nodeClass.Spec.ResourceGroup)
+			t.Logf("NodeClass SecurityGroups: %v", nodeClass.Spec.SecurityGroups)
+			t.Logf("NodeClass APIServerEndpoint: %s", nodeClass.Spec.APIServerEndpoint)
+			t.Logf("NodeClass ResourceVersion: %s", nodeClass.ResourceVersion)
 		}
 
 		// Check if controller has processed this resource (has status conditions)
@@ -100,11 +101,11 @@ func (s *E2ETestSuite) waitForNodeClassReady(t *testing.T, nodeClassName string)
 		// Log all conditions every check with enhanced formatting
 		t.Logf("Check #%d: NodeClass %s conditions (ResourceVersion: %s):", checkCount, nodeClassName, nodeClass.ResourceVersion)
 		for _, condition := range nodeClass.Status.Conditions {
-			statusIcon := "❓"
+			statusIcon := "?"
 			if condition.Status == metav1.ConditionTrue {
-				statusIcon = "✅"
+				statusIcon = "[OK]"
 			} else if condition.Status == metav1.ConditionFalse {
-				statusIcon = "❌"
+				statusIcon = "[FAILED]"
 			}
 			t.Logf("  %s Type: %s, Status: %s, Reason: %s, Message: %s",
 				statusIcon, condition.Type, condition.Status, condition.Reason, condition.Message)
@@ -114,14 +115,14 @@ func (s *E2ETestSuite) waitForNodeClassReady(t *testing.T, nodeClassName string)
 		for _, condition := range nodeClass.Status.Conditions {
 			if condition.Type == "Ready" {
 				if condition.Status == metav1.ConditionTrue {
-					t.Logf("✅ NodeClass is ready after %d checks: %s - %s", checkCount, condition.Reason, condition.Message)
+					t.Logf("NodeClass is ready after %d checks: %s - %s", checkCount, condition.Reason, condition.Message)
 					return true, nil
 				} else {
-					t.Logf("❌ NodeClass not ready (check #%d): %s - %s", checkCount, condition.Reason, condition.Message)
+					t.Logf("NodeClass not ready (check #%d): %s - %s", checkCount, condition.Reason, condition.Message)
 					// Log validation time for debugging cache issues
 					if !nodeClass.Status.LastValidationTime.IsZero() {
 						validationAge := time.Since(nodeClass.Status.LastValidationTime.Time)
-						t.Logf("🕐 Last validation: %v ago", validationAge)
+						t.Logf("Last validation: %v ago", validationAge)
 					}
 					return false, nil
 				}
@@ -129,7 +130,7 @@ func (s *E2ETestSuite) waitForNodeClassReady(t *testing.T, nodeClassName string)
 		}
 
 		// No Ready condition found yet - this indicates controller hasn't finished processing
-		t.Logf("⚠️  Ready condition not found on check #%d - controller still processing...", checkCount)
+		t.Logf("Warning: Ready condition not found on check #%d - controller still processing...", checkCount)
 		return false, nil
 	})
 	require.NoError(t, err, "NodeClass should become ready within timeout")
@@ -162,8 +163,8 @@ func (s *E2ETestSuite) waitForInstanceCreation(t *testing.T, nodeClaimName strin
 
 // waitForInstanceDeletion waits for a NodeClaim to be fully deleted
 func (s *E2ETestSuite) waitForInstanceDeletion(t *testing.T, nodeClaimName string) {
-	// Use longer timeout for deletion as IBM Cloud instances can take time to clean up
-	deletionTimeout := 15 * time.Minute
+	// Timeout for deletion - IBM Cloud instances typically delete within a few minutes
+	deletionTimeout := 5 * time.Minute
 	ctx, cancel := context.WithTimeout(context.Background(), deletionTimeout)
 	defer cancel()
 	err := wait.PollUntilContextTimeout(ctx, pollInterval, deletionTimeout, true, func(ctx context.Context) (bool, error) {
@@ -196,7 +197,7 @@ func (s *E2ETestSuite) waitForPodsToBeScheduled(t *testing.T, deploymentName, na
 		}
 		// Check if deployment has desired replicas ready
 		if deployment.Status.ReadyReplicas == *deployment.Spec.Replicas {
-			t.Logf("✅ All %d replicas are ready for deployment %s after %d checks",
+			t.Logf("[OK] All %d replicas are ready for deployment %s after %d checks",
 				deployment.Status.ReadyReplicas, deploymentName, checkCount)
 			return true, nil
 		}
@@ -274,15 +275,122 @@ func (s *E2ETestSuite) waitForPodToBeRunning(t *testing.T, podName, namespace st
 				}
 			}
 			if allReady {
-				t.Logf("✅ Pod %s is running and ready", podName)
+				t.Logf("Pod %s is running and ready", podName)
 				return true, nil
 			}
-			t.Logf("⏳ Pod %s is running but not ready yet", podName)
+			t.Logf("Pod %s is running but not ready yet", podName)
 			return false, nil
 		}
 
-		t.Logf("⏳ Pod %s is in phase %s, waiting for Running...", podName, pod.Status.Phase)
+		t.Logf("Pod %s is in phase %s, waiting for Running...", podName, pod.Status.Phase)
 		return false, nil
 	})
 	require.NoError(t, err, "Pod should be running within timeout")
+}
+
+// waitForNodesCleanedUp waits for all Karpenter nodes matching a NodePool to be removed
+func (s *E2ETestSuite) waitForNodesCleanedUp(t *testing.T, nodePoolName string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(ctx context.Context) (bool, error) {
+		nodes := s.getKarpenterNodes(t, nodePoolName)
+		if len(nodes) == 0 {
+			t.Logf("All nodes cleaned up for NodePool %s", nodePoolName)
+			return true, nil
+		}
+		t.Logf("Still waiting for %d nodes to be cleaned up for NodePool %s", len(nodes), nodePoolName)
+		return false, nil
+	})
+	require.NoError(t, err, "Nodes should be cleaned up within timeout")
+}
+
+// waitForNodeClaimsCleanedUp waits for all NodeClaims matching a NodePool to be removed
+func (s *E2ETestSuite) waitForNodeClaimsCleanedUp(t *testing.T, nodePoolName string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(ctx context.Context) (bool, error) {
+		var nodeClaimList karpv1.NodeClaimList
+		err := s.kubeClient.List(ctx, &nodeClaimList, client.MatchingLabels{
+			"karpenter.sh/nodepool": nodePoolName,
+		})
+		if err != nil {
+			return false, err
+		}
+		if len(nodeClaimList.Items) == 0 {
+			t.Logf("All NodeClaims cleaned up for NodePool %s", nodePoolName)
+			return true, nil
+		}
+		t.Logf("Still waiting for %d NodeClaims to be cleaned up for NodePool %s", len(nodeClaimList.Items), nodePoolName)
+		return false, nil
+	})
+	require.NoError(t, err, "NodeClaims should be cleaned up within timeout")
+}
+
+// waitForPDBReady waits for a PodDisruptionBudget to be processed and have observed generation
+func (s *E2ETestSuite) waitForPDBReady(t *testing.T, pdbName, namespace string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(ctx context.Context) (bool, error) {
+		var pdb policyv1.PodDisruptionBudget
+		err := s.kubeClient.Get(ctx, client.ObjectKey{Name: pdbName, Namespace: namespace}, &pdb)
+		if err != nil {
+			return false, err
+		}
+		// PDB is ready when ObservedGeneration matches Generation
+		if pdb.Status.ObservedGeneration >= pdb.Generation {
+			t.Logf("PDB %s is ready - Expected: %d, Current: %d", pdbName, pdb.Status.ExpectedPods, pdb.Status.CurrentHealthy)
+			return true, nil
+		}
+		return false, nil
+	})
+	require.NoError(t, err, "PDB should be ready within timeout")
+}
+
+// waitForNodeClaimCleanedUp waits for a specific NodeClaim to be removed
+func (s *E2ETestSuite) waitForNodeClaimCleanedUp(t *testing.T, nodeClaimName string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(ctx context.Context) (bool, error) {
+		var nodeClaim karpv1.NodeClaim
+		err := s.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClaimName}, &nodeClaim)
+		if errors.IsNotFound(err) {
+			t.Logf("NodeClaim %s has been cleaned up", nodeClaimName)
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		t.Logf("NodeClaim %s still exists, waiting for cleanup...", nodeClaimName)
+		return false, nil
+	})
+	require.NoError(t, err, "NodeClaim should be cleaned up within timeout")
+}
+
+// waitForInstanceCountReduction waits for IBM Cloud instance count to reduce
+func (s *E2ETestSuite) waitForInstanceCountReduction(t *testing.T, targetCount int, timeout time.Duration) int {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var finalCount int
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+		instances, err := s.getIBMCloudInstances(t)
+		if err != nil {
+			t.Logf("Warning: Failed to get instance count: %v", err)
+			return false, nil // Don't fail, just retry
+		}
+		finalCount = len(instances)
+		t.Logf("Current instance count: %d (target: %d)", finalCount, targetCount)
+		if finalCount <= targetCount {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Logf("Warning: Instance count did not reach target within timeout")
+	}
+	return finalCount
 }

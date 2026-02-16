@@ -19,8 +19,10 @@ limitations under the License.
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -219,13 +221,13 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 				echo "Root volume (/dev/vda) size: ${ROOT_SIZE_GB}GB"
 
 				if [ "$ROOT_SIZE_GB" -ge 45 ] && [ "$ROOT_SIZE_GB" -le 55 ]; then
-					echo "✅ Root volume size is within expected range (45-55GB)"
+					echo "Root volume size is within expected range (45-55GB)"
 				else
-					echo "❌ Root volume size is outside expected range (45-55GB)"
+					echo "Root volume size is outside expected range (45-55GB)"
 					exit 1
 				fi
 			else
-				echo "❌ Root volume (/dev/vda) not found"
+				echo "Root volume (/dev/vda) not found"
 				exit 1
 			fi
 			echo ""
@@ -237,13 +239,13 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 				echo "Data volume (/dev/vdb) size: ${DATA_SIZE_GB}GB"
 
 				if [ "$DATA_SIZE_GB" -ge 95 ] && [ "$DATA_SIZE_GB" -le 105 ]; then
-					echo "✅ Data volume size is within expected range (95-105GB)"
+					echo "Data volume size is within expected range (95-105GB)"
 				else
-					echo "❌ Data volume size is outside expected range (95-105GB)"
+					echo "Data volume size is outside expected range (95-105GB)"
 					exit 1
 				fi
 			else
-				echo "❌ Data volume (/dev/vdb) not found"
+				echo "Data volume (/dev/vdb) not found"
 				exit 1
 			fi
 			echo ""
@@ -257,10 +259,10 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 			echo ""
 
 			echo "=== Test Summary ==="
-			echo "✅ Block device inspection completed successfully!"
-			echo "✅ Root volume is ~${ROOT_SIZE_GB}GB (configured as general-purpose)"
-			echo "✅ Data volume is ~${DATA_SIZE_GB}GB (configured as 5iops-tier)"
-			echo "✅ Both volumes match the IBMNodeClass block device mapping specification"
+			echo "Block device inspection completed successfully!"
+			echo "Root volume is ~${ROOT_SIZE_GB}GB (configured as general-purpose)"
+			echo "Data volume is ~${DATA_SIZE_GB}GB (configured as 5iops-tier)"
+			echo "Both volumes match the IBMNodeClass block device mapping specification"
 			echo ""
 			echo "=== Block Device Inspector Completed ==="
 
@@ -329,12 +331,8 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 	require.NotNil(t, nodeClaim.Spec.NodeClassRef)
 	require.Equal(t, nodeClass.Name, nodeClaim.Spec.NodeClassRef.Name)
 
-	// Wait a bit for the pod to execute and gather block device info
+	// Wait for pod to complete block device checks
 	t.Logf("Waiting for pod to complete block device checks...")
-	time.Sleep(30 * time.Second)
-
-	// Verify pod completed successfully by checking its exit status
-	t.Logf("Waiting for pod to complete...")
 	suite.waitForPodCompletion(t, testPod.Name, testPod.Namespace)
 
 	// Get pod status to verify successful completion
@@ -344,12 +342,12 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 
 	// Check that pod completed successfully (exit code 0)
 	if completedPod.Status.Phase == corev1.PodSucceeded {
-		t.Logf("✅ Pod completed successfully - block device test passed")
+		t.Logf("Pod completed successfully - block device test passed")
 	} else if completedPod.Status.Phase == corev1.PodFailed {
 		// Get container status for failure details
 		for _, containerStatus := range completedPod.Status.ContainerStatuses {
 			if containerStatus.State.Terminated != nil {
-				t.Errorf("❌ Pod failed with exit code %d: %s",
+				t.Errorf("Pod failed with exit code %d: %s",
 					containerStatus.State.Terminated.ExitCode,
 					containerStatus.State.Terminated.Reason)
 			}
@@ -364,9 +362,9 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 
 		// Verify key indicators that the test ran and passed
 		require.Contains(t, podLogs, "Block Device Inspector Starting", "Pod should have started block device inspection")
-		require.Contains(t, podLogs, "✅ Root volume size is within expected range", "Root volume should be correct size")
-		require.Contains(t, podLogs, "✅ Data volume size is within expected range", "Data volume should be correct size")
-		require.Contains(t, podLogs, "✅ Block device inspection completed successfully", "Test should complete successfully")
+		require.Contains(t, podLogs, "Root volume size is within expected range", "Root volume should be correct size")
+		require.Contains(t, podLogs, "Data volume size is within expected range", "Data volume should be correct size")
+		require.Contains(t, podLogs, "Block device inspection completed successfully", "Test should complete successfully")
 	} else {
 		t.Logf("Pod logs not available for detailed verification, but pod exit status indicates success")
 	}
@@ -396,18 +394,27 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 		t.Logf("Warning: Failed to delete NodeClass: %v", err)
 	}
 
-	t.Logf("✅ Block device mapping test completed successfully")
+	t.Logf("Block device mapping test completed successfully")
 }
 
-// getPodLogs retrieves logs from a pod (simplified version)
+// getPodLogs retrieves logs from a pod using kubectl
 func (s *E2ETestSuite) getPodLogs(ctx context.Context, podName, namespace string) (string, error) {
 	if namespace == "" {
 		namespace = "default"
 	}
 
-	// For now, return a placeholder since getting logs requires additional setup
-	// In a real implementation, this would use kubectl or a clientset
-	return "Pod logs not available in this test setup", nil
+	// Use kubectl to get pod logs
+	cmd := exec.CommandContext(ctx, "kubectl", "logs", podName, "-n", namespace)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("failed to get pod logs: %v, stderr: %s", err, stderr.String())
+	}
+
+	return stdout.String(), nil
 }
 
 // waitForPodCompletion waits for a pod to complete (either succeed or fail)
@@ -427,7 +434,7 @@ func (s *E2ETestSuite) waitForPodCompletion(t *testing.T, podName, namespace str
 		}
 
 		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
-			t.Logf("✅ Pod %s completed with phase: %s", podName, pod.Status.Phase)
+			t.Logf("Pod %s completed with phase: %s", podName, pod.Status.Phase)
 			return
 		}
 
@@ -458,7 +465,7 @@ func (s *E2ETestSuite) waitForPodReady(t *testing.T, podName, namespace string) 
 			allReady := true
 			for _, condition := range pod.Status.Conditions {
 				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-					t.Logf("✅ Pod %s is ready", podName)
+					t.Logf("Pod %s is ready", podName)
 					return
 				}
 			}
@@ -483,7 +490,7 @@ func (s *E2ETestSuite) waitForNodeCleanup(t *testing.T, nodeName string, timeout
 		err := s.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, &node)
 		if err != nil {
 			// Node not found, cleanup successful
-			t.Logf("✅ Node %s has been cleaned up", nodeName)
+			t.Logf("Node %s has been cleaned up", nodeName)
 			return
 		}
 

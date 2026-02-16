@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
+      id: checkout
       uses: actions/checkout@v4
 
     - name: Set up Go
@@ -38,11 +39,23 @@ jobs:
       run: |
         go install github.com/golang/mock/mockgen@v1.6.0
 
+    - name: Verify vendor is up to date
+      run: |
+        make vendor
+        git diff --exit-code vendor/ go.sum || \
+          (echo "Error: Vendor directory is out of date. Run 'make vendor' and commit the changes." && exit 1)
+
     - name: Verify mocks are up to date
       run: |
         make gen-mocks
         git diff --exit-code pkg/providers/common/types/mock/ pkg/cloudprovider/ibm/mock/ pkg/providers/common/pricing/mock/ || \
           (echo "Error: Generated mocks are out of date. Run 'make gen-mocks' and commit the changes." && exit 1)
+
+    - name: Verify generated code is up to date
+      run: |
+        make generate
+        git diff --exit-code pkg/apis/ charts/crds/ || \
+          (echo "Error: Generated code (CRDs/deepcopy) is out of date. Run 'make generate' and commit the changes." && exit 1)
 
     - name: Run tests
       run: |
@@ -106,4 +119,5 @@ jobs:
         export PATH="$(go env GOPATH)/bin:${PATH}"
         which golangci-lint
         golangci-lint version
-        make lint
+        # Skip verify-codegen and verify-vendor hooks - already checked in test job
+        SKIP=verify-codegen,verify-vendor make lint

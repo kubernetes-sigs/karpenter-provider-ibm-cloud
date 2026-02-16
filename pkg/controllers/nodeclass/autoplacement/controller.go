@@ -106,7 +106,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		stored := nodeClass.DeepCopy()
 		start := time.Now()
 
-		c.log.Info("Starting instance type selection", "nodeclass", req.Name)
+		c.log.Info("Started instance type selection", "nodeclass", req.Name)
 
 		// Get instance types matching requirements
 		instanceTypes, err := c.instanceTypes.FilterInstanceTypes(ctx, nodeClass.Spec.InstanceRequirements, nodeClass)
@@ -169,7 +169,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		stored := nodeClass.DeepCopy()
 		start := time.Now()
 
-		c.log.Info("Starting subnet selection", "nodeclass", req.Name, "strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance)
+		c.log.Info("Started subnet selection", "nodeclass", req.Name, "strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance)
 
 		// Select subnets based on placement strategy
 		selectedSubnets, err := c.subnets.SelectSubnets(ctx, nodeClass.Spec.VPC, nodeClass.Spec.PlacementStrategy)

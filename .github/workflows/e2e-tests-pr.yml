@@ -60,11 +60,14 @@ jobs:
     env:
       KUBECONFIG: /tmp/kubeconfig
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install dependencies
+        id: install-dependencies
         run: |
           apt-get update && apt-get install -y curl jq
           curl -LO "https://dl.k8s.io/release/v${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
@@ -73,6 +76,7 @@ jobs:
           ibmcloud plugin install vpc-infrastructure
 
       - name: Setup kubeconfig
+        id: setup-kubeconfig
         env:
           KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
         run: |
@@ -81,6 +85,7 @@ jobs:
           kubectl version --client
 
       - name: Verify cluster access
+        id: verify-cluster-access
         run: |
           kubectl cluster-info
           kubectl auth can-i create nodeclaims --all-namespaces
@@ -88,12 +93,14 @@ jobs:
           kubectl auth can-i create ibmnodeclasses --all-namespaces
 
       - name: Configure IBM Cloud CLI
+        id: configure-ibmcloud-cli
         env:
           IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
         run: |
           ibmcloud login --apikey "${{ secrets.IBMCLOUD_API_KEY }}" -r "${{ secrets.IBMCLOUD_REGION }}"
 
       - name: Deploy PR version
+        id: deploy-pr-version
         run: |
           kubectl apply -f charts/crds/
 
@@ -113,6 +120,7 @@ jobs:
           echo "Deployment updated to: $CURRENT_IMAGE"
 
       - name: Pre-test cleanup
+        id: pre-test-cleanup
         run: |
           echo "Cleaning up any existing e2e test resources..."
           kubectl delete pods -l test=e2e --all-namespaces --timeout=300s || true
@@ -147,6 +155,7 @@ jobs:
           echo "Pre-test cleanup completed"
 
       - name: Run E2E tests
+        id: run-e2e-tests
         env:
           RUN_E2E_TESTS: "true"
           IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
@@ -290,6 +299,7 @@ jobs:
           echo "PASS: All E2E tests completed successfully!"
 
       - name: Collect test artifacts
+        id: collect-test-artifacts
         if: always()
         run: |
           echo "Collecting test artifacts..."
@@ -330,7 +340,9 @@ jobs:
 
           echo "Test artifact collection completed"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload test artifacts
+        id: upload-test-artifacts
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: e2e-test-artifacts-${{ github.run_id }}
@@ -338,6 +350,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup test resources
+        id: cleanup-test-resources
         if: always()
         env:
           IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
@@ -368,6 +381,7 @@ jobs:
           echo "Cleanup completed"
 
       - name: Restore original deployment
+        id: restore-original-deployment
         if: always()
         run: |
           echo "Restoring original karpenter deployment..."

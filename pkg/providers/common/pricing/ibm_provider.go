@@ -23,6 +23,7 @@ import (
 
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/batcher"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/logging"
@@ -31,23 +32,32 @@ import (
 
 // IBMPricingProvider implements the Provider interface for IBM Cloud pricing
 type IBMPricingProvider struct {
-	client     *ibm.Client
-	pricingMap map[string]map[string]float64 // instanceType -> zone -> price
-	lastUpdate time.Time
-	mutex      sync.RWMutex
-	ttl        time.Duration
-	priceCache *cache.Cache
-	logger     *logging.Logger
+	client         *ibm.Client
+	pricingBatcher *batcher.PricingBatcher
+	pricingMap     map[string]map[string]float64 // instanceType -> zone -> price
+	lastUpdate     time.Time
+	mutex          sync.RWMutex
+	ttl            time.Duration
+	priceCache     *cache.Cache
+	logger         *logging.Logger
 }
 
 // NewIBMPricingProvider creates a new IBM Cloud pricing provider
-func NewIBMPricingProvider(client *ibm.Client) *IBMPricingProvider {
+func NewIBMPricingProvider(ctx context.Context, client *ibm.Client) *IBMPricingProvider {
+	var pricingBatcher *batcher.PricingBatcher
+	if client != nil {
+		if catalogClient, err := client.GetGlobalCatalogClient(); err == nil {
+			pricingBatcher = batcher.NewPricingBatcher(ctx, catalogClient)
+		}
+	}
+
 	return &IBMPricingProvider{
-		client:     client,
-		pricingMap: make(map[string]map[string]float64),
-		ttl:        12 * time.Hour,            // Cache pricing for 12 hours
-		priceCache: cache.New(12 * time.Hour), // Use new cache infrastructure
-		logger:     logging.PricingLogger(),
+		client:         client,
+		pricingBatcher: pricingBatcher,
+		pricingMap:     make(map[string]map[string]float64),
+		ttl:            12 * time.Hour,            // Cache pricing for 12 hours
+		priceCache:     cache.New(12 * time.Hour), // Use new cache infrastructure
+		logger:         logging.PricingLogger(),
 	}
 }
 
@@ -292,14 +302,10 @@ func (p *IBMPricingProvider) fetchInstancePricing(ctx context.Context, catalogCl
 
 // fetchPricingFromAPI calls IBM Cloud GetPricing API for the catalog entry
 func (p *IBMPricingProvider) fetchPricingFromAPI(ctx context.Context, catalogEntryID string) (float64, error) {
-	// Get Global Catalog client which handles authentication internally
-	catalogClient, err := p.client.GetGlobalCatalogClient()
-	if err != nil {
-		return 0, fmt.Errorf("getting catalog client: %w", err)
+	if p.pricingBatcher == nil {
+		return 0, fmt.Errorf("pricing batcher not initialized")
 	}
-
-	// Call GetPricing API through our catalog client
-	pricingData, err := catalogClient.GetPricing(ctx, catalogEntryID)
+	pricingData, err := p.pricingBatcher.GetPricing(ctx, catalogEntryID)
 	if err != nil {
 		return 0, fmt.Errorf("calling GetPricing API: %w", err)
 	}

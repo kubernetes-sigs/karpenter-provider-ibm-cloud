@@ -182,7 +182,7 @@ func (c *Controller) validateNodeClass(ctx context.Context, nc *v1alpha1.IBMNode
 
 	// Phase 3: IBM Cloud resource validation
 	if err := c.validateIBMCloudResources(ctx, nc); err != nil {
-		logger.V(1).Info("IBM Cloud resource validation failed", "error", err)
+		logger.V(1).Info("Failing IBM Cloud resource validation", "error", err)
 		return fmt.Errorf("IBM Cloud resource validation failed: %w", err)
 	}
 
@@ -191,7 +191,7 @@ func (c *Controller) validateNodeClass(ctx context.Context, nc *v1alpha1.IBMNode
 		return fmt.Errorf("business logic validation failed: %w", err)
 	}
 
-	logger.V(1).Info("NodeClass validation succeeded")
+	logger.V(1).Info("Passing NodeClass validation")
 	return nil
 }
 
@@ -324,11 +324,19 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 		return fmt.Errorf("image validation failed: %w", err)
 	}
 
-	// Validate security groups exist and are accessible
+	// Validate and resolve security groups
 	if len(nc.Spec.SecurityGroups) > 0 {
 		if err := c.validateSecurityGroups(ctx, nc.Spec.SecurityGroups, nc.Spec.VPC, nc.Spec.Region); err != nil {
 			return fmt.Errorf("security group validation failed: %w", err)
 		}
+		nc.Status.ResolvedSecurityGroups = nc.Spec.SecurityGroups
+	} else {
+		// No explicit SGs - resolve default security group from VPC
+		defaultSGID, err := c.resolveDefaultSecurityGroup(ctx, nc.Spec.VPC)
+		if err != nil {
+			return fmt.Errorf("failed to resolve default security group: %w", err)
+		}
+		nc.Status.ResolvedSecurityGroups = []string{defaultSGID}
 	}
 
 	// Validate SSH keys exist and are accessible
@@ -339,6 +347,19 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 	}
 
 	return nil
+}
+
+// resolveDefaultSecurityGroup gets the default security group ID for a VPC
+func (c *Controller) resolveDefaultSecurityGroup(ctx context.Context, vpcID string) (string, error) {
+	vpcClient, err := c.vpcClientManager.GetVPCClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting VPC client: %w", err)
+	}
+	defaultSG, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
+	if err != nil {
+		return "", err
+	}
+	return *defaultSG.ID, nil
 }
 
 // validateRegion validates that the region exists and is accessible
@@ -549,7 +570,7 @@ func (c *Controller) validateSubnet(ctx context.Context, subnetID, vpcID, expect
 	}
 
 	// Extract region from subnet zone (e.g., "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de")
-	subnetRegion := extractRegionFromZone(subnetInfo.Zone)
+	subnetRegion := ibm.ExtractRegionFromZone(subnetInfo.Zone)
 	if subnetRegion != expectedRegion {
 		return fmt.Errorf("subnet %s is in region %s but NodeClass expects region %s (subnet zone: %s). Cross-region subnet references are not supported",
 			subnetID, subnetRegion, expectedRegion, subnetInfo.Zone)
@@ -655,7 +676,7 @@ func (c *Controller) validateImageConfiguration(ctx context.Context, nc *v1alpha
 		}
 		// Store resolved image ID in status for use during provisioning
 		nc.Status.ResolvedImageID = resolvedImageID
-		logger.V(1).Info("Resolved and cached explicit image",
+		logger.V(1).Info("Resolving and caching explicit image",
 			"image", nc.Spec.Image,
 			"resolvedImageID", resolvedImageID)
 		return nil
@@ -853,24 +874,6 @@ func (c *Controller) validatePlacementStrategy(strategy *v1alpha1.PlacementStrat
 // patchNodeClassStatus patches the nodeclass status using optimistic locking
 func (c *Controller) patchNodeClassStatus(ctx context.Context, nc *v1alpha1.IBMNodeClass, stored *v1alpha1.IBMNodeClass) error {
 	return c.kubeClient.Status().Patch(ctx, nc, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
-}
-
-// extractRegionFromZone extracts the region from an IBM Cloud zone name
-// Examples: "br-sao-1" -> "br-sao", "eu-de-2" -> "eu-de", "us-south-3" -> "us-south"
-func extractRegionFromZone(zone string) string {
-	if zone == "" {
-		return ""
-	}
-
-	// IBM Cloud zone format is typically "{region}-{zone-number}"
-	// Find the last hyphen and take everything before it
-	lastHyphen := strings.LastIndex(zone, "-")
-	if lastHyphen == -1 {
-		// If no hyphen found, return the zone as-is (shouldn't happen in normal cases)
-		return zone
-	}
-
-	return zone[:lastHyphen]
 }
 
 // Register registers the controller with the manager

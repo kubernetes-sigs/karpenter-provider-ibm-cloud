@@ -72,7 +72,7 @@ func (l *Logger) Debug(msg string, keysAndValues ...interface{}) {
 // Warn logs a warning message
 func (l *Logger) Warn(msg string, keysAndValues ...interface{}) {
 	if l.shouldLog("warn") {
-		l.logger.Info("WARNING: "+msg, keysAndValues...)
+		l.logger.Info("Warning: "+msg, keysAndValues...)
 	}
 }
 

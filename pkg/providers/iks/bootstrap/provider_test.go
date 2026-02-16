@@ -74,7 +74,7 @@ func (p *TestableIKSBootstrapProvider) GetClusterConfig(ctx context.Context, clu
 		return nil, fmt.Errorf("IKS client not available")
 	}
 
-	logger.Info("Retrieving cluster config from IKS API", "cluster_id", clusterID)
+	logger.Info("Retrieved cluster config from IKS API", "cluster_id", clusterID)
 
 	// Get kubeconfig from IKS API
 	kubeconfig, err := iksClient.GetClusterConfig(ctx, clusterID)
@@ -99,7 +99,7 @@ func (p *TestableIKSBootstrapProvider) GetClusterConfig(ctx context.Context, clu
 
 func (p *TestableIKSBootstrapProvider) GetUserData(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass, nodeClaim types.NamespacedName) (string, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Generating IKS user data")
+	logger.Info("Generated IKS user data")
 
 	// For IKS mode, we don't need complex bootstrap scripts since IKS handles most of the setup
 	// The worker pool resize API will add nodes that are automatically configured
@@ -107,7 +107,7 @@ func (p *TestableIKSBootstrapProvider) GetUserData(ctx context.Context, nodeClas
 
 	// If there's custom user data specified, include it
 	if strings.TrimSpace(nodeClass.Spec.UserData) != "" {
-		logger.Info("Including custom user data for IKS node")
+		logger.Info("Included custom user data for IKS node")
 		return nodeClass.Spec.UserData, nil
 	}
 

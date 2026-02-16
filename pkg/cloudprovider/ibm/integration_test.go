@@ -44,7 +44,7 @@ func TestRealVPCConnection(t *testing.T) {
 		t.Fatalf("Failed to create VPC client: %v", err)
 	}
 
-	t.Logf("✅ VPC client created successfully")
+	t.Logf("VPC client created successfully")
 
 	// Test ListInstances
 	t.Run("list_instances", func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestRealVPCConnection(t *testing.T) {
 			t.Errorf("Failed to list instances: %v", err)
 			return
 		}
-		t.Logf("✅ Successfully listed %d instances", len(instances))
+		t.Logf("Successfully listed %d instances", len(instances))
 
 		if len(instances) > 0 {
 			t.Logf("First instance: ID=%s, Name=%s",
@@ -70,7 +70,7 @@ func TestRealVPCConnection(t *testing.T) {
 				t.Errorf("Failed to get VPC %s: %v", testVPCID, err)
 				return
 			}
-			t.Logf("✅ Successfully retrieved VPC: ID=%s, Name=%s",
+			t.Logf("Successfully retrieved VPC: ID=%s, Name=%s",
 				getStringValue(vpc.ID),
 				getStringValue(vpc.Name))
 		})
@@ -81,7 +81,7 @@ func TestRealVPCConnection(t *testing.T) {
 				t.Errorf("Failed to list subnets for VPC %s: %v", testVPCID, err)
 				return
 			}
-			t.Logf("✅ Successfully listed %d subnets for VPC %s", len(subnets.Subnets), testVPCID)
+			t.Logf("Successfully listed %d subnets for VPC %s", len(subnets.Subnets), testVPCID)
 
 			if len(subnets.Subnets) > 0 {
 				subnet := subnets.Subnets[0]
@@ -107,7 +107,7 @@ func TestRealVPCConnection(t *testing.T) {
 			profileCount = len(profiles.Profiles)
 		}
 
-		t.Logf("✅ Successfully listed %d instance profiles", profileCount)
+		t.Logf("Successfully listed %d instance profiles", profileCount)
 
 		if profileCount > 0 {
 			profile := profiles.Profiles[0]
@@ -145,7 +145,7 @@ func TestRealGlobalCatalogConnection(t *testing.T) {
 		t.Fatalf("Failed to create IBM client: %v", err)
 	}
 
-	t.Logf("✅ IBM client created successfully")
+	t.Logf("IBM client created successfully")
 
 	// Test Global Catalog client
 	t.Run("get_catalog_client", func(t *testing.T) {
@@ -154,7 +154,7 @@ func TestRealGlobalCatalogConnection(t *testing.T) {
 			t.Errorf("Failed to get Global Catalog client: %v", err)
 			return
 		}
-		t.Logf("✅ Global Catalog client created successfully")
+		t.Logf("Global Catalog client created successfully")
 
 		// Test listing instance types
 		instanceTypes, err := catalogClient.ListInstanceTypes(ctx)
@@ -162,7 +162,7 @@ func TestRealGlobalCatalogConnection(t *testing.T) {
 			t.Errorf("Failed to list instance types: %v", err)
 			return
 		}
-		t.Logf("✅ Successfully listed %d instance types from catalog", len(instanceTypes))
+		t.Logf("Successfully listed %d instance types from catalog", len(instanceTypes))
 
 		if len(instanceTypes) > 0 {
 			entry := instanceTypes[0]

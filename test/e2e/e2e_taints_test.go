@@ -254,7 +254,7 @@ func TestE2EStartupTaints(t *testing.T) {
 	})
 	require.NoError(t, err, "Deployment should have at least 1 ready replica despite startup taints")
 
-	t.Logf("✓ StartupTaints E2E test passed - startup taints properly applied and pods scheduled")
+	t.Logf("PASS: StartupTaints E2E test passed - startup taints properly applied and pods scheduled")
 }
 
 // TestE2EStartupTaintsRemoval tests startup taint removal by DaemonSet
@@ -453,7 +453,7 @@ sleep 3600
 	// NOTE: For a complete implementation, the DaemonSet would need proper RBAC permissions
 	// to patch nodes and remove taints. This test verifies the taint is initially applied correctly.
 
-	t.Logf("✓ StartupTaints removal test setup complete - startup taint properly applied")
+	t.Logf("PASS: StartupTaints removal test setup complete - startup taint properly applied")
 }
 
 // TestE2ETaintsBasicScheduling tests basic taint/toleration scheduling
@@ -607,20 +607,10 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 		_ = suite.kubeClient.Delete(ctx, intolerantDeployment)
 	}()
 
-	// Wait and verify intolerant deployment does NOT become ready
-	time.Sleep(30 * time.Second) // Give it time to try scheduling
+	// Verify intolerant deployment does NOT become ready (check multiple times to ensure stability)
+	suite.verifyDeploymentNotReady(t, intolerantDeployment.Name, intolerantDeployment.Namespace, 30*time.Second)
 
-	var intolerantDep appsv1.Deployment
-	err = suite.kubeClient.Get(ctx, types.NamespacedName{
-		Namespace: intolerantDeployment.Namespace,
-		Name:      intolerantDeployment.Name,
-	}, &intolerantDep)
-	require.NoError(t, err)
-
-	// Should have 0 ready replicas due to taint preventing scheduling
-	assert.Equal(t, int32(0), intolerantDep.Status.ReadyReplicas, "Intolerant deployment should not have ready replicas due to taint")
-
-	t.Logf("✓ Basic taints scheduling E2E test passed - taints properly prevent intolerant pods from scheduling")
+	t.Logf("PASS: Basic taints scheduling E2E test passed - taints properly prevent intolerant pods from scheduling")
 }
 
 // TestE2ETaintValues tests that taint values are correctly applied and updated
@@ -786,7 +776,7 @@ func TestE2ETaintValues(t *testing.T) {
 	assert.True(t, foundTaints["workload-type"], "Node should have 'workload-type' taint")
 	assert.True(t, foundTaints["priority"], "Node should have 'priority' taint")
 
-	t.Logf("✓ Taint values E2E test passed - taint values correctly applied and verified")
+	t.Logf("PASS: Taint values E2E test passed - taint values correctly applied and verified")
 }
 
 // TestE2ETaintSync tests taint synchronization from NodeClaim to Node
@@ -957,7 +947,7 @@ func TestE2ETaintSync(t *testing.T) {
 	assert.True(t, foundRegularTaint, "Node should have regular taint synced from NodeClaim")
 	assert.True(t, foundStartupTaint, "Node should have startup taint synced from NodeClaim")
 
-	t.Logf("✓ Taint sync E2E test passed - both regular and startup taints properly synced from NodeClaim to Node")
+	t.Logf("PASS: Taint sync E2E test passed - both regular and startup taints properly synced from NodeClaim to Node")
 }
 
 // TestE2EUnregisteredTaintHandling tests proper unregistered taint lifecycle
@@ -1083,7 +1073,7 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 	}
 	assert.False(t, foundUnregisteredTaint, "Unregistered taint should be removed after node registration")
 
-	t.Logf("✓ Unregistered taint handling E2E test passed - unregistered taint properly removed after registration")
+	t.Logf("PASS: Unregistered taint handling E2E test passed - unregistered taint properly removed after registration")
 }
 
 // Helper function to create resource-intensive workloads that force new node creation

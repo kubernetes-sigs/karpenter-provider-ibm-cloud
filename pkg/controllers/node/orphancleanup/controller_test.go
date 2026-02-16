@@ -18,16 +18,20 @@ package orphancleanup
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/platform-services-go-sdk/globaltaggingv1"
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
@@ -485,6 +489,122 @@ func TestNewControllerGlobalTaggingInitialization(t *testing.T) {
 				assert.NotNil(t, controller.globalTagging, "Global Tagging client should be initialized")
 			} else {
 				assert.Nil(t, controller.globalTagging, "Global Tagging client should not be initialized")
+			}
+		})
+	}
+}
+
+// mockGlobalTaggingAPI is a mock implementation for testing
+type mockGlobalTaggingAPI struct {
+	response *globaltaggingv1.TagList
+	err      error
+
+	lastAttachedTo *string
+}
+
+func (m *mockGlobalTaggingAPI) ListTagsWithContext(ctx context.Context, opts *globaltaggingv1.ListTagsOptions) (*globaltaggingv1.TagList, *core.DetailedResponse, error) {
+	if opts != nil {
+		m.lastAttachedTo = opts.AttachedTo
+	}
+	return m.response, nil, m.err
+}
+
+func TestHasKarpenterTags(t *testing.T) {
+	logger := logr.Discard()
+
+	crn := "crn:v1:bluemix:public:is:us-south:a/1234::instance:instance-123"
+
+	testCases := []struct {
+		name           string
+		instanceCRN    *string
+		instanceID     string
+		mockResponse   *globaltaggingv1.TagList
+		mockError      error
+		expectedResult bool
+		assertAttached bool
+	}{
+		{
+			name:           "nil CRN returns false",
+			instanceCRN:    nil,
+			instanceID:     "instance-123",
+			expectedResult: false,
+			assertAttached: false,
+		},
+		{
+			name:           "API error returns false",
+			instanceCRN:    ptr.To(crn),
+			instanceID:     "instance-123",
+			mockError:      fmt.Errorf("API error"),
+			expectedResult: false,
+			assertAttached: true,
+		},
+		{
+			name:           "nil TagList returns false",
+			instanceCRN:    ptr.To(crn),
+			instanceID:     "instance-123",
+			mockResponse:   nil,
+			expectedResult: false,
+			assertAttached: true,
+		},
+		{
+			name:           "nil Items returns false",
+			instanceCRN:    ptr.To(crn),
+			instanceID:     "instance-123",
+			mockResponse:   &globaltaggingv1.TagList{Items: nil},
+			expectedResult: false,
+			assertAttached: true,
+		},
+		{
+			name:        "karpenter tag returns true",
+			instanceCRN: ptr.To(crn),
+			instanceID:  "instance-123",
+			mockResponse: &globaltaggingv1.TagList{
+				Items: []globaltaggingv1.Tag{{Name: ptr.To("karpenter.sh/managed")}},
+			},
+			expectedResult: true,
+			assertAttached: true,
+		},
+		{
+			name:        "non-karpenter tags returns false",
+			instanceCRN: ptr.To(crn),
+			instanceID:  "instance-123",
+			mockResponse: &globaltaggingv1.TagList{
+				Items: []globaltaggingv1.Tag{{Name: ptr.To("env:prod")}},
+			},
+			expectedResult: false,
+			assertAttached: true,
+		},
+		{
+			name:        "nil tag name is ignored",
+			instanceCRN: ptr.To(crn),
+			instanceID:  "instance-123",
+			mockResponse: &globaltaggingv1.TagList{
+				Items: []globaltaggingv1.Tag{{Name: nil}},
+			},
+			expectedResult: false,
+			assertAttached: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockGlobalTaggingAPI{
+				response: tc.mockResponse,
+				err:      tc.mockError,
+			}
+
+			controller := &Controller{
+				globalTagging: mock,
+			}
+
+			result := controller.hasKarpenterTags(context.Background(), tc.instanceCRN, tc.instanceID, logger)
+			assert.Equal(t, tc.expectedResult, result)
+
+			if tc.assertAttached {
+				assert.NotNil(t, mock.lastAttachedTo)
+				assert.Equal(t, *tc.instanceCRN, *mock.lastAttachedTo)
+			} else {
+				assert.Nil(t, mock.lastAttachedTo)
 			}
 		})
 	}

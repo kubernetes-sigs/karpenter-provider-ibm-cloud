@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -63,16 +64,16 @@ func (c *TokenController) SetupWithManager(mgr manager.Manager) error {
 // Reconcile ensures bootstrap RBAC and manages token lifecycle
 func (c *TokenController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Reconciling bootstrap tokens", "request", req)
+	logger.Info("Reconciled bootstrap tokens", "request", req)
 
 	// Ensure bootstrap RBAC exists
-	if err := c.ensureBootstrapRBAC(ctx); err != nil {
+	if err := c.ensureBootstrapRBAC(ctx, logger); err != nil {
 		logger.Error(err, "Failed to ensure bootstrap RBAC")
 		return reconcile.Result{}, err
 	}
 
 	// Clean up expired tokens
-	if err := c.cleanupExpiredTokens(ctx); err != nil {
+	if err := c.cleanupExpiredTokens(ctx, logger); err != nil {
 		logger.Error(err, "Failed to cleanup expired tokens")
 		return reconcile.Result{}, err
 	}
@@ -82,8 +83,7 @@ func (c *TokenController) Reconcile(ctx context.Context, req reconcile.Request) 
 }
 
 // ensureBootstrapRBAC creates the necessary RBAC permissions for bootstrap tokens
-func (c *TokenController) ensureBootstrapRBAC(ctx context.Context) error {
-	logger := log.FromContext(ctx)
+func (c *TokenController) ensureBootstrapRBAC(ctx context.Context, logger logr.Logger) error {
 
 	// Create ClusterRoleBinding for node bootstrapping
 	_, err := c.client.RbacV1().ClusterRoleBindings().Create(ctx, &rbacv1.ClusterRoleBinding{
@@ -182,8 +182,7 @@ func (c *TokenController) ensureBootstrapRBAC(ctx context.Context) error {
 }
 
 // cleanupExpiredTokens removes expired bootstrap tokens
-func (c *TokenController) cleanupExpiredTokens(ctx context.Context) error {
-	logger := log.FromContext(ctx)
+func (c *TokenController) cleanupExpiredTokens(ctx context.Context, logger logr.Logger) error {
 
 	// List all bootstrap token secrets
 	secrets, err := c.client.CoreV1().Secrets("kube-system").List(ctx, metav1.ListOptions{

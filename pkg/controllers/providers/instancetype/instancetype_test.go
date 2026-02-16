@@ -17,6 +17,7 @@ limitations under the License.
 package instancetype
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -88,7 +89,7 @@ func TestNewController(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setupEnv()
 
-			controller, err := NewController()
+			controller, err := NewController(context.Background())
 
 			if tt.expectError {
 				assert.Error(t, err)

@@ -45,10 +45,10 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 		t.Fatalf("Failed to create IBM client: %v", err)
 	}
 
-	pricingProvider := pricing.NewIBMPricingProvider(client)
+	pricingProvider := pricing.NewIBMPricingProvider(ctx, client)
 	provider := NewProvider(client, pricingProvider)
 
-	t.Logf("✅ Instance type provider created successfully")
+	t.Logf("Instance type provider created successfully")
 
 	// Test List function
 	t.Run("list_instance_types", func(t *testing.T) {
@@ -58,7 +58,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 			return
 		}
 
-		t.Logf("✅ Successfully listed %d instance types", len(instanceTypes))
+		t.Logf("Successfully listed %d instance types", len(instanceTypes))
 
 		if len(instanceTypes) == 0 {
 			t.Error("Expected at least some instance types, got 0")
@@ -96,7 +96,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 			return
 		}
 
-		t.Logf("✅ Successfully retrieved instance type %s", knownInstanceType)
+		t.Logf("Successfully retrieved instance type %s", knownInstanceType)
 		t.Logf("Details: CPU=%s, Memory=%s",
 			instanceType.Capacity.Cpu().String(),
 			instanceType.Capacity.Memory().String())
@@ -130,6 +130,6 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 			return
 		}
 
-		t.Logf("✅ Correctly returned error for non-existent instance type: %v", err)
+		t.Logf("Correctly returned error for non-existent instance type: %v", err)
 	})
 }

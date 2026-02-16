@@ -43,12 +43,12 @@ func NewHealthCheckManager(vpcClient LoadBalancerVPCClient, logger logr.Logger) 
 // ConfigureHealthCheck configures health check settings for a load balancer pool
 func (hc *HealthCheckManager) ConfigureHealthCheck(ctx context.Context, target v1alpha1.LoadBalancerTarget, poolID string) error {
 	if target.HealthCheck == nil {
-		hc.logger.Info("No health check configuration specified, using pool defaults", "poolID", poolID)
+		hc.logger.Info("Used pool defaults as no health check configuration was specified", "poolID", poolID)
 		return nil
 	}
 
 	logger := hc.logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolID", poolID, "poolName", target.PoolName)
-	logger.Info("Configuring health check for pool")
+	logger.Info("Configured health check for pool")
 
 	// Get current pool configuration
 	pool, err := hc.vpcClient.GetLoadBalancerPool(ctx, target.LoadBalancerID, poolID)

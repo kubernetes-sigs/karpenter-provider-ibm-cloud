@@ -183,7 +183,7 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 		return "", fmt.Errorf("image selector cannot be nil")
 	}
 
-	r.logger.Info("Starting image resolution by selector",
+	r.logger.Info("Started image resolution by selector",
 		"os", selector.OS,
 		"majorVersion", selector.MajorVersion,
 		"minorVersion", selector.MinorVersion,
@@ -204,7 +204,7 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 			if i >= 3 {
 				break
 			}
-			r.logger.V(1).Info("Sample image", "index", i, "id", img.ID, "name", img.Name, "os", img.OperatingSystem, "status", img.Status)
+			r.logger.V(1).Info("Logging sample image", "index", i, "id", img.ID, "name", img.Name, "os", img.OperatingSystem, "status", img.Status)
 		}
 	}
 
@@ -213,7 +213,7 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 	r.logger.Info("Filtered candidate images", "candidateCount", len(candidates))
 
 	if len(candidates) > 0 && r.logger.V(1).Enabled() {
-		r.logger.V(1).Info("First candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
+		r.logger.V(1).Info("Logging first candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
 	}
 
 	if len(candidates) == 0 {

@@ -79,7 +79,7 @@ func TestTokenController_ensureBootstrapRBAC(t *testing.T) {
 			}
 
 			ctx := log.IntoContext(context.Background(), log.Log)
-			err := controller.ensureBootstrapRBAC(ctx)
+			err := controller.ensureBootstrapRBAC(ctx, log.Log)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -220,7 +220,7 @@ func TestTokenController_cleanupExpiredTokens(t *testing.T) {
 			}
 
 			ctx := log.IntoContext(context.Background(), log.Log)
-			err := controller.cleanupExpiredTokens(ctx)
+			err := controller.cleanupExpiredTokens(ctx, log.Log)
 			assert.NoError(t, err)
 
 			// Verify expected number of secrets remain

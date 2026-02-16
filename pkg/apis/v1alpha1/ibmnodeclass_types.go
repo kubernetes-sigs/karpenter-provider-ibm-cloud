@@ -695,6 +695,13 @@ type IBMNodeClassStatus struct {
 	// +optional
 	SelectedSubnets []string `json:"selectedSubnets,omitempty"`
 
+	// ResolvedSecurityGroups contains the security group IDs that will be used for nodes.
+	// When Spec.SecurityGroups is specified, this mirrors those values.
+	// When Spec.SecurityGroups is empty, this contains the VPC's default security group.
+	// This field is populated by the status controller and used for drift detection.
+	// +optional
+	ResolvedSecurityGroups []string `json:"resolvedSecurityGroups,omitempty"`
+
 	// ResolvedImageID contains the IBM Cloud VPC image ID that has been resolved from either
 	// the Image field or the ImageSelector criteria. This field is populated by the status
 	// controller during validation and is used by the instance provider during provisioning.

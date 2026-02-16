@@ -91,7 +91,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		if err := c.kubeClient.Patch(ctx, nodeClaim, patch); err != nil {
 			return reconcile.Result{}, fmt.Errorf("adding finalizer: %w", err)
 		}
-		logger.V(1).Info("added registration finalizer to nodeclaim")
+		logger.V(1).Info("Adding registration finalizer to NodeClaim")
 	}
 
 	// Skip if already fully initialized (registered and ready)
@@ -107,7 +107,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	if node == nil {
 		// Node not found yet, requeue to check again
-		logger.V(1).Info("node not found for nodeclaim, requeueing")
+		logger.V(1).Info("Node not found for NodeClaim, requeueing")
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -125,11 +125,11 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	// If registered but not initialized, requeue to check node readiness again
 	if c.isNodeClaimRegistered(nodeClaim) && !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue() {
-		logger.V(1).Info("nodeclaim registered but not initialized, requeueing to check node readiness")
+		logger.V(1).Info("NodeClaim registered but not initialized, requeueing to check node readiness")
 		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
-	logger.Info("successfully processed nodeclaim", "node", node.Name,
+	logger.Info("Successfully processed NodeClaim", "node", node.Name,
 		"registered", c.isNodeClaimRegistered(nodeClaim),
 		"initialized", nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue())
 	return reconcile.Result{}, nil
@@ -157,7 +157,7 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 
 	// Check again if finalizer is present in fresh copy
 	if !controllerutil.ContainsFinalizer(fresh, NodeClaimRegistrationFinalizer) {
-		logger.V(1).Info("registration finalizer already removed by another reconciliation")
+		logger.V(1).Info("Registration finalizer already removed by another reconciliation")
 		return reconcile.Result{}, nil
 	}
 
@@ -167,13 +167,13 @@ func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeC
 
 	if err := c.kubeClient.Patch(ctx, fresh, patch); err != nil {
 		if apierrors.IsConflict(err) {
-			logger.V(1).Info("conflict removing finalizer, will retry")
+			logger.V(1).Info("Conflict removing finalizer, retrying")
 			return reconcile.Result{Requeue: true}, nil
 		}
 		return reconcile.Result{}, fmt.Errorf("removing finalizer: %w", err)
 	}
 
-	logger.Info("successfully removed registration finalizer, cleanup complete")
+	logger.Info("Successfully removed registration finalizer, cleanup complete")
 	return reconcile.Result{}, nil
 }
 
@@ -197,10 +197,10 @@ func (c *Controller) findNodeForNodeClaim(ctx context.Context, nodeClaim *karpv1
 		logger.V(1).Info("looking for node by nodeclaim status node name", "nodeName", nodeClaim.Status.NodeName)
 		node := &corev1.Node{}
 		if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClaim.Status.NodeName}, node); err != nil {
-			logger.V(1).Info("node not found by status node name", "nodeName", nodeClaim.Status.NodeName, "error", err)
+			logger.V(1).Info("Node not found by status node name", "nodeName", nodeClaim.Status.NodeName, "error", err)
 			return nil, client.IgnoreNotFound(err)
 		}
-		logger.V(1).Info("found node by status node name", "nodeName", node.Name)
+		logger.V(1).Info("Found node by status node name", "nodeName", node.Name)
 		return node, nil
 	}
 
@@ -214,30 +214,30 @@ func (c *Controller) findNodeForNodeClaim(ctx context.Context, nodeClaim *karpv1
 
 		for _, node := range nodeList.Items {
 			if node.Spec.ProviderID == nodeClaim.Status.ProviderID {
-				logger.V(1).Info("found node by provider ID", "nodeName", node.Name, "providerID", node.Spec.ProviderID)
+				logger.V(1).Info("Found node by provider ID", "nodeName", node.Name, "providerID", node.Spec.ProviderID)
 				return &node, nil
 			}
 		}
-		logger.V(1).Info("no node found matching provider ID", "providerID", nodeClaim.Status.ProviderID)
+		logger.V(1).Info("No node found matching provider ID", "providerID", nodeClaim.Status.ProviderID)
 	}
 
 	// Fallback: try to find node by NodeClaim name (hostname-based matching)
 	// This handles cases where NodeClaim name is used as hostname
-	logger.V(1).Info("trying fallback: looking for node by nodeclaim name", "nodeClaimName", nodeClaim.Name)
+	logger.V(1).Info("Trying fallback: looking for node by NodeClaim name", "nodeClaimName", nodeClaim.Name)
 	node := &corev1.Node{}
 	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClaim.Name}, node); err == nil {
-		logger.Info("found node by nodeclaim name fallback", "nodeName", node.Name)
+		logger.Info("Found node by NodeClaim name fallback", "nodeName", node.Name)
 		return node, nil
 	}
 
-	logger.V(1).Info("no node found for nodeclaim", "nodeClaimName", nodeClaim.Name, "statusNodeName", nodeClaim.Status.NodeName, "providerID", nodeClaim.Status.ProviderID)
+	logger.V(1).Info("No node found for NodeClaim", "nodeClaimName", nodeClaim.Name, "statusNodeName", nodeClaim.Status.NodeName, "providerID", nodeClaim.Status.ProviderID)
 	return nil, nil
 }
 
 // syncNodeClaimToNode syncs labels and taints from NodeClaim to Node
 func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.NodeClaim, node *corev1.Node) error {
 	logger := log.FromContext(ctx).WithValues("nodeclaim", nodeClaim.Name, "node", node.Name)
-	logger.Info("syncing nodeclaim properties to node")
+	logger.Info("Synced NodeClaim properties to node")
 
 	patch := client.MergeFrom(node.DeepCopy())
 	modified := false
@@ -256,16 +256,16 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 
 	// Add NodePool label
 	if nodePoolName, exists := nodeClaim.Labels[NodePoolLabel]; exists {
-		logger.Info("syncing nodepool label", "nodePoolName", nodePoolName, "currentNodeLabel", node.Labels[NodePoolLabel])
+		logger.Info("Synced nodepool label", "nodePoolName", nodePoolName, "currentNodeLabel", node.Labels[NodePoolLabel])
 		if node.Labels[NodePoolLabel] != nodePoolName {
-			logger.Info("updating nodepool label on node", "from", node.Labels[NodePoolLabel], "to", nodePoolName)
+			logger.Info("Updated nodepool label on node", "from", node.Labels[NodePoolLabel], "to", nodePoolName)
 			node.Labels[NodePoolLabel] = nodePoolName
 			modified = true
 		} else {
-			logger.V(1).Info("nodepool label already correct on node", "nodePoolName", nodePoolName)
+			logger.V(1).Info("Nodepool label already correct on node", "nodePoolName", nodePoolName)
 		}
 	} else {
-		logger.Info("nodepool label missing from nodeclaim", "nodeClaimLabels", nodeClaim.Labels)
+		logger.Info("Nodepool label missing from NodeClaim", "nodeClaimLabels", nodeClaim.Labels)
 	}
 
 	// Add NodeClass label
@@ -290,9 +290,13 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 		modified = true
 	}
 
-	// Convert Requirements to labels using Karpenter core scheduling pattern
-	// This handles both single-value and multi-value Requirements (using first value for multi-value)
-	requirementLabels := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Labels()
+	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
+	requirementLabels := make(map[string]string)
+	for key, req := range reqs {
+		if req.Operator() == corev1.NodeSelectorOpIn && req.Len() == 1 {
+			requirementLabels[key] = req.Values()[0]
+		}
+	}
 	for k, v := range requirementLabels {
 		// Skip system labels that are managed elsewhere (Karpenter core already filters restricted labels)
 		if strings.HasPrefix(k, "karpenter.sh/") ||
@@ -307,7 +311,7 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 
 		// Apply requirement as node label
 		if node.Labels[k] != v {
-			logger.V(1).Info("syncing requirement as node label", "key", k, "value", v)
+			logger.V(1).Info("Syncing requirement as node label", "key", k, "value", v)
 			node.Labels[k] = v
 			modified = true
 		}
@@ -329,14 +333,14 @@ func (c *Controller) syncNodeClaimToNode(ctx context.Context, nodeClaim *karpv1.
 	}
 
 	if modified {
-		logger.Info("applying node label and taint updates", "modified", modified)
+		logger.Info("Applied node label and taint updates", "modified", modified)
 		if err := c.kubeClient.Patch(ctx, node, patch); err != nil {
 			logger.Error(err, "failed to patch node with updated labels/taints")
 			return fmt.Errorf("patching node: %w", err)
 		}
-		logger.Info("successfully updated node labels and taints")
+		logger.Info("Successfully updated node labels and taints")
 	} else {
-		logger.V(1).Info("no changes needed for node")
+		logger.V(1).Info("No changes needed for node")
 	}
 
 	return nil
@@ -409,7 +413,7 @@ func (c *Controller) updateNodeClaimStatus(ctx context.Context, nodeClaim *karpv
 
 	// If node is ready and NodeClaim is not yet marked as initialized
 	if nodeReady && !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue() {
-		logger.Info("node is ready, marking nodeclaim as initialized")
+		logger.Info("Node is ready, marked NodeClaim as initialized")
 		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeInitialized)
 
 		// Also ensure the node has the initialized label
@@ -428,7 +432,7 @@ func (c *Controller) setNodeInitializedLabel(ctx context.Context, node *corev1.N
 
 	// Check if label is already set
 	if node.Labels[InitializedLabel] == "true" {
-		logger.V(1).Info("initialized label already set on node")
+		logger.V(1).Info("Initialized label already set on node")
 		return nil
 	}
 
@@ -448,12 +452,12 @@ func (c *Controller) setNodeInitializedLabel(ctx context.Context, node *corev1.N
 	// Set the initialized label
 	freshNode.Labels[InitializedLabel] = "true"
 
-	logger.Info("setting initialized label on node")
+	logger.Info("Set initialized label on node")
 	if err := c.kubeClient.Patch(ctx, freshNode, patch); err != nil {
 		return fmt.Errorf("patching node with initialized label: %w", err)
 	}
 
-	logger.Info("successfully set initialized label on node")
+	logger.Info("Successfully set initialized label on node")
 	return nil
 }
 

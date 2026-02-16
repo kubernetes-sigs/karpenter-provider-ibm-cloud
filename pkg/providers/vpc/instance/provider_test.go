@@ -21,11 +21,15 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -578,36 +582,30 @@ func TestGetDefaultSecurityGroup(t *testing.T) {
 	defaultSGID := "default-sg-id"
 	defaultSGName := "default"
 
-	testSecurityGroups := &vpcv1.SecurityGroupCollection{
-		SecurityGroups: []vpcv1.SecurityGroup{
-			{
-				ID:   &defaultSGID,
-				Name: &defaultSGName,
-			},
-			{
-				ID:   ptrString("custom-sg-id"),
-				Name: ptrString("custom"),
-			},
+	testVPC := &vpcv1.VPC{
+		ID: &vpcID,
+		DefaultSecurityGroup: &vpcv1.SecurityGroupReference{
+			ID:   &defaultSGID,
+			Name: &defaultSGName,
 		},
 	}
 	testResponse := &core.DetailedResponse{StatusCode: 200}
 
 	mockVPC.EXPECT().
-		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-		Return(testSecurityGroups, testResponse, nil).
+		GetVPCWithContext(gomock.Any(), gomock.Any()).
+		Return(testVPC, testResponse, nil).
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 	assert.NoError(t, err)
 	assert.NotNil(t, sg)
 	assert.Equal(t, "default-sg-id", *sg.ID)
 	assert.Equal(t, "default", *sg.Name)
 }
 
-func TestGetDefaultSecurityGroup_NotFound(t *testing.T) {
+func TestGetDefaultSecurityGroup_VPCHasNoDefaultSG(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -616,28 +614,23 @@ func TestGetDefaultSecurityGroup_NotFound(t *testing.T) {
 
 	vpcID := "test-vpc-id"
 
-	testSecurityGroups := &vpcv1.SecurityGroupCollection{
-		SecurityGroups: []vpcv1.SecurityGroup{
-			{
-				ID:   ptrString("custom-sg-id"),
-				Name: ptrString("custom"),
-			},
-		},
+	testVPC := &vpcv1.VPC{
+		ID:                   &vpcID,
+		DefaultSecurityGroup: nil,
 	}
 	testResponse := &core.DetailedResponse{StatusCode: 200}
 
 	mockVPC.EXPECT().
-		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-		Return(testSecurityGroups, testResponse, nil).
+		GetVPCWithContext(gomock.Any(), gomock.Any()).
+		Return(testVPC, testResponse, nil).
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, vpcID)
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 	assert.Error(t, err)
 	assert.Nil(t, sg)
-	assert.Contains(t, err.Error(), "default security group not found")
+	assert.Contains(t, err.Error(), "has no default security group")
 }
 
 func TestSelectSubnetFromMultiZoneList(t *testing.T) {
@@ -1302,7 +1295,7 @@ func TestVPCClient_EmptyResults(t *testing.T) {
 	})
 }
 
-func TestGetDefaultSecurityGroup_Error(t *testing.T) {
+func TestGetDefaultSecurityGroup_GetVPCError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -1310,17 +1303,16 @@ func TestGetDefaultSecurityGroup_Error(t *testing.T) {
 	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
 	mockVPC.EXPECT().
-		ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+		GetVPCWithContext(gomock.Any(), gomock.Any()).
 		Return(nil, nil, fmt.Errorf("API error")).
 		Times(1)
 
 	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	provider := &VPCInstanceProvider{}
 
-	sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+	sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 	assert.Error(t, err)
 	assert.Nil(t, sg)
-	assert.Contains(t, err.Error(), "listing security groups")
+	assert.Contains(t, err.Error(), "getting VPC")
 }
 
 // Helper function to create string pointers
@@ -1653,71 +1645,70 @@ func ptrInt64(i int64) *int64 {
 }
 
 func TestGetDefaultSecurityGroup_VariousCases(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
 	ctx := context.Background()
-	provider := &VPCInstanceProvider{}
 
-	t.Run("multiple security groups - finds default", func(t *testing.T) {
+	t.Run("renamed default SG still found via VPC reference", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
 		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
-
-		sgDefault := "default-sg-id"
-		sgCustom1 := "custom-sg-1"
-		sgCustom2 := "custom-sg-2"
-
-		testSGs := &vpcv1.SecurityGroupCollection{
-			SecurityGroups: []vpcv1.SecurityGroup{
-				{ID: &sgCustom1, Name: ptrString("custom-sg-1")},
-				{ID: &sgDefault, Name: ptrString("default")},
-				{ID: &sgCustom2, Name: ptrString("another-custom")},
-			},
-		}
+		vpcID := "test-vpc"
+		sgID := "default-sg-id"
+		renamedName := "my-custom-sg-name"
 
 		mockVPC.EXPECT().
-			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-			Return(testSGs, &core.DetailedResponse{StatusCode: 200}, nil)
+			GetVPCWithContext(gomock.Any(), gomock.Any()).
+			Return(&vpcv1.VPC{
+				ID:                   &vpcID,
+				DefaultSecurityGroup: &vpcv1.SecurityGroupReference{ID: &sgID, Name: &renamedName},
+			}, &core.DetailedResponse{StatusCode: 200}, nil)
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, sg)
-		assert.Equal(t, "default-sg-id", *sg.ID)
+		assert.Equal(t, sgID, *sg.ID)
 	})
 
-	t.Run("empty security group list", func(t *testing.T) {
-		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+	t.Run("nil DefaultSecurityGroup ID", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
 
-		emptySGs := &vpcv1.SecurityGroupCollection{
-			SecurityGroups: []vpcv1.SecurityGroup{},
-		}
+		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+		vpcID := "test-vpc"
 
 		mockVPC.EXPECT().
-			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
-			Return(emptySGs, &core.DetailedResponse{StatusCode: 200}, nil)
+			GetVPCWithContext(gomock.Any(), gomock.Any()).
+			Return(&vpcv1.VPC{
+				ID:                   &vpcID,
+				DefaultSecurityGroup: &vpcv1.SecurityGroupReference{ID: nil},
+			}, &core.DetailedResponse{StatusCode: 200}, nil)
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, vpcID)
 
 		assert.Error(t, err)
 		assert.Nil(t, sg)
-		assert.Contains(t, err.Error(), "default security group not found")
+		assert.Contains(t, err.Error(), "has no default security group")
 	})
 
-	t.Run("API error during list", func(t *testing.T) {
+	t.Run("API error during GetVPC", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
 		mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
 
 		mockVPC.EXPECT().
-			ListSecurityGroupsWithContext(gomock.Any(), gomock.Any()).
+			GetVPCWithContext(gomock.Any(), gomock.Any()).
 			Return(nil, nil, fmt.Errorf("API rate limit exceeded"))
 
 		vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-		sg, err := provider.getDefaultSecurityGroup(ctx, vpcClient, "test-vpc")
+		sg, err := vpcClient.GetDefaultSecurityGroup(ctx, "test-vpc")
 
 		assert.Error(t, err)
 		assert.Nil(t, sg)
-		assert.Contains(t, err.Error(), "listing security groups")
+		assert.Contains(t, err.Error(), "getting VPC")
 	})
 }
 
@@ -2038,4 +2029,400 @@ func TestAddKarpenterTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProviderGet_CacheHit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance := getTestVPCInstance()
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	// API called only ONCE - second Get hits cache
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	providerID := "ibm:///us-south/test-instance-id"
+
+	// First Get - calls API, populates cache
+	node1, err := provider.Get(ctx, providerID)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-nodeclaim", node1.Name)
+
+	// Second Get - cache hit, no API call
+	node2, err := provider.Get(ctx, providerID)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-nodeclaim", node2.Name)
+}
+
+func TestProviderDelete_InvalidatesCache(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+	deleteResponse := &core.DetailedResponse{StatusCode: 204}
+
+	// Delete call
+	mockVPC.EXPECT().
+		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(deleteResponse, nil).
+		Times(1)
+
+	// Delete's internal verification call
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(nil, nil, fmt.Errorf("instance not found: 404")).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	// Pre-populate cache
+	instanceID := "test-instance-id"
+	cachedNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "cached-node"},
+	}
+	instanceCache.Set(instanceID, cachedNode)
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	// Verify cache has entry before delete
+	_, exists := instanceCache.Get(instanceID)
+	assert.True(t, exists, "cache should have entry before delete")
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Labels: map[string]string{
+				"topology.kubernetes.io/region":    "us-south",
+				"node.kubernetes.io/instance-type": "bx2-4x16",
+			},
+		},
+		Spec: corev1.NodeSpec{
+			ProviderID: "ibm:///us-south/" + instanceID,
+		},
+	}
+	_ = provider.Delete(ctx, node)
+
+	// Verify cache entry is gone
+	_, exists = instanceCache.Get(instanceID)
+	assert.False(t, exists, "cache should be empty after delete")
+}
+
+func TestProviderGet_DeletingInstanceNotCached(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	// Create instance with "deleting" status
+	instanceID := "test-instance-id"
+	instanceName := "test-nodeclaim"
+	deletingStatus := vpcv1.InstanceStatusDeletingConst
+	zoneName := "us-south-1"
+
+	deletingInstance := &vpcv1.Instance{
+		ID:     &instanceID,
+		Name:   &instanceName,
+		Status: &deletingStatus,
+		Zone: &vpcv1.ZoneReference{
+			Name: &zoneName,
+		},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(deletingInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	providerID := "ibm:///us-south/test-instance-id"
+
+	// Get returns the node (behavior preserved)
+	node, err := provider.Get(ctx, providerID)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-nodeclaim", node.Name)
+
+	// But cache should NOT have the entry (deleting instances not cached)
+	_, exists := instanceCache.Get(instanceID)
+	assert.False(t, exists, "deleting instance should not be cached")
+}
+
+func TestProviderGet_InvalidCacheEntry_NoPanic(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance := getTestVPCInstance()
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	// API should be called because invalid cache entry is deleted
+	mockVPC.EXPECT().
+		GetInstanceWithContext(gomock.Any(), gomock.Any()).
+		Return(testInstance, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	// Pre-populate cache with WRONG type (string instead of *corev1.Node)
+	instanceID := "test-instance-id"
+	instanceCache.Set(instanceID, "this is not a node")
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	providerID := "ibm:///us-south/test-instance-id"
+
+	// Should not panic, should fetch from API and return valid node
+	node, err := provider.Get(ctx, providerID)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-nodeclaim", node.Name)
+
+	// Cache should now have the correct entry
+	cached, exists := instanceCache.Get(instanceID)
+	assert.True(t, exists, "cache should have entry after fetch")
+	_, ok := cached.(*corev1.Node)
+	assert.True(t, ok, "cached entry should be *corev1.Node")
+}
+
+func TestProviderList_PopulatesCache(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	testInstance := getTestVPCInstance()
+	testCollection := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{*testInstance},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testCollection, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	// Cache empty before List
+	_, exists := instanceCache.Get("test-instance-id")
+	assert.False(t, exists, "cache should be empty before list")
+
+	// List - populates cache
+	nodes, err := provider.List(ctx)
+	assert.NoError(t, err)
+	assert.Len(t, nodes, 1)
+
+	// Cache now has the entry
+	cached, exists := instanceCache.Get("test-instance-id")
+	assert.True(t, exists, "cache should have entry after list")
+	assert.Equal(t, "test-nodeclaim", cached.(*corev1.Node).Name)
+}
+
+func TestProviderList_DeletingInstanceNotCached(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	runningID := "running-instance-id"
+	runningName := "running-instance"
+	runningStatus := vpcv1.InstanceStatusRunningConst
+	zoneName := "us-south-1"
+
+	deletingID := "deleting-instance-id"
+	deletingName := "deleting-instance"
+	deletingStatus := vpcv1.InstanceStatusDeletingConst
+
+	runningInstance := vpcv1.Instance{
+		ID:     &runningID,
+		Name:   &runningName,
+		Status: &runningStatus,
+		Zone: &vpcv1.ZoneReference{
+			Name: &zoneName,
+		},
+	}
+
+	deletingInstance := vpcv1.Instance{
+		ID:     &deletingID,
+		Name:   &deletingName,
+		Status: &deletingStatus,
+		Zone: &vpcv1.ZoneReference{
+			Name: &zoneName,
+		},
+	}
+
+	testCollection := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{runningInstance, deletingInstance},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testCollection, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	// List returns BOTH instances
+	nodes, err := provider.List(ctx)
+	assert.NoError(t, err)
+	assert.Len(t, nodes, 2, "both instances should be returned")
+
+	// Running instance should be cached
+	_, runningCached := instanceCache.Get(runningID)
+	assert.True(t, runningCached, "running instance should be cached")
+
+	// Deleting instance should NOT be cached
+	_, deletingCached := instanceCache.Get(deletingID)
+	assert.False(t, deletingCached, "deleting instance should not be cached")
+}
+
+func TestProviderList_CorrectRegionFromZone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+	// Create instance with zone "eu-de-2" - region should be "eu-de"
+	instanceID := "test-instance-id"
+	instanceName := "test-nodeclaim"
+	zoneName := "eu-de-2"
+
+	testInstance := &vpcv1.Instance{
+		ID:   &instanceID,
+		Name: &instanceName,
+		Zone: &vpcv1.ZoneReference{
+			Name: &zoneName,
+		},
+	}
+	testCollection := &vpcv1.InstanceCollection{
+		Instances: []vpcv1.Instance{*testInstance},
+	}
+	testResponse := &core.DetailedResponse{StatusCode: 200}
+
+	mockVPC.EXPECT().
+		ListInstancesWithContext(gomock.Any(), gomock.Any()).
+		Return(testCollection, testResponse, nil).
+		Times(1)
+
+	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+	manager := vpcclient.NewManagerWithMockClient(vpcClient)
+	instanceCache := cache.New(5 * time.Minute)
+	defer instanceCache.Stop()
+
+	provider, err := NewVPCInstanceProvider(
+		&ibm.Client{},
+		&mockKubeClient{},
+		WithVPCClientManager(manager),
+		WithInstanceCache(instanceCache),
+	)
+	assert.NoError(t, err)
+
+	nodes, err := provider.List(ctx)
+	assert.NoError(t, err)
+	assert.Len(t, nodes, 1)
+
+	// Verify ProviderID has correct region extracted from zone
+	// Zone "eu-de-2" should yield region "eu-de"
+	expectedProviderID := "ibm:///eu-de/test-instance-id"
+	assert.Equal(t, expectedProviderID, nodes[0].Spec.ProviderID,
+		"ProviderID should have region 'eu-de' extracted from zone 'eu-de-2', not hardcoded 'region'")
 }

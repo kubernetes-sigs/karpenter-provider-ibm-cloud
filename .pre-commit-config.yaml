@@ -4,35 +4,58 @@ repos:
     hooks:
       - id: end-of-file-fixer
         exclude: ^charts/crds/.*\.yaml$
+        stages: [pre-commit]
       - id: trailing-whitespace
         exclude: ^charts/crds/.*\.yaml$
+        stages: [pre-commit]
       - id: check-added-large-files
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: detect-private-key
+        stages: [pre-commit]
   - repo: local
     hooks:
       - id: go-fmt
         name: go fmt
-        entry: gofmt -l -w .
+        entry: gofmt -l -w
         language: system
         types: [go]
+        exclude: ^vendor/
+        stages: [pre-commit]
+      - id: verify-codegen
+        name: verify generated code
+        entry: bash -c 'make generate && git diff --exit-code pkg/apis/ charts/crds/ || (echo "Generated code is out of date. Run make generate and commit." && exit 1)'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: verify-vendor
+        name: verify vendor
+        entry: bash -c 'make vendor && git diff --exit-code vendor/ || (echo "Vendor directory is out of date. Run make vendor and commit." && exit 1)'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
       - id: go-test
         name: go test
         entry: go test ./...
         language: system
         pass_filenames: false
+        stages: [pre-push]
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.6.2
     hooks:
       - id: golangci-lint
         entry: golangci-lint run
         args: [--timeout=5m]
+        stages: [pre-commit]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
       - id: markdownlint
         args: [--disable, MD013, MD002]
+        stages: [pre-commit]
   - repo: https://github.com/jumanjihouse/pre-commit-hooks
     rev: 3.0.0
     hooks:
       - id: shellcheck
+        stages: [pre-commit]

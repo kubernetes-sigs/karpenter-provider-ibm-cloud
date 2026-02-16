@@ -27,7 +27,7 @@ jobs:
       group: e2e-tests
       cancel-in-progress: false
 
-    timeout-minutes: 210
+    timeout-minutes: 150
 
     container:
       # Run in a container with necessary tools
@@ -36,9 +36,11 @@ jobs:
 
     steps:
     - name: Checkout
+      id: checkout
       uses: actions/checkout@v4
 
     - name: Install dependencies
+      id: install-dependencies
       run: |
         apt-get update && apt-get install -y curl jq
 
@@ -52,6 +54,7 @@ jobs:
         ibmcloud plugin install vpc-infrastructure
 
     - name: Setup kubeconfig
+      id: setup-kubeconfig
       env:
         KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
       run: |
@@ -64,6 +67,7 @@ jobs:
         kubectl version --client
 
     - name: Verify cluster access
+      id: verify-cluster-access
       env:
         KUBECONFIG: /tmp/kubeconfig
       run: |
@@ -74,12 +78,14 @@ jobs:
         kubectl auth can-i create ibmnodeclasses --all-namespaces
 
     - name: Configure IBM Cloud CLI
+      id: configure-ibmcloud-cli
       env:
         IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
       run: |
         ibmcloud login --apikey "${{ secrets.IBMCLOUD_API_KEY }}" -r "${{ secrets.IBMCLOUD_REGION }}"
 
     - name: Deploy latest version
+      id: deploy-latest-version
       env:
         KUBECONFIG: /tmp/kubeconfig
       run: |
@@ -90,49 +96,60 @@ jobs:
         kubectl rollout restart deployment/karpenter-karpenter-ibm -n karpenter
 
     - name: Pre-test cleanup
+      id: pre-test-cleanup
       env:
         KUBECONFIG: /tmp/kubeconfig
       run: |
-        echo "🧹 Cleaning up any existing e2e test resources..."
+        echo "Cleaning up any existing e2e test resources..."
 
-        # Clean up any leftover resources from previous runs
-        kubectl delete pods -l test=e2e --all-namespaces --timeout=300s || true
-        kubectl delete deployments -l test=e2e --all-namespaces --timeout=300s || true
-        kubectl delete nodeclaims -l test=e2e --timeout=300s || true
-        kubectl delete nodepools -l test=e2e --timeout=300s || true
-        kubectl delete ibmnodeclasses -l test=e2e --timeout=300s || true
+        # Clean up any leftover resources from previous runs using multiple label patterns
+        # Primary label
+        kubectl delete pods -l test=e2e --all-namespaces --timeout=60s || true
+        kubectl delete deployments -l test=e2e --all-namespaces --timeout=60s || true
+        kubectl delete pdb -l test=e2e --all-namespaces --timeout=60s || true
+        kubectl delete nodeclaims -l test=e2e --timeout=60s || true
+        kubectl delete nodepools -l test=e2e --timeout=60s || true
+        kubectl delete ibmnodeclasses -l test=e2e --timeout=60s || true
+
+        # Additional label patterns used by test code
+        for label in "created-by=karpenter-e2e" "purpose=e2e-verification" "purpose=karpenter-test"; do
+          kubectl delete pods -l "$label" --all-namespaces --timeout=30s 2>/dev/null || true
+          kubectl delete deployments -l "$label" --all-namespaces --timeout=30s 2>/dev/null || true
+          kubectl delete nodeclaims -l "$label" --timeout=30s 2>/dev/null || true
+          kubectl delete nodepools -l "$label" --timeout=30s 2>/dev/null || true
+          kubectl delete ibmnodeclasses -l "$label" --timeout=30s 2>/dev/null || true
+        done
 
         # Wait for cluster stabilization
-        echo "⏳ Waiting for cluster stabilization..."
+        echo "Waiting for cluster stabilization..."
 
         # Wait for no pending e2e pods
-        for i in {1..30}; do
+        for i in {1..10}; do
           pending_pods=$(kubectl get pods -l test=e2e --all-namespaces --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l)
           if [ "$pending_pods" -eq 0 ]; then
-            echo "✅ No pending e2e pods found"
+            echo "No pending e2e pods found"
             break
           fi
-          echo "⏳ Still have $pending_pods pending e2e pods, waiting..."
-          sleep 10
+          echo "Still have $pending_pods pending e2e pods, waiting..."
+          sleep 5
         done
 
         # Wait for no disrupted nodes
-        for i in {1..30}; do
-          disrupted_nodes=$(kubectl get nodes --no-headers -o custom-columns="NAME:.metadata.name,TAINTS:.spec.taints[*].key" | grep -c "karpenter.sh/disrupted" 2>/dev/null || echo "0")
-          disrupted_nodes=$(echo "$disrupted_nodes" | tr -d '\n' | grep -o '[0-9]*' || echo "0")
-          if [ "$disrupted_nodes" -eq 0 ]; then
-            echo "✅ No disrupted nodes found"
+        for i in {1..10}; do
+          disrupted_nodes=$(kubectl get nodes --no-headers -o custom-columns="TAINTS:.spec.taints[*].key" 2>/dev/null | grep -c "karpenter.sh/disrupted" || true)
+          disrupted_nodes=${disrupted_nodes:-0}
+          if [ "$disrupted_nodes" = "" ] || [ "$disrupted_nodes" -eq 0 ] 2>/dev/null; then
+            echo "No disrupted nodes found"
             break
           fi
-          echo "⏳ Still have $disrupted_nodes disrupted nodes, waiting..."
-          sleep 10
+          echo "Still have $disrupted_nodes disrupted nodes, waiting..."
+          sleep 5
         done
 
-        # Brief pause for final cleanup
-        sleep 30
-        echo "✅ Pre-test cleanup completed"
+        echo "Pre-test cleanup completed"
 
     - name: Run E2E tests (Sequential)
+      id: run-e2e-tests
       env:
         RUN_E2E_TESTS: "true"
         IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
@@ -155,7 +172,7 @@ jobs:
         E2E_CLEANUP_TIMEOUT: "300s"
         E2E_STABILIZATION_WAIT: "60s"
       run: |
-        echo "🚀 Starting E2E test suite..."
+        echo "Starting E2E test suite..."
 
         # Define test groups
         # Core functionality tests from basic_workflow_test.go
@@ -190,7 +207,7 @@ jobs:
         failed_tests=0
         total_tests=$(echo $all_tests | wc -w)
 
-        echo "📋 Test Suite Summary:"
+        echo "Test Suite Summary:"
         echo "  Core Tests: $(echo $core_tests | wc -w)"
         echo "  Validation Tests: $(echo $validation_tests | wc -w)"
         echo "  Block Device Tests: $(echo $block_device_tests | wc -w)"
@@ -204,28 +221,28 @@ jobs:
 
         # Run each test individually with cleanup between
         for test in $all_tests; do
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🧪 Running test: $test"
+          echo ""
+          echo "Running test: $test"
           echo "Progress: $((passed_tests + failed_tests + 1))/$total_tests"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
 
           # Set appropriate timeout based on test type
-          timeout="20m"
+          timeout="12m"
           case "$test" in
             "TestE2EDriftStability")
-              timeout="30m"  # Drift test needs more time for monitoring
+              timeout="15m"  # Drift test needs time for monitoring
               ;;
             "TestE2EMultiZone"*|"TestE2EZone"*|"TestE2ETopology"*|"TestE2EPlacementStrategy"*)
-              timeout="25m"  # Multi-zone tests need extra time for cross-zone provisioning
+              timeout="15m"  # Multi-zone tests need extra time for cross-zone provisioning
               ;;
             "TestE2ECleanup"*)
-              timeout="15m"  # Cleanup tests are typically faster
+              timeout="8m"   # Cleanup tests are typically faster
               ;;
             "TestE2EValidation"*|"TestE2ENodeClass"*)
-              timeout="10m"  # Validation tests are quick
+              timeout="5m"   # Validation tests are quick
               ;;
             *)
-              timeout="20m"  # Default timeout for other tests
+              timeout="12m"  # Default timeout for other tests
               ;;
           esac
 
@@ -240,14 +257,14 @@ jobs:
           set -e  # Re-enable exit on failure
 
           if [ $test_exit_code -eq 0 ]; then
-            echo "✅ Test $test passed"
+            echo "Test $test passed"
             passed_tests=$((passed_tests + 1))
           else
-            echo "❌ Test $test failed (exit code: $test_exit_code)"
+            echo "Test $test failed (exit code: $test_exit_code)"
             failed_tests=$((failed_tests + 1))
 
             # Enhanced debug information on failure
-            echo "📊 Debug information for failed test $test:"
+            echo "Debug information for failed test $test:"
             echo "  Exit code: $test_exit_code"
             echo "  Log file: $test_log"
 
@@ -266,7 +283,7 @@ jobs:
 
             # Check for panic or crash indicators in test log
             if grep -i "panic\|fatal\|segmentation\|killed" "$test_log" >/dev/null 2>&1; then
-              echo "  ⚠️  Test appears to have crashed (panic/fatal error detected)"
+              echo "  Warning: Test appears to have crashed (panic/fatal error detected)"
             fi
 
             # Collect Karpenter logs immediately after failure
@@ -276,63 +293,65 @@ jobs:
           fi
 
           # Inter-test cleanup and stabilization
-          echo "🧹 Cleaning up after test: $test"
+          echo "Cleaning up after test: $test"
 
-          # Delete test-specific resources
-          kubectl delete pods -l test=e2e --all-namespaces --timeout=300s || true
-          kubectl delete deployments -l test=e2e --all-namespaces --timeout=300s || true
-          kubectl delete nodeclaims -l test=e2e --timeout=300s || true
-          kubectl delete nodepools -l test=e2e --timeout=300s || true
-          kubectl delete ibmnodeclasses -l test=e2e --timeout=300s || true
+          # Delete test-specific resources (shorter timeouts for faster iteration)
+          kubectl delete pods -l test=e2e --all-namespaces --timeout=60s || true
+          kubectl delete deployments -l test=e2e --all-namespaces --timeout=60s || true
+          kubectl delete pdb -l test=e2e --all-namespaces --timeout=30s || true
+          kubectl delete nodeclaims -l test=e2e --timeout=120s || true
+          kubectl delete nodepools -l test=e2e --timeout=60s || true
+          kubectl delete ibmnodeclasses -l test=e2e --timeout=60s || true
 
           # Wait for cleanup to complete
-          echo "⏳ Waiting for cleanup to complete..."
+          echo "Waiting for cleanup to complete..."
 
-          # Extended cleanup wait for drift stability test due to NodeClaim deletion timeouts
+          # Brief cleanup wait between tests
           if [ "$test" = "TestE2EDriftStability" ]; then
-            echo "⏳ Extended cleanup wait for drift stability test..."
-            sleep 120  # 2 minutes for NodeClaim finalizers to complete
+            echo "Extended cleanup wait for drift stability test..."
+            sleep 45   # Wait for NodeClaim finalizers to complete
           else
-            sleep 30   # Standard cleanup wait
+            sleep 10   # Standard cleanup wait
           fi
 
           # Check cluster health before next test
           kubectl get nodes --no-headers | grep -c Ready | xargs echo "Ready nodes:"
           kubectl get nodeclaims --no-headers | grep -c True | xargs echo "Ready nodeclaims:" || echo "Ready nodeclaims: 0"
 
-          echo "✅ Completed test: $test"
+          echo "Completed test: $test"
           echo ""
         done
 
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📊 Test Suite Results:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Test Suite Results:"
+        echo ""
         echo "  Total Tests: $total_tests"
-        echo "  ✅ Passed: $passed_tests"
-        echo "  ❌ Failed: $failed_tests"
+        echo "  Passed: $passed_tests"
+        echo "  Failed: $failed_tests"
         echo "  Success Rate: $((passed_tests * 100 / total_tests))%"
         echo ""
 
         # Check if any test failed
         if [ "$test_failed" = "true" ]; then
-          echo "❌ Test suite failed with $failed_tests failures"
+          echo "Test suite failed with $failed_tests failures"
           exit 1
         fi
 
-        echo "✅ All E2E tests completed successfully!"
+        echo "All E2E tests completed successfully!"
 
         # Run benchmarks if requested
         if [ "$RUN_E2E_BENCHMARKS" = "true" ]; then
-          echo "📊 Running performance benchmarks..."
+          echo "Running performance benchmarks..."
           go test -tags=e2e -v -timeout 30m ./test/e2e/... -run=^$ -bench=.
         fi
 
     - name: Collect test artifacts
+      id: collect-test-artifacts
       if: always()
       env:
         KUBECONFIG: /tmp/kubeconfig
       run: |
-        echo "📦 Collecting comprehensive test artifacts..."
+        echo "Collecting comprehensive test artifacts..."
         mkdir -p test-artifacts
 
         # Collect Karpenter logs with different tail sizes for completeness
@@ -374,9 +393,10 @@ jobs:
           ls -la test-artifacts/ 2>/dev/null || echo "No artifacts directory"
         } > test-artifacts/README.txt
 
-        echo "✅ Test artifact collection completed"
+        echo "Test artifact collection completed"
 
     - name: Upload test artifacts
+      id: upload-test-artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -385,12 +405,13 @@ jobs:
         retention-days: 7
 
     - name: Cleanup test resources
+      id: cleanup-test-resources
       if: always()
       env:
         IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
         KUBECONFIG: /tmp/kubeconfig
       run: |
-        echo "🧹 Starting comprehensive cleanup..."
+        echo "Starting comprehensive cleanup..."
 
         # Clean up Kubernetes resources with extended timeouts
         echo "Cleaning up Kubernetes resources..."
@@ -424,4 +445,4 @@ jobs:
           jq -r '.[] | select(.name | test("e2e-.*-boot")) | .id' | \
           xargs -I {} ibmcloud is volume-delete {} --force || true
 
-        echo "✅ Cleanup completed"
+        echo "Cleanup completed"

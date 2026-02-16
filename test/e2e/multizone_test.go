@@ -44,6 +44,12 @@ func TestE2EMultiZoneDistribution(t *testing.T) {
 	testName := fmt.Sprintf("multizone-distribution-%d", time.Now().Unix())
 	t.Logf("Starting multi-zone distribution test: %s", testName)
 
+	// Ensure cleanup happens even if test fails
+	defer func() {
+		t.Logf("Running deferred cleanup for test: %s", testName)
+		suite.cleanupTestResources(t, testName)
+	}()
+
 	// Skip test if multi-zone infrastructure not available
 	if os.Getenv("E2E_SKIP_MULTIZONE") == "true" {
 		t.Skip("Skipping multi-zone test: E2E_SKIP_MULTIZONE is set")
@@ -68,10 +74,9 @@ func TestE2EMultiZoneDistribution(t *testing.T) {
 	// Verify all pods are running
 	suite.verifyPodsScheduledOnCorrectNodes(t, deployment.Name, "default", nodePool.Name)
 
-	// Cleanup
+	// Cleanup workload explicitly (resources cleaned by defer)
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Multi-zone distribution test completed: %s", testName)
+	t.Logf("Multi-zone distribution test completed: %s", testName)
 }
 
 // TestE2EZoneAntiAffinity tests that pod anti-affinity works correctly with zone constraints
@@ -80,6 +85,12 @@ func TestE2EZoneAntiAffinity(t *testing.T) {
 	ctx := context.Background()
 	testName := fmt.Sprintf("zone-anti-affinity-%d", time.Now().Unix())
 	t.Logf("Starting zone anti-affinity test: %s", testName)
+
+	// Ensure cleanup happens even if test fails
+	defer func() {
+		t.Logf("Running deferred cleanup for test: %s", testName)
+		suite.cleanupTestResources(t, testName)
+	}()
 
 	// Create infrastructure
 	nodeClass := suite.createMultiZoneNodeClass(t, testName)
@@ -161,17 +172,16 @@ func TestE2EZoneAntiAffinity(t *testing.T) {
 	// Verify that pods are distributed across zones
 	podZones := suite.getPodZoneDistribution(t, fmt.Sprintf("%s-app", testName), "default")
 	require.Greater(t, len(podZones), 1, "Pods should be distributed across multiple zones")
-	t.Logf("✅ Verified pods are distributed across %d zones", len(podZones))
+	t.Logf("Verified pods are distributed across %d zones", len(podZones))
 
 	// List zones for debugging
 	for zone, count := range podZones {
 		t.Logf("Zone %s: %d pods", zone, count)
 	}
 
-	// Cleanup
+	// Cleanup workload explicitly (resources cleaned by defer)
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Zone anti-affinity test completed: %s", testName)
+	t.Logf("Zone anti-affinity test completed: %s", testName)
 }
 
 // TestE2ETopologySpreadConstraints tests topology spread constraints across zones
@@ -277,13 +287,13 @@ func TestE2ETopologySpreadConstraints(t *testing.T) {
 		}
 		skew := max - min
 		require.LessOrEqual(t, skew, 1, "Pod distribution should respect maxSkew constraint of 1")
-		t.Logf("✅ Verified topology spread with skew of %d (max: %d, min: %d)", skew, max, min)
+		t.Logf("Verified topology spread with skew of %d (max: %d, min: %d)", skew, max, min)
 	}
 
 	// Cleanup
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Topology spread constraints test completed: %s", testName)
+	t.Logf("Topology spread constraints test completed: %s", testName)
 }
 
 // TestE2EPlacementStrategyValidation tests PlacementStrategy validation and behavior
@@ -300,7 +310,7 @@ func TestE2EPlacementStrategyValidation(t *testing.T) {
 
 		// Wait for NodeClass to be ready (should not fail validation)
 		suite.waitForNodeClassReady(t, nodeClass.Name)
-		t.Logf("✅ NodeClass with placement strategy validated successfully")
+		t.Logf("NodeClass with placement strategy validated successfully")
 	})
 
 	// Test 2: NodeClass without zone/subnet AND without placement strategy should fail
@@ -337,7 +347,7 @@ func TestE2EPlacementStrategyValidation(t *testing.T) {
 		err := suite.kubeClient.Create(ctx, invalidNodeClass)
 		if err != nil {
 			// Expected: validation should fail at creation
-			t.Logf("✅ NodeClass creation failed as expected due to missing placement strategy: %v", err)
+			t.Logf("NodeClass creation failed as expected due to missing placement strategy: %v", err)
 		} else {
 			// If creation succeeds, wait and check if controller marks it as invalid
 			t.Logf("NodeClass created, checking if validation fails...")
@@ -346,20 +356,20 @@ func TestE2EPlacementStrategyValidation(t *testing.T) {
 			var updatedNodeClass v1alpha1.IBMNodeClass
 			err = suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(invalidNodeClass), &updatedNodeClass)
 			if err != nil {
-				t.Logf("✅ NodeClass was deleted or became inaccessible (expected)")
+				t.Logf("NodeClass was deleted or became inaccessible (expected)")
 			} else {
 				// Check status conditions for validation failure
 				hasValidationError := false
 				for _, condition := range updatedNodeClass.Status.Conditions {
 					if condition.Type == "Ready" && condition.Status == "False" {
 						hasValidationError = true
-						t.Logf("✅ NodeClass marked as not ready due to validation: %s", condition.Message)
+						t.Logf("NodeClass marked as not ready due to validation: %s", condition.Message)
 						break
 					}
 				}
 
 				if !hasValidationError {
-					t.Logf("⚠️  NodeClass validation should have failed but didn't - this may indicate missing validation logic")
+					t.Logf("Warning: NodeClass validation should have failed but didn't - this may indicate missing validation logic")
 				}
 			}
 
@@ -368,7 +378,7 @@ func TestE2EPlacementStrategyValidation(t *testing.T) {
 		}
 	})
 
-	t.Logf("✅ Placement strategy validation test completed: %s", testName)
+	t.Logf("Placement strategy validation test completed: %s", testName)
 }
 
 // TestE2EZoneFailover tests zone failover behavior when one zone becomes unavailable
@@ -417,7 +427,7 @@ func TestE2EZoneFailover(t *testing.T) {
 	// Cleanup
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
 	suite.cleanupTestResources(t, testName)
-	t.Logf("✅ Zone failover test completed: %s", testName)
+	t.Logf("Zone failover test completed: %s", testName)
 }
 
 // Helper function to create a multi-zone NodeClass with placement strategy
@@ -455,7 +465,7 @@ func (s *E2ETestSuite) createMultiZoneNodeClass(t *testing.T, testName string) *
 
 	err := s.kubeClient.Create(context.Background(), nodeClass)
 	require.NoError(t, err, "Failed to create multi-zone NodeClass")
-	t.Logf("✅ Created multi-zone NodeClass: %s", nodeClass.Name)
+	t.Logf("Created multi-zone NodeClass: %s", nodeClass.Name)
 
 	return nodeClass
 }
@@ -509,7 +519,7 @@ func (s *E2ETestSuite) createMultiZoneNodePool(t *testing.T, testName, nodeClass
 
 	err := s.kubeClient.Create(context.Background(), nodePool)
 	require.NoError(t, err, "Failed to create multi-zone NodePool")
-	t.Logf("✅ Created multi-zone NodePool: %s", nodePool.Name)
+	t.Logf("Created multi-zone NodePool: %s", nodePool.Name)
 
 	return nodePool
 }
@@ -564,7 +574,7 @@ func (s *E2ETestSuite) createMultiReplicaDeployment(t *testing.T, testName, node
 
 	err := s.kubeClient.Create(context.Background(), deployment)
 	require.NoError(t, err, "Failed to create multi-replica deployment")
-	t.Logf("✅ Created deployment with %d replicas: %s", replicas, deployment.Name)
+	t.Logf("Created deployment with %d replicas: %s", replicas, deployment.Name)
 
 	return deployment
 }
@@ -637,7 +647,7 @@ func (s *E2ETestSuite) createZoneSpreadDeployment(t *testing.T, testName, nodePo
 
 	err := s.kubeClient.Create(context.Background(), deployment)
 	require.NoError(t, err)
-	t.Logf("✅ Created zone spread deployment: %s", deployment.Name)
+	t.Logf("Created zone spread deployment: %s", deployment.Name)
 
 	return deployment
 }
@@ -670,7 +680,7 @@ func (s *E2ETestSuite) verifyMultiZoneDistribution(t *testing.T, testName string
 	require.GreaterOrEqual(t, len(zoneDistribution), minZones,
 		fmt.Sprintf("Should have nodes in at least %d zones", minZones))
 
-	t.Logf("✅ Multi-zone distribution verified:")
+	t.Logf("Multi-zone distribution verified:")
 	for zone, count := range zoneDistribution {
 		t.Logf("  Zone %s: %d nodes", zone, count)
 		// Verify zone is in expected region
@@ -678,7 +688,7 @@ func (s *E2ETestSuite) verifyMultiZoneDistribution(t *testing.T, testName string
 			fmt.Sprintf("Zone %s should be in region %s", zone, s.testRegion))
 	}
 
-	t.Logf("✅ Verified %d Karpenter nodes distributed across %d zones",
+	t.Logf("Verified %d Karpenter nodes distributed across %d zones",
 		karpenterNodes, len(zoneDistribution))
 }
 

@@ -14,6 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
+        id: checkout
         uses: actions/checkout@v4
         with:
           # Fetch full history to access all commits in the PR
@@ -21,11 +22,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
+        id: setup-python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
       - name: Install gitlint
+        id: install-gitlint
         run: |
           pip install gitlint==0.19.1
 
@@ -40,11 +43,13 @@ jobs:
           echo "Commit range: ${BASE_SHA}..${HEAD_SHA}"
 
       - name: List commits to be validated
+        id: list-commits
         run: |
           echo "📝 Commits in this PR:"
           git log --oneline ${{ steps.get-range.outputs.base-sha }}..${{ steps.get-range.outputs.head-sha }}
 
       - name: Validate commit messages
+        id: validate-commit-messages
         run: |
           echo "🔍 Validating commit messages with gitlint..."
 
@@ -54,6 +59,7 @@ jobs:
           echo "✅ All commit messages are valid!"
 
       - name: Provide feedback on failure
+        id: provide-feedback
         if: failure()
         run: |
           echo ""

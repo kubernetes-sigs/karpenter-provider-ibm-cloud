@@ -110,7 +110,7 @@ func (p *IKSWorkerPoolProvider) Create(ctx context.Context, nodeClaim *v1.NodeCl
 		requestedInstanceType = nodeClaim.Labels["node.kubernetes.io/instance-type"]
 	}
 
-	logger.Info("Creating IKS worker", "cluster_id", clusterID, "requested_instance_type", requestedInstanceType)
+	logger.Info("Initiated IKS worker creation", "cluster_id", clusterID, "requested_instance_type", requestedInstanceType)
 
 	// Find or select appropriate worker pool
 	poolID, selectedInstanceType, err := p.findOrSelectWorkerPool(ctx, iksClient, clusterID, nodeClass, requestedInstanceType)
@@ -118,7 +118,7 @@ func (p *IKSWorkerPoolProvider) Create(ctx context.Context, nodeClaim *v1.NodeCl
 		return nil, fmt.Errorf("finding worker pool: %w", err)
 	}
 
-	logger.Info("Incrementing worker pool", "pool_id", poolID, "instance_type", selectedInstanceType)
+	logger.Info("Incremented worker pool", "pool_id", poolID, "instance_type", selectedInstanceType)
 
 	// Atomically increment the worker pool size
 	// This prevents race conditions where concurrent requests could read the same
@@ -194,7 +194,7 @@ func (p *IKSWorkerPoolProvider) Delete(ctx context.Context, node *corev1.Node) e
 		return fmt.Errorf("getting IKS client: %w", err)
 	}
 
-	logger.Info("Decrementing worker pool", "pool_id", poolID)
+	logger.Info("Decremented worker pool", "pool_id", poolID)
 
 	// Atomically decrement the worker pool size
 	newSize, err := iksClient.DecrementWorkerPool(ctx, clusterID, poolID)
@@ -329,7 +329,7 @@ func (p *IKSWorkerPoolProvider) CreatePool(ctx context.Context, clusterID string
 		VpcID:          request.VpcID,
 	}
 
-	logger.Info("Creating dynamic worker pool",
+	logger.Info("Initiated dynamic worker pool creation",
 		"name", request.Name,
 		"flavor", request.Flavor,
 		"zone", request.Zone,
@@ -367,7 +367,7 @@ func (p *IKSWorkerPoolProvider) DeletePool(ctx context.Context, clusterID, poolI
 		return fmt.Errorf("getting IKS client: %w", err)
 	}
 
-	logger.Info("Deleting worker pool", "cluster_id", clusterID, "pool_id", poolID)
+	logger.Info("Initiated worker pool deletion", "cluster_id", clusterID, "pool_id", poolID)
 
 	if err := iksClient.DeleteWorkerPool(ctx, clusterID, poolID); err != nil {
 		return fmt.Errorf("deleting worker pool: %w", err)
@@ -471,7 +471,7 @@ func (p *IKSWorkerPoolProvider) findOrSelectWorkerPool(ctx context.Context, iksC
 
 	// If a specific worker pool is configured, use it and return its instance type
 	if nodeClass.Spec.IKSWorkerPoolID != "" {
-		logger.Info("Using configured worker pool", "pool_id", nodeClass.Spec.IKSWorkerPoolID)
+		logger.Info("Used configured worker pool", "pool_id", nodeClass.Spec.IKSWorkerPoolID)
 		// Get the pool details to determine its instance type
 		pool, err := iksClient.GetWorkerPool(ctx, clusterID, nodeClass.Spec.IKSWorkerPoolID)
 		if err != nil {
@@ -512,10 +512,10 @@ func (p *IKSWorkerPoolProvider) findOrSelectWorkerPool(ctx context.Context, iksC
 	for _, pool := range workerPools {
 		if pool.Zone == nodeClass.Spec.Zone {
 			if requestedInstanceType != "" && pool.Flavor != requestedInstanceType {
-				logger.Info("Using worker pool in same zone with different instance type",
+				logger.Info("Used worker pool in same zone with different instance type",
 					"pool_name", pool.Name, "pool_id", pool.ID, "pool_flavor", pool.Flavor, "zone", pool.Zone, "requested_flavor", requestedInstanceType)
 			} else {
-				logger.Info("Using worker pool in same zone", "pool_name", pool.Name, "pool_id", pool.ID, "flavor", pool.Flavor, "zone", pool.Zone)
+				logger.Info("Used worker pool in same zone", "pool_name", pool.Name, "pool_id", pool.ID, "flavor", pool.Flavor, "zone", pool.Zone)
 			}
 			return pool.Name, pool.Flavor, nil
 		}
@@ -525,7 +525,7 @@ func (p *IKSWorkerPoolProvider) findOrSelectWorkerPool(ctx context.Context, iksC
 	if requestedInstanceType != "" {
 		for _, pool := range workerPools {
 			if pool.Flavor == requestedInstanceType {
-				logger.Info("Using worker pool with matching instance type in different zone",
+				logger.Info("Used worker pool with matching instance type in different zone",
 					"pool_name", pool.Name, "pool_id", pool.ID, "flavor", pool.Flavor, "pool_zone", pool.Zone, "requested_zone", nodeClass.Spec.Zone)
 				return pool.Name, pool.Flavor, nil
 			}
@@ -535,7 +535,7 @@ func (p *IKSWorkerPoolProvider) findOrSelectWorkerPool(ctx context.Context, iksC
 	// Strategy 5: Use first available pool as last resort (if any exist)
 	if len(workerPools) > 0 {
 		selectedPool := workerPools[0]
-		logger.Info("Using first available worker pool as fallback",
+		logger.Info("Used first available worker pool as fallback",
 			"pool_name", selectedPool.Name, "pool_id", selectedPool.ID, "flavor", selectedPool.Flavor, "zone", selectedPool.Zone,
 			"requested_flavor", requestedInstanceType, "requested_zone", nodeClass.Spec.Zone)
 		return selectedPool.Name, selectedPool.Flavor, nil
@@ -603,7 +603,7 @@ func (p *IKSWorkerPoolProvider) createDynamicPool(ctx context.Context, iksClient
 		VpcID:          nodeClass.Spec.VPC,
 	}
 
-	logger.Info("Creating dynamic worker pool",
+	logger.Info("Initiated dynamic worker pool creation",
 		"name", poolName,
 		"flavor", instanceType,
 		"zone", nodeClass.Spec.Zone,

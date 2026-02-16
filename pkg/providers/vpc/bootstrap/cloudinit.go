@@ -50,7 +50,7 @@ report_status() {
     local phase="$2"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    echo "$(date): 📊 Reporting status: $status, phase: $phase"
+    echo "$(date): Reporting status: $status, phase: $phase"
 
     # Use instance ID passed from template
     if [[ -n "$INSTANCE_ID" && "$INSTANCE_ID" != "unknown" ]]; then
@@ -71,7 +71,7 @@ report_status() {
 }
 EOF
     else
-        echo "$(date): ⚠️ Instance ID not available for status reporting"
+        echo "$(date): Warning: Instance ID not available for status reporting"
     fi
 
     # Always log status locally for debugging
@@ -79,7 +79,7 @@ EOF
 
     # Enhanced error capture with detailed diagnostics
     if [[ "$status" == "failed" ]]; then
-        echo "$(date): 🔍 BOOTSTRAP FAILURE DIAGNOSTICS" >> /var/log/karpenter-bootstrap-failure.log
+        echo "$(date): BOOTSTRAP FAILURE DIAGNOSTICS" >> /var/log/karpenter-bootstrap-failure.log
         echo "$(date): Phase: $phase" >> /var/log/karpenter-bootstrap-failure.log
         echo "$(date): Instance ID: $INSTANCE_ID" >> /var/log/karpenter-bootstrap-failure.log
         echo "$(date): NodeClaim: $NODE_NAME" >> /var/log/karpenter-bootstrap-failure.log
@@ -115,20 +115,20 @@ if ! ip route get 169.254.169.254 >/dev/null 2>&1; then
     DEFAULT_GW=$(ip route show default | awk '/default/ { print $3 }' | head -1)
     if [[ -n "$DEFAULT_GW" ]]; then
         echo "$(date): Adding route to metadata service via gateway: $DEFAULT_GW"
-        ip route add 169.254.169.254 via "$DEFAULT_GW" || echo "$(date): ⚠️ Failed to add metadata route, continuing anyway..."
+        ip route add 169.254.169.254 via "$DEFAULT_GW" || echo "$(date): Warning: Failed to add metadata route, continuing anyway..."
     else
-        echo "$(date): ⚠️ Could not determine default gateway for metadata route"
+        echo "$(date): Warning: Could not determine default gateway for metadata route"
     fi
 else
-    echo "$(date): ✅ Metadata service is already routable"
+    echo "$(date): Metadata service is already routable"
 fi
 
 # Test basic connectivity to metadata service
 echo "$(date): Testing metadata service connectivity..."
 if ! curl -s --connect-timeout 5 -m 10 http://169.254.169.254/ >/dev/null 2>&1; then
-    echo "$(date): ⚠️ Metadata service not responding, but continuing bootstrap..."
+    echo "$(date): Warning: Metadata service not responding, but continuing bootstrap..."
 else
-    echo "$(date): ✅ Metadata service is accessible"
+    echo "$(date): Metadata service is accessible"
 fi
 
 # Get instance identity token for metadata service authentication
@@ -137,7 +137,7 @@ echo "$(date): Getting instance identity token..."
 INSTANCE_IDENTITY_TOKEN=$(curl -s -f --max-time 10 -X PUT "http://169.254.169.254/instance_identity/v1/token?version=2022-03-29" -H "Metadata-Flavor: ibm" | grep -o "\"access_token\":\"[^\"]*" | cut -d"\"" -f4)
 
 if [[ -z "$INSTANCE_IDENTITY_TOKEN" ]]; then
-    echo "$(date): ❌ ERROR: Could not get instance identity token" | tee -a "$LOG_FILE"
+    echo "$(date): ERROR: Could not get instance identity token" | tee -a "$LOG_FILE"
     echo "$(date): Testing metadata service connectivity..." | tee -a "$LOG_FILE"
     curl -v -m 5 "http://169.254.169.254" 2>&1 | tee -a "$LOG_FILE" || true
     report_status "failed" "instance-identity-token-failed"
@@ -153,7 +153,7 @@ INSTANCE_ID=$(curl -s -f --max-time 10 -H "Authorization: Bearer $INSTANCE_IDENT
 
 # Validate instance ID
 if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "unknown" ]]; then
-    echo "$(date): ❌ ERROR: Could not retrieve instance ID from metadata service" | tee -a "$LOG_FILE"
+    echo "$(date): ERROR: Could not retrieve instance ID from metadata service" | tee -a "$LOG_FILE"
     echo "$(date): This is required for proper provider ID configuration" | tee -a "$LOG_FILE"
     echo "$(date): Token available: $([[ -n \"$INSTANCE_IDENTITY_TOKEN\" ]] && echo \"yes\" || echo \"no\")" | tee -a "$LOG_FILE"
     echo "$(date): Testing metadata endpoint with token..." | tee -a "$LOG_FILE"
@@ -173,7 +173,7 @@ report_status "starting" "hostname-setup"
 # Set hostname
 hostnamectl set-hostname "$HOSTNAME"
 echo "127.0.0.1 $HOSTNAME" >> /etc/hosts
-echo "$(date): ✅ Hostname set to: $HOSTNAME (NodeClaim name)"
+echo "$(date): Hostname set to: $HOSTNAME (NodeClaim name)"
 
 # System configuration
 echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf && sysctl -p
@@ -185,9 +185,9 @@ echo "$(date): Preparing filesystem..."
 ROOT_DEV=$(df / | awk 'NR==2 {print $1}')
 if [[ "$ROOT_DEV" =~ ^/dev/ ]]; then
     resize2fs "$ROOT_DEV" || true
-    echo "$(date): ✅ Root filesystem resized"
+    echo "$(date): Root filesystem resized"
 else
-    echo "$(date): ⚠️ Could not identify root device: $ROOT_DEV"
+    echo "$(date): Warning: Could not identify root device: $ROOT_DEV"
 fi
 
 # Ensure proper directory structure for container storage
@@ -198,7 +198,7 @@ chown -R root:root /var/lib/containerd /var/lib/kubelet
 mkdir -p /opt/cni/bin /etc/cni/net.d /var/lib/calico /var/run/calico /var/log/calico/cni
 chown -R root:root /var/lib/calico /var/run/calico /var/log/calico
 
-echo "$(date): ✅ System configured"
+echo "$(date): System configured"
 
 # Report system configuration complete
 report_status "configuring" "system-setup"
@@ -208,7 +208,7 @@ echo "$(date): Installing prerequisites..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y curl apt-transport-https ca-certificates gnupg lsb-release dmidecode jq
-echo "$(date): ✅ Prerequisites installed"
+echo "$(date): Prerequisites installed"
 
 # Report prerequisites installed
 report_status "configuring" "packages-installed"
@@ -223,7 +223,7 @@ install_containerd() {
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
     apt-get update
     apt-get install -y containerd.io
-    echo "$(date): ✅ Containerd installed"
+    echo "$(date): Containerd installed"
 
     # Configure containerd
     echo "$(date): Configuring containerd..."
@@ -317,7 +317,7 @@ EOF
 
     systemctl restart containerd
     systemctl enable containerd
-    echo "$(date): ✅ Containerd configured and started"
+    echo "$(date): Containerd configured and started"
 }
 
 install_crio() {
@@ -336,7 +336,7 @@ install_crio() {
     # Start CRI-O
     systemctl enable crio
     systemctl start crio
-    echo "$(date): ✅ CRI-O configured and started"
+    echo "$(date): CRI-O configured and started"
 }
 
 # Install the configured container runtime
@@ -348,7 +348,7 @@ case "$CONTAINER_RUNTIME" in
         install_crio
         ;;
     *)
-        echo "$(date): ❌ Unsupported container runtime: $CONTAINER_RUNTIME"
+        echo "$(date): Unsupported container runtime: $CONTAINER_RUNTIME"
         echo "$(date): Supported runtimes: containerd, cri-o"
         exit 1
         ;;
@@ -368,7 +368,7 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
 apt-get update
 apt-get install -y kubelet kubectl
 apt-mark hold kubelet kubectl
-echo "$(date): ✅ Kubernetes components installed"
+echo "$(date): Kubernetes components installed"
 
 # Report kubelet installed
 report_status "configuring" "kubelet-installed"
@@ -380,7 +380,7 @@ mkdir -p /etc/kubernetes/pki /var/lib/kubelet /etc/systemd/system/kubelet.servic
 cat > /etc/kubernetes/pki/ca.crt << 'EOF'
 {{ .CABundle }}
 EOF
-echo "$(date): ✅ Primary CA certificate created"
+echo "$(date): Primary CA certificate created"
 
 # Create combined CA bundle for kubelet client authentication
 cat > /etc/kubernetes/pki/kubelet-client-ca.crt << 'EOF'
@@ -401,13 +401,13 @@ cat >> /etc/kubernetes/pki/kubelet-client-ca.crt << 'EOF'
 EOF
 {{ end }}{{ end }}
 
-echo "$(date): ✅ Combined CA certificate created for kubelet client authentication"
+echo "$(date): Combined CA certificate created for kubelet client authentication"
 
 # Allow override of CA trust via environment variable (optional)
 if [[ -n "${KARPENTER_ADDITIONAL_CA:-}" ]]; then
     echo "$(date): Adding additional CA from environment variable"
     echo "${KARPENTER_ADDITIONAL_CA}" >> /etc/kubernetes/pki/kubelet-client-ca.crt
-    echo "$(date): ✅ Additional CA added to kubelet client CA bundle"
+    echo "$(date): Additional CA added to kubelet client CA bundle"
 fi
 
 # Allow override from file (for testing, optional)
@@ -436,7 +436,7 @@ users:
   user:
     token: ${BOOTSTRAP_TOKEN}
 EOF
-echo "$(date): ✅ Bootstrap kubeconfig created"
+echo "$(date): Bootstrap kubeconfig created"
 
 # Create kubelet configuration
 cat > /var/lib/kubelet/config.yaml << EOF
@@ -534,7 +534,7 @@ nodeLabels:
   {{ $key }}: "{{ $value }}"
 {{ end }}
 EOF
-echo "$(date): ✅ Kubelet configuration created"
+echo "$(date): Kubelet configuration created"
 
 # Provider ID configuration
 PROVIDER_ID="ibm:///${REGION}/${INSTANCE_ID}"
@@ -590,17 +590,17 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-echo "$(date): ✅ Kubelet service configured"
+echo "$(date): Kubelet service configured"
 
 # Verify filesystem before starting kubelet
 echo "$(date): Verifying filesystem readiness..."
-df -h / && echo "$(date): ✅ Filesystem verified" || echo "$(date): ⚠️ Filesystem verification failed"
+df -h / && echo "$(date): Filesystem verified" || echo "$(date): Warning: Filesystem verification failed"
 
 # Wait for container runtime to be ready
 echo "$(date): Waiting for container runtime to be ready..."
 for i in {1..30}; do
   if systemctl is-active containerd >/dev/null 2>&1; then
-    echo "$(date): ✅ Container runtime is ready"
+    echo "$(date): Container runtime is ready"
     break
   fi
   sleep 2
@@ -610,7 +610,7 @@ done
 echo "$(date): Testing API server connectivity before starting kubelet..."
 for i in {1..60}; do
   if curl -k --connect-timeout 5 -m 5 {{ .ClusterEndpoint }}/healthz >/dev/null 2>&1; then
-    echo "$(date): ✅ API server is ready"
+    echo "$(date): API server is ready"
     break
   fi
   echo "$(date): Waiting for API server... (attempt $i/60)"
@@ -644,7 +644,7 @@ case "$CNI_PLUGIN" in
     # Cilium CNI plugin is installed via DaemonSet, not as standalone binary
     # Create a minimal CNI configuration that Cilium will replace when it starts
     mkdir -p /var/log/cilium
-    echo "$(date): ✅ Cilium CNI setup prepared (plugin will be installed by DaemonSet)"
+    echo "$(date): Cilium CNI setup prepared (plugin will be installed by DaemonSet)"
     ;;
   "flannel")
     echo "$(date): Downloading Flannel CNI binaries version $CNI_VERSION..."
@@ -656,7 +656,7 @@ esac
 
 # Set proper permissions
 chmod +x /opt/cni/bin/*
-echo "$(date): ✅ CNI binaries installed"
+echo "$(date): CNI binaries installed"
 
 # Install CNI configuration based on detected plugin
 case "$CNI_PLUGIN" in
@@ -666,7 +666,7 @@ case "$CNI_PLUGIN" in
     # Create nodename file - this is critical for Calico CNI to work
     # This prevents the race condition where CNI is invoked before the DaemonSet creates this file
     echo "$HOSTNAME" > /var/lib/calico/nodename
-    echo "$(date): ✅ Created Calico nodename file: $HOSTNAME"
+    echo "$(date): Created Calico nodename file: $HOSTNAME"
 
     cat > /etc/cni/net.d/10-calico.conflist << 'EOF'
 {
@@ -737,7 +737,7 @@ EOF
   ]
 }
 EOF
-    echo "$(date): ✅ Temporary CNI configuration created - Cilium DaemonSet will replace it"
+    echo "$(date): Temporary CNI configuration created - Cilium DaemonSet will replace it"
     ;;
   "flannel")
     echo "$(date): Installing Flannel CNI configuration..."
@@ -764,12 +764,12 @@ EOF
 EOF
     ;;
   *)
-    echo "$(date): ⚠️  Unknown CNI plugin: $CNI_PLUGIN, skipping CNI configuration"
+    echo "$(date): Warning:  Unknown CNI plugin: $CNI_PLUGIN, skipping CNI configuration"
     echo "$(date): Node will rely on CNI DaemonSet deployment"
     ;;
 esac
 
-echo "$(date): ✅ CNI configuration installed for $CNI_PLUGIN"
+echo "$(date): CNI configuration installed for $CNI_PLUGIN"
 
 # Start kubelet
 systemctl daemon-reload
@@ -783,7 +783,7 @@ systemctl start kubelet
 echo "$(date): Waiting for node to be ready..."
 for i in {1..60}; do
   if systemctl is-active kubelet >/dev/null 2>&1; then
-    echo "$(date): ✅ Kubelet is running"
+    echo "$(date): Kubelet is running"
     # Report kubelet successfully started
     report_status "running" "kubelet-active"
     break
@@ -869,7 +869,7 @@ check_cni_ready() {
 
 while [ $elapsed -lt $CNI_WAIT_TIMEOUT ]; do
   if check_cni_ready; then
-    echo "$(date): ✅ $CNI_PLUGIN CNI is fully operational"
+    echo "$(date): $CNI_PLUGIN CNI is fully operational"
     break
   fi
 
@@ -880,30 +880,30 @@ while [ $elapsed -lt $CNI_WAIT_TIMEOUT ]; do
     echo "$(date): CNI Status Check:"
     case "$CNI_PLUGIN" in
       "calico")
-        echo "  - CNI binaries: $([ -x /opt/cni/bin/calico ] && echo "✓" || echo "✗")"
-        echo "  - CNI config: $([ -f /etc/cni/net.d/10-calico.conflist ] && echo "✓" || echo "✗")"
-        echo "  - Calico nodename: $([ -f /var/lib/calico/nodename ] && echo "✓" || echo "✗")"
+        echo "  - CNI binaries: $([ -x /opt/cni/bin/calico ] && echo "PASS:" || echo "FAIL")"
+        echo "  - CNI config: $([ -f /etc/cni/net.d/10-calico.conflist ] && echo "PASS:" || echo "FAIL")"
+        echo "  - Calico nodename: $([ -f /var/lib/calico/nodename ] && echo "PASS:" || echo "FAIL")"
         if command -v crictl >/dev/null 2>&1; then
-          echo "  - Calico container: $(crictl ps 2>/dev/null | grep -q calico-node && echo "✓" || echo "✗")"
+          echo "  - Calico container: $(crictl ps 2>/dev/null | grep -q calico-node && echo "PASS:" || echo "FAIL")"
         fi
         ;;
       "cilium")
-        echo "  - CNI binaries: $([ -x /opt/cni/bin/cilium-cni ] && echo "✓" || echo "✗")"
-        echo "  - CNI config: $([ -f /etc/cni/net.d/05-cilium.conflist ] && echo "✓" || echo "✗")"
+        echo "  - CNI binaries: $([ -x /opt/cni/bin/cilium-cni ] && echo "PASS:" || echo "FAIL")"
+        echo "  - CNI config: $([ -f /etc/cni/net.d/05-cilium.conflist ] && echo "PASS:" || echo "FAIL")"
         if command -v crictl >/dev/null 2>&1; then
-          echo "  - Cilium container: $(crictl ps 2>/dev/null | grep -q cilium && echo "✓" || echo "✗")"
+          echo "  - Cilium container: $(crictl ps 2>/dev/null | grep -q cilium && echo "PASS:" || echo "FAIL")"
         fi
         ;;
       "flannel")
-        echo "  - CNI binaries: $([ -x /opt/cni/bin/flannel ] && echo "✓" || echo "✗")"
-        echo "  - CNI config: $([ -f /etc/cni/net.d/10-flannel.conflist ] && echo "✓" || echo "✗")"
+        echo "  - CNI binaries: $([ -x /opt/cni/bin/flannel ] && echo "PASS:" || echo "FAIL")"
+        echo "  - CNI config: $([ -f /etc/cni/net.d/10-flannel.conflist ] && echo "PASS:" || echo "FAIL")"
         if command -v crictl >/dev/null 2>&1; then
-          echo "  - Flannel container: $(crictl ps 2>/dev/null | grep -q flannel && echo "✓" || echo "✗")"
+          echo "  - Flannel container: $(crictl ps 2>/dev/null | grep -q flannel && echo "PASS:" || echo "FAIL")"
         fi
         ;;
       *)
         echo "  - CNI configs: $(ls /etc/cni/net.d/*.conflist 2>/dev/null | wc -l) found"
-        echo "  - Basic CNI binaries: $([ -x /opt/cni/bin/bridge ] && echo "✓" || echo "✗")"
+        echo "  - Basic CNI binaries: $([ -x /opt/cni/bin/bridge ] && echo "PASS:" || echo "FAIL")"
         ;;
     esac
   fi
@@ -914,7 +914,7 @@ done
 
 # Check if we timed out
 if [ $elapsed -ge $CNI_WAIT_TIMEOUT ]; then
-  echo "$(date): ⚠️ $CNI_PLUGIN CNI failed to become ready after ${CNI_WAIT_TIMEOUT}s"
+  echo "$(date): Warning: $CNI_PLUGIN CNI failed to become ready after ${CNI_WAIT_TIMEOUT}s"
   echo "$(date): Comprehensive diagnostic information:"
 
   # CNI binaries
@@ -974,7 +974,7 @@ if [ $elapsed -ge $CNI_WAIT_TIMEOUT ]; then
   # Continue anyway - let Kubernetes handle the CNI readiness
   echo "$(date): Continuing bootstrap despite CNI issues..."
 else
-  echo "$(date): ✅ $CNI_PLUGIN CNI initialization completed successfully"
+  echo "$(date): $CNI_PLUGIN CNI initialization completed successfully"
 fi
 
 # Run custom user data if provided
@@ -1006,7 +1006,7 @@ func InjectBootstrapEnvVars(ctx context.Context, script string) string {
 	}
 
 	if bootstrapVars.Len() > 0 {
-		logger.V(1).Info("injecting bootstrap environment variables", "count", strings.Count(bootstrapVars.String(), "\n"))
+		logger.V(1).Info("Injecting bootstrap environment variables", "count", strings.Count(bootstrapVars.String(), "\n"))
 
 		// Handle different shebang styles
 		if strings.HasPrefix(script, "#!/bin/bash\nset -euo pipefail\n") {
@@ -1051,11 +1051,11 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	// Add additional CA environment variable if available from secret
 	logger := log.FromContext(ctx)
 	if additionalCA := os.Getenv("ca_crt"); additionalCA != "" {
-		logger.V(1).Info("found ca_crt environment variable", "length", len(additionalCA))
+		logger.V(1).Info("Found ca_crt environment variable", "length", len(additionalCA))
 		// Inject KARPENTER_ADDITIONAL_CA environment variable at the beginning of the script
 		envVar := fmt.Sprintf("export KARPENTER_ADDITIONAL_CA=\"%s\"\n", additionalCA)
 		script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n", "#!/bin/bash\nset -euo pipefail\n\n"+envVar, 1)
-		logger.V(1).Info("injected KARPENTER_ADDITIONAL_CA into cloud-init script")
+		logger.V(1).Info("Injected KARPENTER_ADDITIONAL_CA into cloud-init script")
 	}
 
 	// Inject BOOTSTRAP_* environment variables
