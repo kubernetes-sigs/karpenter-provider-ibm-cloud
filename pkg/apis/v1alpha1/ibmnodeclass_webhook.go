@@ -36,8 +36,8 @@ var (
 
 // SetupWebhookWithManager sets up the webhook with the manager
 func (nc *IBMNodeClass) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(nc).
+	return ctrl.NewWebhookManagedBy(mgr, nc).
+		WithCustomValidator(nc).
 		Complete()
 }
 

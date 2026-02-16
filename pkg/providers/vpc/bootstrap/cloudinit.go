@@ -1000,7 +1000,7 @@ func InjectBootstrapEnvVars(ctx context.Context, script string) string {
 			if len(parts) == 2 {
 				varName := parts[0]
 				varValue := parts[1]
-				bootstrapVars.WriteString(fmt.Sprintf("export %s=%q\n", varName, varValue))
+				fmt.Fprintf(&bootstrapVars, "export %s=%q\n", varName, varValue)
 			}
 		}
 	}
