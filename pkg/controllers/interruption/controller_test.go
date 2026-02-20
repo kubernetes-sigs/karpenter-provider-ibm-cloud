@@ -630,6 +630,10 @@ func (m *mockSubResourceWriter) Patch(ctx context.Context, obj client.Object, pa
 	return assert.AnError
 }
 
+func (m *mockSubResourceWriter) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.SubResourceApplyOption) error {
+	return assert.AnError
+}
+
 // mockSubResourceClient implements client.SubResourceClient
 type mockSubResourceClient struct{}
 
@@ -646,6 +650,10 @@ func (m *mockSubResourceClient) Update(ctx context.Context, obj client.Object, o
 }
 
 func (m *mockSubResourceClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	return assert.AnError
+}
+
+func (m *mockSubResourceClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.SubResourceApplyOption) error {
 	return assert.AnError
 }
 

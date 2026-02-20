@@ -27,7 +27,7 @@ CGO_ENABLED = 0
 # Test settings
 GTEST_ARGS = -v -race -timeout=30m
 
-CONTROLLER_GEN = ~/.local/share/go/bin/controller-gen
+CONTROLLER_GEN = go run sigs.k8s.io/controller-tools/cmd/controller-gen
 
 .PHONY: all
 all: build
