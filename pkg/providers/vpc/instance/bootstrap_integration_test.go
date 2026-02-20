@@ -70,7 +70,8 @@ func TestBootstrapIntegration(t *testing.T) {
 			kubeClient := fake.NewClientBuilder().Build()
 
 			// Create VPC instance provider
-			provider, err := NewVPCInstanceProvider(mockClient, kubeClient)
+			ctx := context.Background()
+			provider, err := NewVPCInstanceProvider(ctx, mockClient, kubeClient)
 			assert.NoError(t, err)
 
 			vpcProvider := provider.(*VPCInstanceProvider)
@@ -104,10 +105,11 @@ func TestBootstrapBehavior(t *testing.T) {
 	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 
 	// Create mock IBM client
+	ctx := context.Background()
 	mockClient := &ibm.Client{}
 	kubeClient := fake.NewClientBuilder().Build()
 
-	provider, err := NewVPCInstanceProvider(mockClient, kubeClient)
+	provider, err := NewVPCInstanceProvider(ctx, mockClient, kubeClient)
 	assert.NoError(t, err)
 
 	vpcProvider := provider.(*VPCInstanceProvider)
@@ -137,10 +139,11 @@ func TestBootstrapProviderLazyInitialization(t *testing.T) {
 	// Set test API key to satisfy the requirement
 	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 
+	ctx := context.Background()
 	mockClient := &ibm.Client{}
 	kubeClient := fake.NewClientBuilder().Build()
 
-	provider, err := NewVPCInstanceProvider(mockClient, kubeClient)
+	provider, err := NewVPCInstanceProvider(ctx, mockClient, kubeClient)
 	assert.NoError(t, err)
 
 	vpcProvider := provider.(*VPCInstanceProvider)
