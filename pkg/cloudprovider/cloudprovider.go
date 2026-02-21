@@ -59,6 +59,26 @@ const (
 	SecurityGroupDrift               cloudprovider.DriftReason = "SecurityGroupDrift"
 )
 
+// Disruption reasons specific to the IBM Cloud provider.
+// They are used to surface why nodes were disrupted (drift, quota issues, etc)
+// through Karpenter's disruption events and metrics.
+const (
+	// DisruptionReasonVPCQuotaExceeded indicates the VPC/Network quota was exceeded
+	// (for example, no more IP addresses available or VPC resource quota reached)
+	// which prevented provisioning or caused instance failures.
+	DisruptionReasonVPCQuotaExceeded karpv1.DisruptionReason = "VPCQuotaExceeded"
+
+	// DisruptionReasonAPIRateLimited indicates disruption due to IBM Cloud
+	// API rate limiting (throttling), where provisioning/sync operations
+	// repeatedly failed with rate-limit errors.
+	DisruptionReasonAPIRateLimited karpv1.DisruptionReason = "APIRateLimited"
+
+	// DisruptionReasonInstanceTerminated indicates the instance was terminated
+	// (e.g., by user action, by cloud provider lifecycle, or due to an underlying
+	// platform event).
+	DisruptionReasonInstanceTerminated karpv1.DisruptionReason = "InstanceTerminated"
+)
+
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
 type CloudProvider struct {
@@ -778,5 +798,14 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			ConditionStatus:    corev1.ConditionTrue,
 			TolerationDuration: 5 * time.Minute, // PID pressure indicates serious issues
 		},
+	}
+}
+
+// DisruptionReasons returns the IBM Cloud provider disruption reasons.
+func (c *CloudProvider) DisruptionReasons() []karpv1.DisruptionReason {
+	return []karpv1.DisruptionReason{
+		DisruptionReasonVPCQuotaExceeded,
+		DisruptionReasonAPIRateLimited,
+		DisruptionReasonInstanceTerminated,
 	}
 }
