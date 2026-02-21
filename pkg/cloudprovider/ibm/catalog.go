@@ -147,7 +147,9 @@ func (c *GlobalCatalogClient) GetPricing(ctx context.Context, catalogEntryID str
 			ID: &catalogEntryID,
 		}
 
-		pricingData, _, err := sdkClient.GetPricing(pricingOptions)
+		pricingData, err := DoWithRateLimitRetry(ctx, func() (*globalcatalogv1.PricingGet, *core.DetailedResponse, error) {
+			return sdkClient.GetPricing(pricingOptions)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("calling GetPricing API: %w", err)
 		}
