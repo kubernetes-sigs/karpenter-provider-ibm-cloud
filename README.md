@@ -25,17 +25,10 @@ Karpenter is an open-source node provisioning project for Kubernetes. This provi
 
 | Kubernetes Version | Status |
 |-------------------|--------|
-| 1.29 | ✅ Supported |
-| 1.30 | ✅ Supported |
-| 1.31 | ✅ Supported |
-| 1.32 | ✅ Supported |
-| 1.33 | ✅ Supported |
-| 1.34 | ✅ Supported |
 | 1.35 | ✅ Supported |
 | 1.36+ | ⚠️ Untested |
 
-*Based on dependency analysis. Generated on 2025-11-30.*
-
+*Based on dependency analysis. Generated on 2026-03-12.*
 ## Container Images
 
 Multi-architecture images (amd64, arm64, s390x) are published to `quay.io/karpenter-provider-ibm-cloud/controller`.
