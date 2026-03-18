@@ -42,7 +42,7 @@ repos:
         pass_filenames: false
         stages: [pre-push]
   - repo: https://github.com/golangci/golangci-lint
-    rev: v2.6.2
+    rev: v2.10.1
     hooks:
       - id: golangci-lint
         entry: golangci-lint run

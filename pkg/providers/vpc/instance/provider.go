@@ -27,6 +27,7 @@ import (
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/go-logr/logr"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -64,6 +65,7 @@ type VPCInstanceProvider struct {
 	subnetProvider         subnet.Provider
 	vpcClientManager       *vpcclient.Manager
 	resourceManagerService *resourcemanagerv2.ResourceManagerV2
+	instanceCache          *cache.Cache
 }
 
 // Option configures the VPCInstanceProvider
@@ -106,6 +108,17 @@ func WithVPCClientManager(manager *vpcclient.Manager) Option {
 	}
 }
 
+// WithInstanceCache sets a custom instance cache (for testing)
+func WithInstanceCache(c *cache.Cache) Option {
+	return func(p *VPCInstanceProvider) error {
+		if c == nil {
+			return fmt.Errorf("instance cache cannot be nil when provided")
+		}
+		p.instanceCache = c
+		return nil
+	}
+}
+
 // NewVPCInstanceProvider creates a new VPC instance provider with optional configuration
 func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts ...Option) (commonTypes.VPCInstanceProvider, error) {
 	if client == nil {
@@ -124,6 +137,7 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 		subnetProvider:         subnet.NewProvider(client),
 		vpcClientManager:       vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
 		resourceManagerService: nil, // Will be initialized after applying options
+		instanceCache:          cache.New(constants.DefaultVPCClientCacheTTL),
 	}
 
 	// Apply options
@@ -995,6 +1009,7 @@ func (p *VPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) err
 		return vpcclient.HandleVPCError(err, logger, "deleting VPC instance", "instance_id", instanceID)
 	}
 
+	p.instanceCache.Delete(instanceID)
 	// Check if the instance actually exists to confirm deletion status
 	// This is critical for proper Karpenter finalizer management
 	_, getErr := vpcClient.GetInstance(ctx, instanceID)
@@ -1026,6 +1041,14 @@ func (p *VPCInstanceProvider) Get(ctx context.Context, providerID string) (*core
 		return nil, fmt.Errorf("could not extract instance ID from provider ID: %s", providerID)
 	}
 
+	if cached, exists := p.instanceCache.Get(instanceID); exists {
+		if node, ok := cached.(*corev1.Node); ok {
+			return node, nil
+		}
+		// Type mismatch - delete invalid cache entry and continue to fetch
+		p.instanceCache.Delete(instanceID)
+	}
+
 	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1049,6 +1072,10 @@ func (p *VPCInstanceProvider) Get(ctx context.Context, providerID string) (*core
 		},
 	}
 
+	if instance.Status == nil || *instance.Status != vpcv1.InstanceStatusDeletingConst {
+		p.instanceCache.Set(instanceID, node)
+	}
+
 	return node, nil
 }
 
@@ -1066,14 +1093,18 @@ func (p *VPCInstanceProvider) List(ctx context.Context) ([]*corev1.Node, error) 
 
 	var nodes []*corev1.Node
 	for _, instance := range instances {
-		if instance.ID != nil && instance.Name != nil {
+		if instance.ID != nil && instance.Name != nil && instance.Zone != nil && instance.Zone.Name != nil {
+			region := ibm.ExtractRegionFromZone(*instance.Zone.Name)
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: *instance.Name,
 				},
 				Spec: corev1.NodeSpec{
-					ProviderID: fmt.Sprintf("ibm:///%s/%s", "region", *instance.ID),
+					ProviderID: fmt.Sprintf("ibm:///%s/%s", region, *instance.ID),
 				},
+			}
+			if instance.Status == nil || *instance.Status != vpcv1.InstanceStatusDeletingConst {
+				p.instanceCache.Set(*instance.ID, node)
 			}
 			nodes = append(nodes, node)
 		}

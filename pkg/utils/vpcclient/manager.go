@@ -145,3 +145,13 @@ func HandleVPCError(err error, logger logr.Logger, operation string, extraFields
 
 	return fmt.Errorf("%s: %w", operation, err)
 }
+
+// NewManagerWithMockClient creates a Manager with a pre-set VPC client (for testing)
+func NewManagerWithMockClient(vpcClient *ibm.VPCClient) *Manager {
+	return &Manager{
+		client:       nil,
+		cachedClient: vpcClient,
+		cacheTime:    time.Now(),
+		cacheTTL:     time.Hour,
+	}
+}
