@@ -1500,3 +1500,21 @@ func TestCloudProvider_List(t *testing.T) {
 		})
 	}
 }
+
+func TestDisruptionReasonConstants(t *testing.T) {
+	assert.Equal(t, karpv1.DisruptionReason("VPCQuotaExceeded"), DisruptionReasonVPCQuotaExceeded)
+	assert.Equal(t, karpv1.DisruptionReason("APIRateLimited"), DisruptionReasonAPIRateLimited)
+	assert.Equal(t, karpv1.DisruptionReason("InstanceTerminated"), DisruptionReasonInstanceTerminated)
+}
+
+func TestDisruptionReasons(t *testing.T) {
+	cp := &CloudProvider{}
+	expected := []karpv1.DisruptionReason{
+		DisruptionReasonVPCQuotaExceeded,
+		DisruptionReasonAPIRateLimited,
+		DisruptionReasonInstanceTerminated,
+	}
+	got := cp.DisruptionReasons()
+	assert.ElementsMatch(t, expected, got)
+
+}
