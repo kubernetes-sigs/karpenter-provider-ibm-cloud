@@ -27,7 +27,7 @@ All release tags are multi-arch manifests that automatically pull the correct ar
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest build from main branch |
-| `vX.Y.Z` | Specific release version (e.g., `v0.4.0`) |
+| `vX.Y.Z` | Specific release version (e.g., `v1.0.3`) |
 | `nightly` | Latest nightly build (see [Nightly Builds](nightly-builds.md)) |
 
 ### Pulling Images
@@ -37,7 +37,7 @@ All release tags are multi-arch manifests that automatically pull the correct ar
 docker pull quay.io/karpenter-provider-ibm-cloud/controller:latest
 
 # Pull specific version
-docker pull quay.io/karpenter-provider-ibm-cloud/controller:v0.4.0
+docker pull quay.io/karpenter-provider-ibm-cloud/controller:v1.0.3
 
 # Pull for specific architecture
 docker pull --platform linux/s390x quay.io/karpenter-provider-ibm-cloud/controller:latest
@@ -51,7 +51,7 @@ The Helm chart uses the Quay.io image by default:
 helm install karpenter karpenter-ibm/karpenter-ibm \
   --namespace karpenter \
   --create-namespace \
-  --set image.tag=v0.4.0
+  --set image.tag=v1.0.3
 ```
 
 To override the image:
@@ -60,7 +60,7 @@ To override the image:
 helm install karpenter karpenter-ibm/karpenter-ibm \
   --namespace karpenter \
   --set image.repository=quay.io/karpenter-provider-ibm-cloud/controller \
-  --set image.tag=v0.4.0
+  --set image.tag=v1.0.3
 ```
 
 ## Nightly Builds
