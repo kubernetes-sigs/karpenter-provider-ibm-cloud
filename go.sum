@@ -345,8 +345,8 @@ k8s.io/apimachinery v0.36.0-alpha.2 h1:I3A/nvRsgV/j/AX7VXDn8XjuDz2gsfcdOTVCkKMRL
 k8s.io/apimachinery v0.36.0-alpha.2/go.mod h1:7mgr/dli8ofwAbcIQXetFVX1fbOYsOYojq3AUbybVmQ=
 k8s.io/apiserver v0.35.0 h1:CUGo5o+7hW9GcAEF3x3usT3fX4f9r8xmgQeCBDaOgX4=
 k8s.io/apiserver v0.35.0/go.mod h1:QUy1U4+PrzbJaM3XGu2tQ7U9A4udRRo5cyxkFX0GEds=
-k8s.io/client-go v0.35.2 h1:YUfPefdGJA4aljDdayAXkc98DnPkIetMl4PrKX97W9o=
-k8s.io/client-go v0.35.2/go.mod h1:4QqEwh4oQpeK8AaefZ0jwTFJw/9kIjdQi0jpKeYvz7g=
+k8s.io/client-go v0.35.3 h1:s1lZbpN4uI6IxeTM2cpdtrwHcSOBML1ODNTCCfsP1pg=
+k8s.io/client-go v0.35.3/go.mod h1:RzoXkc0mzpWIDvBrRnD+VlfXP+lRzqQjCmKtiwZ8Q9c=
 k8s.io/cloud-provider v0.35.0 h1:syiBCQbKh2gho/S1BkIl006Dc44pV8eAtGZmv5NMe7M=
 k8s.io/cloud-provider v0.35.0/go.mod h1:7grN+/Nt5Hf7tnSGPT3aErt4K7aQpygyCrGpbrQbzNc=
 k8s.io/code-generator v0.35.0 h1:TvrtfKYZTm9oDF2z+veFKSCcgZE3Igv0svY+ehCmjHQ=
