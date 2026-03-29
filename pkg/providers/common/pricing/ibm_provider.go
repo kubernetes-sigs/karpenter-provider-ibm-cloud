@@ -109,13 +109,10 @@ func (p *IBMPricingProvider) GetPrice(ctx context.Context, instanceType string, 
 // GetPrices returns a map of instance type to price for all instance types in the given zone
 func (p *IBMPricingProvider) GetPrices(ctx context.Context, zone string) (map[string]float64, error) {
 	p.mutex.RLock()
-	defer p.mutex.RUnlock()
 
-	// Check if cache needs refresh
 	if time.Since(p.lastUpdate) > p.ttl {
 		p.mutex.RUnlock()
 		if err := p.Refresh(ctx); err != nil {
-			// Log error but continue with cached data if available
 			p.logger.Warn("Failed to refresh pricing data", "error", err)
 		}
 		p.mutex.RLock()
@@ -126,10 +123,9 @@ func (p *IBMPricingProvider) GetPrices(ctx context.Context, zone string) (map[st
 		if price, exists := zoneMap[zone]; exists {
 			prices[instanceType] = price
 		}
-		// Skip instance types without pricing data for this zone
 	}
+	p.mutex.RUnlock()
 
-	// Return empty map if no pricing data available
 	if len(prices) == 0 {
 		return nil, fmt.Errorf("no pricing data available for zone %s", zone)
 	}
