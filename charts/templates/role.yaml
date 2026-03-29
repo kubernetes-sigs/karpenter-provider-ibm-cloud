@@ -2,13 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "karpenter.fullname" . }}-manager
-  labels:
-    {{- include "karpenter.labels" . | nindent 4 }}
-  {{- with .Values.additionalAnnotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  name: karpenter-manager
 rules:
 - apiGroups:
   - ""
@@ -179,14 +173,8 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "karpenter.fullname" . }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "karpenter.labels" . | nindent 4 }}
-  {{- with .Values.additionalAnnotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  name: karpenter-manager
+  namespace: karpenter
 rules:
 - apiGroups:
   - ""
@@ -205,14 +193,8 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "karpenter.fullname" . }}-lease
+  name: karpenter-manager
   namespace: kube-node-lease
-  labels:
-    {{- include "karpenter.labels" . | nindent 4 }}
-  {{- with .Values.additionalAnnotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
 rules:
 - apiGroups:
   - coordination.k8s.io
@@ -230,14 +212,8 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "karpenter.fullname" . }}-dns
+  name: karpenter-manager
   namespace: kube-system
-  labels:
-    {{- include "karpenter.labels" . | nindent 4 }}
-  {{- with .Values.additionalAnnotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
 rules:
 - apiGroups:
   - ""
