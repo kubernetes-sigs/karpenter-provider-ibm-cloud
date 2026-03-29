@@ -73,7 +73,7 @@ func NewClient() (*Client, error) {
 
 	vpcURL := os.Getenv("VPC_URL")
 	if vpcURL == "" {
-		vpcURL = "https://us-south.iaas.cloud.ibm.com/v1" // default value
+		vpcURL = fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", region)
 	}
 
 	vpcAuthType := os.Getenv("VPC_AUTH_TYPE")

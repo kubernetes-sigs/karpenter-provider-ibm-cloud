@@ -91,7 +91,7 @@ func (s *SecureCredentialStore) GetVPCAPIKey(ctx context.Context) (string, error
 	s.mu.RUnlock()
 
 	if needsRefresh {
-		if err := s.refreshCredentials(ctx); err != nil {
+		if err := s.refreshCredentials(ctx, false); err != nil {
 			return "", fmt.Errorf("refreshing credentials: %w", err)
 		}
 	}
@@ -118,7 +118,7 @@ func (s *SecureCredentialStore) GetIBMAPIKey(ctx context.Context) (string, error
 	s.mu.RUnlock()
 
 	if needsRefresh {
-		if err := s.refreshCredentials(ctx); err != nil {
+		if err := s.refreshCredentials(ctx, false); err != nil {
 			return "", fmt.Errorf("refreshing credentials: %w", err)
 		}
 	}
@@ -145,7 +145,7 @@ func (s *SecureCredentialStore) GetRegion(ctx context.Context) (string, error) {
 	s.mu.RUnlock()
 
 	if needsRefresh {
-		if err := s.refreshCredentials(ctx); err != nil {
+		if err := s.refreshCredentials(ctx, false); err != nil {
 			return "", fmt.Errorf("refreshing credentials: %w", err)
 		}
 	}
@@ -160,9 +160,9 @@ func (s *SecureCredentialStore) GetRegion(ctx context.Context) (string, error) {
 	return s.credentials.region, nil
 }
 
-// RotateCredentials forces a credential refresh
+// RotateCredentials forces a credential refresh, bypassing the TTL check
 func (s *SecureCredentialStore) RotateCredentials(ctx context.Context) error {
-	return s.refreshCredentials(ctx)
+	return s.refreshCredentials(ctx, true)
 }
 
 // ClearCredentials removes stored credentials from memory
@@ -188,9 +188,14 @@ func (s *SecureCredentialStore) ClearCredentials() {
 	s.lastRefresh = time.Time{}
 }
 
-func (s *SecureCredentialStore) refreshCredentials(ctx context.Context) error {
+func (s *SecureCredentialStore) refreshCredentials(ctx context.Context, force bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Re-check under write lock to avoid thundering herd
+	if !force && s.credentials != nil && time.Since(s.lastRefresh) <= s.ttl {
+		return nil
+	}
 
 	creds, err := s.provider.GetCredentials(ctx)
 	if err != nil {

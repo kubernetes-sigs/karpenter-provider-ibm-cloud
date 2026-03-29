@@ -82,6 +82,15 @@ func TestNewClient(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name: "non-us-south region derives correct VPC URL",
+			envVars: map[string]string{
+				"VPC_API_KEY":      "test-vpc-key",
+				"IBMCLOUD_API_KEY": "test-ibm-key",
+				"IBMCLOUD_REGION":  "eu-de",
+			},
+			wantError: false,
+		},
+		{
 			name: "missing VPC API key",
 			envVars: map[string]string{
 				"IBMCLOUD_API_KEY": "test-ibm-key",
@@ -132,6 +141,12 @@ func TestNewClient(t *testing.T) {
 			if err == nil {
 				if client.vpcURL == "" {
 					t.Error("vpcURL should not be empty")
+				}
+				if _, hasCustomURL := tt.envVars["VPC_URL"]; !hasCustomURL {
+					expectedURL := fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", tt.envVars["IBMCLOUD_REGION"])
+					if client.vpcURL != expectedURL {
+						t.Errorf("expected vpcURL %s, got %s", expectedURL, client.vpcURL)
+					}
 				}
 				if client.vpcAuthType == "" {
 					t.Error("vpcAuthType should not be empty")
