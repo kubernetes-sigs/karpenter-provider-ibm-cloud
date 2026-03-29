@@ -14,19 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package apis contains the API types for the IBM Cloud Karpenter provider.
+// CRDs are deployed via Helm charts (charts/crds/).
 package apis
-
-import (
-	_ "embed"
-
-	"github.com/awslabs/operatorpkg/object"
-	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-)
-
-var (
-	//go:embed crds/apis/crds/karpenter.ibm_cloud.sh_ibm_cloudnodeclasses.yaml
-	IBMNodeClassCRD []byte
-	CRDs            = []*v1.CustomResourceDefinition{
-		object.Unmarshal[v1.CustomResourceDefinition](IBMNodeClassCRD),
-	}
-)
