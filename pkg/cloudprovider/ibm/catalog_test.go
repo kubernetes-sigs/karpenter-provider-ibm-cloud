@@ -172,6 +172,7 @@ func TestGetInstanceType(t *testing.T) {
 			}
 			if tt.mockCatalog != nil {
 				client.client = tt.mockCatalog
+				client.currentToken = tt.token
 			}
 
 			entry, err := client.GetInstanceType(ctx, tt.id)
@@ -253,6 +254,7 @@ func TestListInstanceTypes(t *testing.T) {
 			}
 			if tt.mockCatalog != nil {
 				client.client = tt.mockCatalog
+				client.currentToken = tt.token
 			}
 
 			entries, err := client.ListInstanceTypes(ctx)

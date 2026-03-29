@@ -18,6 +18,7 @@ package ibm
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
@@ -36,8 +37,10 @@ type globalCatalogClientInterface interface {
 
 // GlobalCatalogClient handles interactions with the IBM Cloud Global Catalog API
 type GlobalCatalogClient struct {
-	iamClient iamClientInterface
-	client    globalCatalogClientInterface
+	mu           sync.Mutex
+	iamClient    iamClientInterface
+	client       globalCatalogClientInterface
+	currentToken string
 }
 
 func NewGlobalCatalogClient(iamClient *IAMClient) *GlobalCatalogClient {
@@ -47,17 +50,18 @@ func NewGlobalCatalogClient(iamClient *IAMClient) *GlobalCatalogClient {
 }
 
 func (c *GlobalCatalogClient) ensureClient(ctx context.Context) error {
-	if c.client != nil {
-		return nil
-	}
-
-	// Get a fresh token
 	token, err := c.iamClient.GetToken(ctx)
 	if err != nil {
 		return fmt.Errorf("getting IAM token: %w", err)
 	}
 
-	// Initialize the Global Catalog client with the token
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.client != nil && c.currentToken == token {
+		return nil
+	}
+
 	authenticator := &core.BearerTokenAuthenticator{
 		BearerToken: token,
 	}
@@ -72,6 +76,7 @@ func (c *GlobalCatalogClient) ensureClient(ctx context.Context) error {
 	}
 
 	c.client = client
+	c.currentToken = token
 	return nil
 }
 

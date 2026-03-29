@@ -18,6 +18,7 @@ package ibm
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
@@ -52,6 +53,7 @@ func (a *iamAuthenticator) RequestToken() (*TokenResponse, error) {
 
 // IAMClient handles interactions with the IBM Cloud IAM API
 type IAMClient struct {
+	mu            sync.Mutex
 	apiKey        string
 	Authenticator Authenticator // Exported for testing
 	token         string
@@ -72,21 +74,25 @@ func NewIAMClient(apiKey string) *IAMClient {
 
 // GetToken returns a valid IAM token, fetching a new one if necessary
 func (c *IAMClient) GetToken(ctx context.Context) (string, error) {
-	// Check if we have a valid cached token
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.token != "" && time.Now().Before(c.expiry) {
 		return c.token, nil
 	}
 
-	// Get token from authenticator
 	tokenResponse, err := c.Authenticator.RequestToken()
 	if err != nil {
 		return "", fmt.Errorf("getting IAM token: %w", err)
 	}
 
-	// Store token with expiry
 	c.token = tokenResponse.AccessToken
-	// Convert expiration to time.Duration (expires_in is in seconds)
-	expiresIn := time.Duration(tokenResponse.ExpiresIn-300) * time.Second // Refresh 5 minutes before expiry
+	const refreshMargin int64 = 300
+	const minExpiry = 60 * time.Second
+	expiresIn := time.Duration(tokenResponse.ExpiresIn-refreshMargin) * time.Second
+	if expiresIn < minExpiry {
+		expiresIn = minExpiry
+	}
 	c.expiry = time.Now().Add(expiresIn)
 
 	return c.token, nil
