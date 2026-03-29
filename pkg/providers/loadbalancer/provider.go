@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -73,18 +74,23 @@ func (p *LoadBalancerProvider) RegisterInstance(ctx context.Context, nodeClass *
 	logger := p.logger.WithValues("instanceID", instanceID, "instanceIP", instanceIP)
 	logger.Info("Started load balancer registration")
 
-	for i, target := range nodeClass.Spec.LoadBalancerIntegration.TargetGroups {
+	targets := nodeClass.Spec.LoadBalancerIntegration.TargetGroups
+	var errs []error
+	for i, target := range targets {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName, "port", target.Port)
 
 		if err := p.registerInstanceInTarget(ctx, target, instanceID, instanceIP, targetLogger); err != nil {
+			errs = append(errs, err)
 			targetLogger.Error(err, "Failed to register instance in target group")
-			// Continue with other targets even if one fails
 			continue
 		}
 
 		targetLogger.Info("Successfully registered instance in target group", "targetIndex", i)
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to register instance in %d/%d targets: %w", len(errs), len(targets), errors.Join(errs...))
+	}
 	return nil
 }
 
@@ -107,18 +113,23 @@ func (p *LoadBalancerProvider) DeregisterInstance(ctx context.Context, nodeClass
 	logger := p.logger.WithValues("instanceID", instanceID)
 	logger.Info("Started load balancer deregistration")
 
-	for i, target := range nodeClass.Spec.LoadBalancerIntegration.TargetGroups {
+	targets := nodeClass.Spec.LoadBalancerIntegration.TargetGroups
+	var errs []error
+	for i, target := range targets {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName)
 
 		if err := p.deregisterInstanceFromTarget(ctx, target, instanceID, targetLogger); err != nil {
+			errs = append(errs, err)
 			targetLogger.Error(err, "Failed to deregister instance from target group")
-			// Continue with other targets even if one fails
 			continue
 		}
 
 		targetLogger.Info("Successfully deregistered instance from target group", "targetIndex", i)
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to deregister instance from %d/%d targets: %w", len(errs), len(targets), errors.Join(errs...))
+	}
 	return nil
 }
 

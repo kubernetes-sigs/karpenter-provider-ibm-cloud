@@ -291,13 +291,9 @@ func validateRegionZonePair(region, zone string) error {
 
 	// Extract and validate the zone number
 	zoneSuffix := strings.TrimPrefix(zone, expectedPrefix)
-	if len(zoneSuffix) != 1 {
-		return fmt.Errorf("invalid zone format %s: expected single digit after %s", zone, expectedPrefix)
-	}
-
-	// Check if it's a digit
-	if zoneSuffix[0] < '1' || zoneSuffix[0] > '9' {
-		return fmt.Errorf("invalid zone number in %s: must be between 1-9", zone)
+	zoneNum, err := strconv.Atoi(zoneSuffix)
+	if err != nil || zoneNum < 1 {
+		return fmt.Errorf("invalid zone format %s: zone suffix must be a positive number", zone)
 	}
 
 	return nil
