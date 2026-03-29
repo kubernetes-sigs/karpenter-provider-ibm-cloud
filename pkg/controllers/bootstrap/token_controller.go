@@ -221,8 +221,14 @@ func (c *TokenController) cleanupExpiredTokens(ctx context.Context, logger logr.
 
 // CreateBootstrapToken creates a new bootstrap token with proper RBAC groups
 func (c *TokenController) CreateBootstrapToken(ctx context.Context, name string) (string, error) {
-	tokenID := generateRandomString(6)
-	tokenSecret := generateRandomString(16)
+	tokenID, err := generateRandomString(6)
+	if err != nil {
+		return "", fmt.Errorf("generating token ID: %w", err)
+	}
+	tokenSecret, err := generateRandomString(16)
+	if err != nil {
+		return "", fmt.Errorf("generating token secret: %w", err)
+	}
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -244,7 +250,7 @@ func (c *TokenController) CreateBootstrapToken(ctx context.Context, name string)
 		},
 	}
 
-	_, err := c.client.CoreV1().Secrets("kube-system").Create(ctx, secret, metav1.CreateOptions{})
+	_, err = c.client.CoreV1().Secrets("kube-system").Create(ctx, secret, metav1.CreateOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -253,10 +259,10 @@ func (c *TokenController) CreateBootstrapToken(ctx context.Context, name string)
 }
 
 // generateRandomString generates a random hex string of specified length
-func generateRandomString(length int) string {
-	bytes := make([]byte, length/2)
+func generateRandomString(length int) (string, error) {
+	bytes := make([]byte, (length+1)/2)
 	if _, err := rand.Read(bytes); err != nil {
-		return ""
+		return "", fmt.Errorf("reading random bytes: %w", err)
 	}
-	return hex.EncodeToString(bytes)[:length]
+	return hex.EncodeToString(bytes)[:length], nil
 }

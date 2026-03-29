@@ -280,7 +280,8 @@ func TestGenerateRandomString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := generateRandomString(tt.length)
+			result, err := generateRandomString(tt.length)
+			require.NoError(t, err)
 			assert.Len(t, result, tt.expected)
 
 			if tt.length > 0 {
