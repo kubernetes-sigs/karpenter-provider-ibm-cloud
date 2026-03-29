@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -135,10 +136,12 @@ func discoverServiceCIDR(ctx context.Context, client kubernetes.Interface) (stri
 	// Assume standard service CIDR based on service IP
 	if serviceIP.To4() != nil {
 		// IPv4 - common service CIDRs
-		if serviceIP.String() >= "10.96.0.0" && serviceIP.String() <= "10.96.255.255" {
+		_, cidr1, _ := net.ParseCIDR("10.96.0.0/12")
+		_, cidr2, _ := net.ParseCIDR("172.20.0.0/16")
+		if cidr1.Contains(serviceIP) {
 			return "10.96.0.0/12", nil
 		}
-		if serviceIP.String() >= "172.20.0.0" && serviceIP.String() <= "172.20.255.255" {
+		if cidr2.Contains(serviceIP) {
 			return "172.20.0.0/16", nil
 		}
 		return "10.96.0.0/12", nil // Default fallback
@@ -208,19 +211,5 @@ func detectCNIPlugin(ctx context.Context, client kubernetes.Interface) (string, 
 
 // contains checks if a string contains a substring (case-insensitive)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		(s == substr ||
-			len(s) > len(substr) &&
-				(s[:len(substr)] == substr ||
-					s[len(s)-len(substr):] == substr ||
-					findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

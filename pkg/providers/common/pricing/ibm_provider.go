@@ -18,6 +18,7 @@ package pricing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,8 +91,8 @@ func (p *IBMPricingProvider) GetPrice(ctx context.Context, instanceType string, 
 
 			// Extract region from zone (assuming zone format like "us-south-1")
 			region := zone
-			if len(zone) > 2 && zone[len(zone)-2] == '-' {
-				region = zone[:len(zone)-2]
+			if idx := strings.LastIndex(zone, "-"); idx > 0 {
+				region = zone[:idx]
 			}
 
 			// Update cost metric
@@ -137,6 +138,11 @@ func (p *IBMPricingProvider) GetPrices(ctx context.Context, zone string) (map[st
 func (p *IBMPricingProvider) Refresh(ctx context.Context) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+
+	// Another goroutine may have refreshed while we waited for the lock
+	if time.Since(p.lastUpdate) <= p.ttl {
+		return nil
+	}
 
 	// If no client available, return error
 	if p.client == nil {

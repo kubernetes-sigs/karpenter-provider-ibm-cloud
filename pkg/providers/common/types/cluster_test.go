@@ -562,52 +562,17 @@ func TestContainsFunction(t *testing.T) {
 			substr:   "calico",
 			expected: false,
 		},
+		{
+			name:     "case-insensitive match",
+			s:        "Calico-Config",
+			substr:   "calico",
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := contains(tt.s, tt.substr)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestFindSubstring(t *testing.T) {
-	tests := []struct {
-		name     string
-		s        string
-		substr   string
-		expected bool
-	}{
-		{
-			name:     "substring found",
-			s:        "hello world",
-			substr:   "world",
-			expected: true,
-		},
-		{
-			name:     "substring not found",
-			s:        "hello world",
-			substr:   "foo",
-			expected: false,
-		},
-		{
-			name:     "empty substring",
-			s:        "hello",
-			substr:   "",
-			expected: true,
-		},
-		{
-			name:     "substring longer than string",
-			s:        "hi",
-			substr:   "hello",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := findSubstring(tt.s, tt.substr)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

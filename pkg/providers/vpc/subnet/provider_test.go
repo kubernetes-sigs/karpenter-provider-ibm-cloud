@@ -626,6 +626,17 @@ func TestCalculateSubnetScore_Enhanced(t *testing.T) {
 			criteria: nil,
 			expected: -50.0, // (0/100)*100 - (100/100)*50 = 0 - 50 = -50
 		},
+		{
+			name: "zero total IP count",
+			subnet: SubnetInfo{
+				TotalIPCount:    0,
+				AvailableIPs:    0,
+				UsedIPCount:     0,
+				ReservedIPCount: 0,
+			},
+			criteria: nil,
+			expected: 0,
+		},
 	}
 
 	for _, tt := range tests {
