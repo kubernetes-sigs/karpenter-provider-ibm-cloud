@@ -82,8 +82,8 @@ func (nc *IBMNodeClass) validateNodeClass(nodeClass *IBMNodeClass) (admission.Wa
 	// Validate bootstrap mode
 	if nodeClass.Spec.BootstrapMode == nil {
 		warnings = append(warnings, "bootstrapMode not specified, defaulting to 'cloud-init'")
-	} else if *nodeClass.Spec.BootstrapMode != "cloud-init" && *nodeClass.Spec.BootstrapMode != "iks" && *nodeClass.Spec.BootstrapMode != "user-data" {
-		errs = append(errs, fmt.Sprintf("invalid bootstrapMode '%s' (valid values: cloud-init, iks, user-data)", *nodeClass.Spec.BootstrapMode))
+	} else if *nodeClass.Spec.BootstrapMode != "cloud-init" && *nodeClass.Spec.BootstrapMode != "iks-api" && *nodeClass.Spec.BootstrapMode != "auto" {
+		errs = append(errs, fmt.Sprintf("invalid bootstrapMode '%s' (valid values: cloud-init, iks-api, auto)", *nodeClass.Spec.BootstrapMode))
 	}
 
 	warnings = append(warnings, nc.validateSecurityGroups(nodeClass, &errs)...)

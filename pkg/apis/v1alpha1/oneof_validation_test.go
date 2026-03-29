@@ -49,7 +49,7 @@ func TestOneOfValidation(t *testing.T) {
 					SecurityGroups:    []string{"r010-test-sg"},
 					SSHKeys:           []string{"r010-test-key"},
 					APIServerEndpoint: "https://test.example.com:6443",
-					BootstrapMode:     "cloud-init",
+					BootstrapMode:     stringPtr("cloud-init"),
 				},
 			},
 			expectErrors:   false,
@@ -70,7 +70,7 @@ func TestOneOfValidation(t *testing.T) {
 					SecurityGroups:    []string{"r010-test-sg"},
 					SSHKeys:           []string{"r010-test-key"},
 					APIServerEndpoint: "https://test.example.com:6443",
-					BootstrapMode:     "cloud-init",
+					BootstrapMode:     stringPtr("cloud-init"),
 				},
 			},
 			expectErrors:   false,
@@ -91,7 +91,7 @@ func TestOneOfValidation(t *testing.T) {
 					SecurityGroups:    []string{"r010-test-sg"},
 					SSHKeys:           []string{"r010-test-key"},
 					APIServerEndpoint: "https://test.example.com:6443",
-					BootstrapMode:     "cloud-init",
+					BootstrapMode:     stringPtr("cloud-init"),
 				},
 			},
 			expectErrors:  true,
@@ -112,7 +112,7 @@ func TestOneOfValidation(t *testing.T) {
 					SecurityGroups:    []string{"r010-test-sg"},
 					SSHKeys:           []string{"r010-test-key"},
 					APIServerEndpoint: "https://test.example.com:6443",
-					BootstrapMode:     "cloud-init",
+					BootstrapMode:     stringPtr("cloud-init"),
 					BlockDeviceMappings: []BlockDeviceMapping{
 						{
 							RootVolume: true,
@@ -147,7 +147,7 @@ func TestOneOfValidation(t *testing.T) {
 					SecurityGroups:    []string{"r010-test-sg"},
 					SSHKeys:           []string{"r010-test-key"},
 					APIServerEndpoint: "https://test.example.com:6443",
-					BootstrapMode:     "cloud-init",
+					BootstrapMode:     stringPtr("cloud-init"),
 				},
 			},
 			expectErrors:  true,
@@ -199,7 +199,7 @@ func TestBlockDeviceMappingValidation(t *testing.T) {
 			SecurityGroups:    []string{"r010-test-sg"},
 			SSHKeys:           []string{"r010-test-key"},
 			APIServerEndpoint: "https://test.example.com:6443",
-			BootstrapMode:     "cloud-init",
+			BootstrapMode:     stringPtr("cloud-init"),
 		},
 	}
 
