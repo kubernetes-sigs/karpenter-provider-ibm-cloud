@@ -422,7 +422,7 @@ func TestIsHexString(t *testing.T) {
 		{
 			name:     "empty string",
 			input:    "",
-			expected: true, // Empty string is technically all hex chars
+			expected: false, // Empty string is not a valid hex ID
 		},
 		{
 			name:     "32 char resource group ID",

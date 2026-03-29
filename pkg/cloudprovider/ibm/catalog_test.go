@@ -98,15 +98,21 @@ func TestEnsureClient(t *testing.T) {
 			client := &GlobalCatalogClient{
 				iamClient: mockIAM,
 			}
-			err := client.ensureClient(context.Background())
+			cl, err := client.ensureClient(context.Background())
 
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error but got nil")
 				}
+				if cl != nil {
+					t.Error("expected nil client on error")
+				}
 			} else {
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
+				}
+				if cl == nil {
+					t.Error("expected non-nil client returned")
 				}
 				if client.client == nil {
 					t.Error("expected client to be initialized")

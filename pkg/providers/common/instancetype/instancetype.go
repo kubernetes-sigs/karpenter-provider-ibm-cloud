@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
@@ -52,6 +53,7 @@ type IBMInstanceTypeProvider struct {
 	client           *ibm.Client
 	pricingProvider  pricing.Provider
 	vpcClientManager *vpcclient.Manager
+	zonesMu          sync.RWMutex
 	zonesCache       map[string][]string // Cache zones by region
 	zonesCacheTime   time.Time
 }
@@ -428,7 +430,7 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context, nodeClass *v1
 		Duration: 1 * time.Second,
 		Factor:   2.0,
 		Jitter:   0.1,
-		Steps:    10, // Will retry up to 4 times
+		Steps:    10, // up to 10 attempts
 		Cap:      15 * time.Second,
 	}
 
@@ -581,9 +583,12 @@ func isRetryableError(err error, statusCode int) bool {
 // getZonesForRegion fetches available zones for a region from VPC API
 func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region string) ([]string, error) {
 	// Check cache first (cache for 1 hour)
+	p.zonesMu.RLock()
 	if zones, ok := p.zonesCache[region]; ok && time.Since(p.zonesCacheTime) < time.Hour {
+		p.zonesMu.RUnlock()
 		return zones, nil
 	}
+	p.zonesMu.RUnlock()
 
 	// Get the SDK client directly for zone listing
 	vpcClient, err := p.client.GetVPCClient(ctx)
@@ -624,8 +629,10 @@ func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region 
 	}
 
 	// Update cache
+	p.zonesMu.Lock()
 	p.zonesCache[region] = zones
 	p.zonesCacheTime = time.Now()
+	p.zonesMu.Unlock()
 
 	return zones, nil
 }
@@ -819,10 +826,11 @@ func (p *IBMInstanceTypeProvider) calculateOverhead(ctx context.Context, nodeCla
 	}
 }
 
-// getInstanceFamily extracts family from instance type name (e.g., "bx2" from "bx2-2x8")
+// getInstanceFamily extracts family from instance type name (e.g., "bx2" from "bx2-2x8", "bx3d" from "bx3d-2x8")
 func getInstanceFamily(instanceType string) string {
-	if len(instanceType) >= 3 {
-		return instanceType[:3]
+	parts := strings.SplitN(instanceType, "-", 2)
+	if len(parts) > 0 && parts[0] != "" {
+		return parts[0]
 	}
 	return "balanced"
 }
