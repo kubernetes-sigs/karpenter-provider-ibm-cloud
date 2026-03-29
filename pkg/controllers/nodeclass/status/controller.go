@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -453,7 +454,7 @@ func retryWithExponentialBackoff(ctx context.Context, maxRetries int, baseDelay 
 		}
 
 		// Add jitter (±25%)
-		jitter := time.Duration(float64(delay) * 0.25 * (2*math.Floor(math.Mod(float64(time.Now().UnixNano()), 2)) - 1))
+		jitter := time.Duration(float64(delay) * 0.25 * (2*rand.Float64() - 1))
 		delay += jitter
 
 		select {

@@ -55,7 +55,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	// Skip reconciliation if the NodeClass is being deleted
 	if nc.DeletionTimestamp != nil && !nc.DeletionTimestamp.IsZero() {
-		return reconcile.Result{}, fmt.Errorf("cannot reconcile IBMNodeClass being deleted")
+		return reconcile.Result{}, nil
 	}
 
 	// Compute hash of the spec
@@ -92,8 +92,6 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodeclass.hash").
 		For(&v1alpha1.IBMNodeClass{}).
-		WithEventFilter(predicate.NewPredicateFuncs(func(object client.Object) bool {
-			return true // Only reconcile on spec changes
-		})).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(c)
 }
