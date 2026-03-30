@@ -55,7 +55,7 @@ type IBMInstanceTypeProvider struct {
 	vpcClientManager *vpcclient.Manager
 	zonesMu          sync.RWMutex
 	zonesCache       map[string][]string // Cache zones by region
-	zonesCacheTime   time.Time
+	zonesCacheTime   map[string]time.Time
 }
 
 func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider {
@@ -64,6 +64,7 @@ func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider 
 		pricingProvider:  pricingProvider,
 		vpcClientManager: vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
 		zonesCache:       make(map[string][]string),
+		zonesCacheTime:   make(map[string]time.Time),
 	}
 }
 
@@ -584,7 +585,7 @@ func isRetryableError(err error, statusCode int) bool {
 func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region string) ([]string, error) {
 	// Check cache first (cache for 1 hour)
 	p.zonesMu.RLock()
-	if zones, ok := p.zonesCache[region]; ok && time.Since(p.zonesCacheTime) < time.Hour {
+	if zones, ok := p.zonesCache[region]; ok && time.Since(p.zonesCacheTime[region]) < time.Hour {
 		p.zonesMu.RUnlock()
 		return zones, nil
 	}
@@ -631,7 +632,7 @@ func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region 
 	// Update cache
 	p.zonesMu.Lock()
 	p.zonesCache[region] = zones
-	p.zonesCacheTime = time.Now()
+	p.zonesCacheTime[region] = time.Now()
 	p.zonesMu.Unlock()
 
 	return zones, nil
@@ -694,8 +695,8 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 
 	// Convert to Kubernetes resource quantities
 	cpuResource := resource.NewQuantity(cpuCount, resource.DecimalSI)
-	// Memory is in GB from the profile, convert to bytes using standard GB (not GiB)
-	memoryResource := resource.NewQuantity(memoryGB*1000*1000*1000, resource.DecimalSI) // Convert GB to bytes
+	// Memory is in GiB from IBM VPC profiles, convert to bytes
+	memoryResource := resource.NewQuantity(memoryGB*1024*1024*1024, resource.BinarySI)
 	gpuResource := resource.NewQuantity(gpuCount, resource.DecimalSI)
 
 	// Calculate pod capacity (rough estimate: 110 pods per node for most instance types)

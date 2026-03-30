@@ -848,7 +848,7 @@ func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
 		client:          mockClient,
 		pricingProvider: mockPricing,
 		zonesCache:      make(map[string][]string),
-		zonesCacheTime:  time.Now().Add(-2 * time.Hour), // Expired cache
+		zonesCacheTime:  map[string]time.Time{"us-south": time.Now().Add(-2 * time.Hour)},
 	}
 
 	tests := []struct {

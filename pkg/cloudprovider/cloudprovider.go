@@ -580,6 +580,9 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (driftReason cloudprovider.DriftReason, err error) {
 	log := log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name, "providerID", nodeClaim.Status.ProviderID)
 
+	if nodeClaim.Spec.NodeClassRef == nil {
+		return "", nil
+	}
 	nodeClassName := nodeClaim.Spec.NodeClassRef.Name
 	start := time.Now()
 	defer func() {

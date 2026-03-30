@@ -191,6 +191,32 @@ var _ = Describe("HealthCheckManager", func() {
 			Expect(healthMonitor["url_path"]).To(Equal("/api/health"))
 		})
 
+		It("should return no update when current state matches desired", func() {
+			delay := int64(30)
+			retries := int64(2)
+			timeout := int64(5)
+			typ := "tcp"
+			healthCheck := &v1alpha1.LoadBalancerHealthCheck{
+				Protocol:   "tcp",
+				Interval:   int32Ptr(30),
+				Timeout:    int32Ptr(5),
+				RetryCount: int32Ptr(2),
+			}
+			currentPool := &vpcv1.LoadBalancerPool{
+				Protocol: stringPtr("tcp"),
+				HealthMonitor: &vpcv1.LoadBalancerPoolHealthMonitor{
+					Delay:      &delay,
+					MaxRetries: &retries,
+					Timeout:    &timeout,
+					Type:       &typ,
+				},
+			}
+
+			needsUpdate, patch := manager.buildHealthCheckPatch(healthCheck, currentPool)
+			Expect(needsUpdate).To(BeFalse())
+			Expect(patch).To(BeEmpty())
+		})
+
 		It("should not include URL path for TCP protocol", func() {
 			healthCheck := &v1alpha1.LoadBalancerHealthCheck{
 				Protocol: "tcp",

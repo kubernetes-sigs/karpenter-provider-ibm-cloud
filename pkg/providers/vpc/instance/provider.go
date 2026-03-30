@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -1596,7 +1597,7 @@ func isAuthError(err error) bool {
 		strings.Contains(errStr, "403")
 }
 
-// selectSubnetFromStatusList selects a subnet from the pre-selected list in status using round-robin
+// selectSubnetFromStatusList selects a random subnet from the pre-selected list in status
 func (p *VPCInstanceProvider) selectSubnetFromStatusList(subnetIDs []string) string {
 	if len(subnetIDs) == 0 {
 		return ""
@@ -1606,13 +1607,12 @@ func (p *VPCInstanceProvider) selectSubnetFromStatusList(subnetIDs []string) str
 		return subnetIDs[0]
 	}
 
-	// Simple round-robin based on current time for stateless distribution
-	index := int(time.Now().UnixNano()) % len(subnetIDs)
+	index := rand.IntN(len(subnetIDs))
 	return subnetIDs[index]
 }
 
-// selectSubnetFromMultiZoneList selects a subnet from a list using round-robin across zones
-// to ensure balanced distribution when multiple subnets are available across zones
+// selectSubnetFromMultiZoneList selects a random subnet from across zones
+// to distribute instances when multiple subnets are available
 func (p *VPCInstanceProvider) selectSubnetFromMultiZoneList(subnets []subnet.SubnetInfo) subnet.SubnetInfo {
 	if len(subnets) == 0 {
 		// This should not happen as caller checks length, but return empty for safety
@@ -1633,9 +1633,7 @@ func (p *VPCInstanceProvider) selectSubnetFromMultiZoneList(subnets []subnet.Sub
 		zoneSubnets[s.Zone] = append(zoneSubnets[s.Zone], s)
 	}
 
-	// Simple round-robin based on current time for stateless distribution
-	// This ensures different instances get distributed across zones
-	zoneIndex := int(time.Now().UnixNano()) % len(zones)
+	zoneIndex := rand.IntN(len(zones))
 	selectedZone := zones[zoneIndex]
 
 	// Select the best subnet in the chosen zone (highest available IPs)

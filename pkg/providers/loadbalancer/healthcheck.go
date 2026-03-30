@@ -103,23 +103,44 @@ func (hc *HealthCheckManager) buildHealthCheckPatch(desired *v1alpha1.LoadBalanc
 		patch["protocol"] = protocol
 	}
 
-	// Create health monitor configuration
-	healthMonitor := map[string]interface{}{
-		"delay":       interval,
-		"max_retries": retryCount,
-		"timeout":     timeout,
-		"type":        protocol,
+	// Compare health monitor fields against current values
+	needsMonitorUpdate := false
+	if hm, ok := current.HealthMonitor.(*vpcv1.LoadBalancerPoolHealthMonitor); ok {
+		if hm.Delay == nil || *hm.Delay != interval {
+			needsMonitorUpdate = true
+		}
+		if hm.MaxRetries == nil || *hm.MaxRetries != retryCount {
+			needsMonitorUpdate = true
+		}
+		if hm.Timeout == nil || *hm.Timeout != timeout {
+			needsMonitorUpdate = true
+		}
+		if hm.Type == nil || *hm.Type != protocol {
+			needsMonitorUpdate = true
+		}
+		if (protocol == "http" || protocol == "https") && desired.Path != "" {
+			if hm.URLPath == nil || *hm.URLPath != desired.Path {
+				needsMonitorUpdate = true
+			}
+		}
+	} else {
+		needsMonitorUpdate = true
 	}
 
-	// Handle HTTP/HTTPS specific configuration
-	if (protocol == "http" || protocol == "https") && desired.Path != "" {
-		healthMonitor["url_path"] = desired.Path
+	if needsMonitorUpdate {
+		healthMonitor := map[string]interface{}{
+			"delay":       interval,
+			"max_retries": retryCount,
+			"timeout":     timeout,
+			"type":        protocol,
+		}
+		if (protocol == "http" || protocol == "https") && desired.Path != "" {
+			healthMonitor["url_path"] = desired.Path
+		}
+		patch["health_monitor"] = healthMonitor
 	}
 
-	// For simplicity, always update health monitor if we have a desired config
-	patch["health_monitor"] = healthMonitor
-
-	return true, patch
+	return len(patch) > 0, patch
 }
 
 // ValidateHealthCheck validates health check configuration
