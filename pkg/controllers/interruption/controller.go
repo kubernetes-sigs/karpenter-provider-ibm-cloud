@@ -34,6 +34,7 @@ import (
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/registration"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
@@ -530,7 +531,7 @@ func (c *Controller) handleIKSInterruption(ctx context.Context, node *v1.Node, r
 // getNodeClassForNode retrieves the IBMNodeClass associated with a node
 func (c *Controller) getNodeClassForNode(ctx context.Context, node *v1.Node) (*v1alpha1.IBMNodeClass, error) {
 	// Try to get node class name from node labels
-	nodeClassName, exists := node.Labels["karpenter-ibm.sh/nodeclass"]
+	nodeClassName, exists := node.Labels[registration.NodeClassLabel]
 	if !exists {
 		// Fallback: try standard Karpenter label
 		nodeClassName, exists = node.Labels["karpenter.sh/nodepool"]

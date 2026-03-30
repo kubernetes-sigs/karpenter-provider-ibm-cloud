@@ -18,20 +18,25 @@ package termination
 import (
 	"context"
 	"fmt"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/tools/record"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/registration"
 )
 
+const IBMNodeClassTerminationFinalizer = "termination.nodeclass.ibm.sh/finalizer"
+
 // Controller reconciles IBMNodeClass deletion by terminating associated nodes
-// +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;update;patch;delete
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -61,15 +66,22 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// If nodeclass is not being deleted, do nothing
+	// If nodeclass is not being deleted, add finalizer if missing
 	if nc.DeletionTimestamp == nil {
+		if !controllerutil.ContainsFinalizer(nc, IBMNodeClassTerminationFinalizer) {
+			patch := client.MergeFrom(nc.DeepCopy())
+			controllerutil.AddFinalizer(nc, IBMNodeClassTerminationFinalizer)
+			if err := c.kubeClient.Patch(ctx, nc, patch); err != nil {
+				return reconcile.Result{}, fmt.Errorf("adding finalizer: %w", err)
+			}
+		}
 		return reconcile.Result{}, nil
 	}
 
 	// List all nodes using this nodeclass
 	nodes := &v1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodes, client.MatchingLabels{
-		"karpenter-ibm.sh/nodeclass": nc.Name,
+		registration.NodeClassLabel: nc.Name,
 	}); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -83,6 +95,25 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 		c.recorder.Event(nc, v1.EventTypeNormal, "DeletedNode",
 			fmt.Sprintf("Deleted node %s", node.Name))
+	}
+
+	// Re-list to confirm all nodes are fully gone before removing the finalizer.
+	// Nodes with their own finalizers may still be terminating.
+	remaining := &v1.NodeList{}
+	if err := c.kubeClient.List(ctx, remaining, client.MatchingLabels{
+		registration.NodeClassLabel: nc.Name,
+	}); err != nil {
+		return reconcile.Result{}, err
+	}
+	if len(remaining.Items) > 0 {
+		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	// Remove finalizer after cleanup
+	patch := client.MergeFrom(nc.DeepCopy())
+	controllerutil.RemoveFinalizer(nc, IBMNodeClassTerminationFinalizer)
+	if err := c.kubeClient.Patch(ctx, nc, patch); err != nil {
+		return reconcile.Result{}, fmt.Errorf("removing finalizer: %w", err)
 	}
 
 	return reconcile.Result{}, nil

@@ -26,29 +26,25 @@ import (
 )
 
 type pricingClient interface {
-	GetPricing(ctx context.Context, catalogEntryID string) (*globalcatalogv1.PricingGet, error)
+	GetPricing(ctx context.Context, catalogEntryID string, region string) (*globalcatalogv1.PricingGet, error)
 }
 
 type PricingBatcher struct {
 	batcher *Batcher[string, globalcatalogv1.PricingGet]
 	client  pricingClient
+	region  string
 }
 
-func NewPricingBatcher(ctx context.Context, client pricingClient) *PricingBatcher {
-	p := &PricingBatcher{client: client}
-
+func NewPricingBatcher(ctx context.Context, client pricingClient, region string) *PricingBatcher {
+	p := &PricingBatcher{client: client, region: region}
 	opts := Options[string, globalcatalogv1.PricingGet]{
-		Name:        "get_global_catalog_pricing",
-		IdleTimeout: 200 * time.Millisecond,
-		MaxTimeout:  2 * time.Second,
-		MaxItems:    200,
-
-		// Group by catalogEntryID so identical pricing requests share one upstream call
+		Name:          "get_global_catalog_pricing",
+		IdleTimeout:   200 * time.Millisecond,
+		MaxTimeout:    2 * time.Second,
+		MaxItems:      200,
 		RequestHasher: pricingHasher,
-
 		BatchExecutor: p.execPricingBatch(),
 	}
-
 	p.batcher = NewBatcher(ctx, opts)
 	return p
 }
@@ -62,12 +58,10 @@ func pricingHasher(_ context.Context, catalogEntryID *string) (uint64, error) {
 	if catalogEntryID == nil {
 		return 0, nil
 	}
-
 	hash, err := hashstructure.Hash(catalogEntryID, hashstructure.FormatV2, nil)
 	if err != nil {
 		return 0, err
 	}
-
 	return hash, nil
 }
 
@@ -77,8 +71,6 @@ func (p *PricingBatcher) execPricingBatch() BatchExecutor[string, globalcatalogv
 		if len(inputs) == 0 {
 			return results
 		}
-
-		// Group by actual string value to handle potential hash collisions
 		groups := make(map[string][]int)
 		for i, id := range inputs {
 			if id == nil {
@@ -89,15 +81,12 @@ func (p *PricingBatcher) execPricingBatch() BatchExecutor[string, globalcatalogv
 			}
 			groups[*id] = append(groups[*id], i)
 		}
-
-		// Make one API call per unique catalogEntryID
 		for catalogEntryID, indices := range groups {
-			out, err := p.client.GetPricing(ctx, catalogEntryID)
+			out, err := p.client.GetPricing(ctx, catalogEntryID, p.region)
 			for _, i := range indices {
 				results[i] = Result[globalcatalogv1.PricingGet]{Output: out, Err: err}
 			}
 		}
-
 		return results
 	}
 }

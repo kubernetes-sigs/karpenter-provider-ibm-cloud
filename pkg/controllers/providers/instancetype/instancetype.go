@@ -44,7 +44,7 @@ func NewController(ctx context.Context) (*Controller, error) {
 	}
 
 	// Create pricing provider
-	pricingProvider := pricing.NewIBMPricingProvider(ctx, client)
+	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, client.GetRegion())
 
 	// Create instance type provider
 	provider := instancetype.NewProvider(client, pricingProvider)
