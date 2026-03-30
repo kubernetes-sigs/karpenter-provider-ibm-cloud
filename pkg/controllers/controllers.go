@@ -68,7 +68,7 @@ import (
 	nodeclaimtagging "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/tagging"
 	nodeclassautoplacement "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/autoplacement"
 	nodeclasshash "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/hash"
-	nodeclaasstatus "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/status"
+	nodeclassstatus "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/status"
 	nodeclasstermination "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/termination"
 	providersinstancetype "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/providers/instancetype"
 	controllerspricing "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/providers/pricing"
@@ -144,7 +144,7 @@ func NewControllers(
 		logger.Info("Successfully registered autoplacement controller")
 	}
 
-	if statusCtrl, err := nodeclaasstatus.NewController(kubeClient, mgr.GetAPIReader()); err != nil {
+	if statusCtrl, err := nodeclassstatus.NewController(kubeClient, mgr.GetAPIReader()); err != nil {
 		logger.Error(err, "failed to create status controller")
 	} else {
 		controllers = append(controllers, statusCtrl)

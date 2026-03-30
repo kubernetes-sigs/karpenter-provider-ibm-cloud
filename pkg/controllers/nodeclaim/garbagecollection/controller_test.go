@@ -514,7 +514,7 @@ func TestReconcile_HandleStuckTerminatingNodeClaims(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "stuck-nodeclaim",
 			DeletionTimestamp: &deletionTime,
-			Finalizers:        []string{"test-finalizer"},
+			Finalizers:        []string{karpv1.TerminationFinalizer},
 		},
 		Spec: karpv1.NodeClaimSpec{
 			NodeClassRef: &karpv1.NodeClassReference{
@@ -638,7 +638,7 @@ func TestForceCleanupStuckNodeClaim_WithStuckPods(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "stuck-nodeclaim",
 			DeletionTimestamp: &metav1.Time{Time: time.Now().Add(-15 * time.Minute)},
-			Finalizers:        []string{"test-finalizer"},
+			Finalizers:        []string{karpv1.TerminationFinalizer},
 		},
 		Status: karpv1.NodeClaimStatus{
 			ProviderID: "ibm:///us-south/stuck-instance",
@@ -782,11 +782,11 @@ func TestRemoveNodeFinalizers(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	// Verify finalizers were removed
+	// Verify only Karpenter-owned finalizers were removed
 	var updatedNode corev1.Node
 	err = kubeClient.Get(context.Background(), client.ObjectKey{Name: "test-node"}, &updatedNode)
 	assert.NoError(t, err)
-	assert.Empty(t, updatedNode.Finalizers, "all finalizers should be removed")
+	assert.Equal(t, []string{"other-finalizer"}, updatedNode.Finalizers, "non-Karpenter finalizers should be preserved")
 }
 
 func TestRemoveNodeFinalizers_NoFinalizers(t *testing.T) {

@@ -156,7 +156,7 @@ func TestController_Reconcile(t *testing.T) {
 				},
 			},
 			expectedHashChange: false,
-			expectError:        true, // Should error when trying to patch a deleting object
+			expectError:        false, // Deleting NodeClass is skipped without error
 		},
 		{
 			name: "nodeclass with user data",
