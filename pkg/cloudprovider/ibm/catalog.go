@@ -49,17 +49,17 @@ func NewGlobalCatalogClient(iamClient *IAMClient) *GlobalCatalogClient {
 	}
 }
 
-func (c *GlobalCatalogClient) ensureClient(ctx context.Context) error {
+func (c *GlobalCatalogClient) ensureClient(ctx context.Context) (globalCatalogClientInterface, error) {
 	token, err := c.iamClient.GetToken(ctx)
 	if err != nil {
-		return fmt.Errorf("getting IAM token: %w", err)
+		return nil, fmt.Errorf("getting IAM token: %w", err)
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.client != nil && c.currentToken == token {
-		return nil
+		return c.client, nil
 	}
 
 	authenticator := &core.BearerTokenAuthenticator{
@@ -72,16 +72,17 @@ func (c *GlobalCatalogClient) ensureClient(ctx context.Context) error {
 
 	client, err := globalcatalogv1.NewGlobalCatalogV1(options)
 	if err != nil {
-		return fmt.Errorf("initializing Global Catalog client: %w", err)
+		return nil, fmt.Errorf("initializing Global Catalog client: %w", err)
 	}
 
 	c.client = client
 	c.currentToken = token
-	return nil
+	return c.client, nil
 }
 
 func (c *GlobalCatalogClient) GetInstanceType(ctx context.Context, id string) (*globalcatalogv1.CatalogEntry, error) {
-	if err := c.ensureClient(ctx); err != nil {
+	cl, err := c.ensureClient(ctx)
+	if err != nil {
 		return nil, err
 	}
 
@@ -90,7 +91,7 @@ func (c *GlobalCatalogClient) GetInstanceType(ctx context.Context, id string) (*
 		Include: core.StringPtr("*"), // Include all fields
 	}
 
-	entry, _, err := c.client.GetCatalogEntryWithContext(ctx, options)
+	entry, _, err := cl.GetCatalogEntryWithContext(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("getting catalog entry: %w", err)
 	}
@@ -99,7 +100,8 @@ func (c *GlobalCatalogClient) GetInstanceType(ctx context.Context, id string) (*
 }
 
 func (c *GlobalCatalogClient) ListInstanceTypes(ctx context.Context) ([]globalcatalogv1.CatalogEntry, error) {
-	if err := c.ensureClient(ctx); err != nil {
+	cl, err := c.ensureClient(ctx)
+	if err != nil {
 		return nil, err
 	}
 
@@ -119,7 +121,7 @@ func (c *GlobalCatalogClient) ListInstanceTypes(ctx context.Context) ([]globalca
 			Limit:    &limit,
 		}
 
-		result, _, err := c.client.ListCatalogEntriesWithContext(ctx, options)
+		result, _, err := cl.ListCatalogEntriesWithContext(ctx, options)
 		if err != nil {
 			return nil, fmt.Errorf("listing catalog entries: %w", err)
 		}
@@ -142,12 +144,13 @@ func (c *GlobalCatalogClient) ListInstanceTypes(ctx context.Context) ([]globalca
 }
 
 func (c *GlobalCatalogClient) GetPricing(ctx context.Context, catalogEntryID string) (*globalcatalogv1.PricingGet, error) {
-	if err := c.ensureClient(ctx); err != nil {
+	cl, err := c.ensureClient(ctx)
+	if err != nil {
 		return nil, err
 	}
 
 	// Cast the client interface to access GetPricing method
-	if sdkClient, ok := c.client.(*globalcatalogv1.GlobalCatalogV1); ok {
+	if sdkClient, ok := cl.(*globalcatalogv1.GlobalCatalogV1); ok {
 		pricingOptions := &globalcatalogv1.GetPricingOptions{
 			ID: &catalogEntryID,
 		}

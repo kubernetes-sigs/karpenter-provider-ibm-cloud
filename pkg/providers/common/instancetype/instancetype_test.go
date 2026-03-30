@@ -774,12 +774,17 @@ func TestGetInstanceFamily(t *testing.T) {
 		{
 			name:         "short instance name",
 			instanceType: "ab",
-			expected:     "balanced",
+			expected:     "ab",
 		},
 		{
 			name:         "empty instance name",
 			instanceType: "",
 			expected:     "balanced",
+		},
+		{
+			name:         "instance type with longer family qualifier",
+			instanceType: "bx3d-2x8",
+			expected:     "bx3d",
 		},
 	}
 
