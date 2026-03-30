@@ -96,10 +96,10 @@ func NewVPCClient(baseURL, authType, apiKey, region, resourceGroupID string) (*V
 		return nil, fmt.Errorf("creating VPC client: %w", err)
 	}
 
-	// Enable debug logging for IBM SDK
+	// Configure IBM SDK logging level
 	logDestination := log.Writer()
 	goLogger := log.New(logDestination, "", log.LstdFlags)
-	core.SetLogger(core.NewLogger(core.LevelDebug, goLogger, goLogger))
+	core.SetLogger(core.NewLogger(core.LevelError, goLogger, goLogger))
 
 	return &VPCClient{
 		baseURL:         baseURL,
