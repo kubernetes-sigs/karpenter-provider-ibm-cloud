@@ -194,7 +194,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 				}
 				m.On("ListLoadBalancerPools", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678").Return(pools, nil)
 			},
-			expectError: false, // The function continues and succeeds even if one target fails
+			expectError: true, // The function now returns errors from failed targets
 		},
 		{
 			name: "multiple target groups",
