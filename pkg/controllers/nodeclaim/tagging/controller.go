@@ -168,7 +168,6 @@ func (c *Controller) Name() string {
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return builder.ControllerManagedBy(m).
 		Named("nodeclaim.tagging").
-		For(&karpenterv1.NodeClaim{}).
-		Owns(&v1.Node{}).
+		WatchesRawSource(singleton.Source()).
 		Complete(singleton.AsReconciler(c))
 }

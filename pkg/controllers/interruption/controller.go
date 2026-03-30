@@ -571,6 +571,7 @@ func (c *Controller) inferModeFromNode(node *v1.Node) types.ProviderMode {
 
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return builder.ControllerManagedBy(m).
-		For(&v1.Node{}).
+		Named("interruption").
+		WatchesRawSource(singleton.Source()).
 		Complete(singleton.AsReconciler(c))
 }
