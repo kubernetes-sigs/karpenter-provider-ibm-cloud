@@ -300,7 +300,7 @@ spec:
                   Must follow IBM Cloud instance profile naming convention: family-cpuxmemory.
                   Examples: "bx2-4x16" (4 vCPUs, 16GB RAM), "mx2-8x64" (8 vCPUs, 64GB RAM), "gx2-16x128x2v100" (GPU instance)
                 minLength: 1
-                pattern: ^[a-z0-9]+-[0-9]+x[0-9]+$
+                pattern: ^[a-z][a-z0-9]*-[0-9]+x[0-9]+[a-z0-9x]*$
                 type: string
               instanceRequirements:
                 description: |-
@@ -657,11 +657,10 @@ spec:
                 type: string
               securityGroups:
                 description: |-
-                  SecurityGroups is a list of security group IDs to attach to nodes
-                  At least one security group must be specified for VPC instance creation
+                  SecurityGroups is a list of security group IDs to attach to nodes.
+                  If empty, the VPC default security group is used.
                 items:
                   type: string
-                minItems: 1
                 type: array
               sshKeys:
                 description: |-
@@ -722,9 +721,9 @@ spec:
             - message: image must contain only lowercase letters, numbers, and hyphens
               rule: '!has(self.image) || self.image.matches(''^[a-z0-9-]+$'')'
             - message: either image or imageSelector must be specified
-              rule: has(self.image) || has(self.imageSelector)
+              rule: self.image != ” || has(self.imageSelector)
             - message: image and imageSelector are mutually exclusive
-              rule: '!(has(self.image) && has(self.imageSelector))'
+              rule: '!(self.image != ” && has(self.imageSelector))'
             - message: instanceProfile and instanceRequirements are mutually exclusive
               rule: '!(has(self.instanceProfile) && has(self.instanceRequirements))'
             - message: iksClusterID is required when bootstrapMode is 'iks-api'

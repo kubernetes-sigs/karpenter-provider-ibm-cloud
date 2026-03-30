@@ -304,7 +304,7 @@ func (nc *IBMNodeClass) validateInstanceProfile(nodeClass *IBMNodeClass) []strin
 
 	// IBM Cloud instance profile format validation
 	// Valid formats: bx2-2x8, cx2-4x8, mx2-8x64, etc.
-	instanceProfilePattern := regexp.MustCompile(`^[a-z0-9]+[0-9a-z]*-[0-9]+x[0-9]+$`)
+	instanceProfilePattern := regexp.MustCompile(`^[a-z][a-z0-9]*-[0-9]+x[0-9]+[a-z0-9x]*$`)
 
 	if nodeClass.Spec.InstanceProfile != "" {
 		// Validate format
