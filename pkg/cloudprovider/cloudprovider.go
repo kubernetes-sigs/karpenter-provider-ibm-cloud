@@ -260,7 +260,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	log.Info("Resolved NodeClass", "nodeClass", nodeClass.Name)
 
 	// Log bootstrap mode for debugging
-	bootstrapMode := "cloud-init"
+	bootstrapMode := "auto"
 	if nodeClass.Spec.BootstrapMode != nil {
 		bootstrapMode = *nodeClass.Spec.BootstrapMode
 	}

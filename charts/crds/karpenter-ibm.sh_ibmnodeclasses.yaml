@@ -46,6 +46,7 @@ spec:
                   This is useful when the control plane is not accessible via standard discovery methods.
                   Must be a valid HTTP or HTTPS URL with hostname/IP and port.
                   Examples: "https://10.243.65.4:6443", "http://k8s-api.example.com:6443"
+                minLength: 1
                 pattern: ^https?://[a-zA-Z0-9.-]+:[0-9]+$
                 type: string
               blockDeviceMappings:
@@ -144,9 +145,9 @@ spec:
                 description: |-
                   BootstrapMode determines how nodes should be bootstrapped to join the cluster
                   Valid values are:
-                  - "cloud-init" - Use cloud-init scripts to bootstrap nodes (default)
+                  - "auto" - Automatically select the best method based on cluster type (default)
+                  - "cloud-init" - Use cloud-init scripts to bootstrap nodes
                   - "iks-api" - Use IKS Worker Pool API to add nodes to cluster
-                  - "auto" - Automatically select the best method based on cluster type
                 enum:
                 - cloud-init
                 - iks-api
@@ -654,6 +655,7 @@ spec:
               resourceGroup:
                 description: ResourceGroup is the ID of the resource group for the
                   instance
+                minLength: 1
                 type: string
               securityGroups:
                 description: |-
@@ -711,7 +713,9 @@ spec:
                 pattern: ^[a-z]{2}-[a-z]+-[0-9]+$
                 type: string
             required:
+            - apiServerEndpoint
             - region
+            - resourceGroup
             - securityGroups
             - vpc
             type: object
