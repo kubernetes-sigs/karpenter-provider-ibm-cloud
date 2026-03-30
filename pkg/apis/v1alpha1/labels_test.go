@@ -52,8 +52,7 @@ func TestInternalLabelConstants(t *testing.T) {
 		expected string
 	}{
 		{"IbmLabelKey", IbmLabelKey, "ibm.x-k8s.io/node"},
-		{"IbmLabelValue", IbmLabelValue, "fake"},
-		{"NodeViewerLabelKey", NodeViewerLabelKey, "eks-node-viewer/instance-price"},
+		{"IbmLabelValue", IbmLabelValue, "ibm"},
 		{"IbmPartitionLabelKey", IbmPartitionLabelKey, "ibm-partition"},
 	}
 
@@ -89,7 +88,6 @@ func TestLabelsNotEmpty(t *testing.T) {
 		InstanceCPULabelKey,
 		IbmLabelKey,
 		IbmLabelValue,
-		NodeViewerLabelKey,
 		IbmPartitionLabelKey,
 	}
 
