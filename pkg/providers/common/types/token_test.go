@@ -556,31 +556,14 @@ func TestBootstrapTokenIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, token1)
 
-		// Find or create should return existing token if valid
+		// Find or create should return existing token since it now has the label
 		token2, err := FindOrCreateBootstrapToken(ctx, client, ttl)
 		require.NoError(t, err)
+		assert.Equal(t, token1, token2)
 
-		// Should create a new token since the generated one doesn't have the required label
-		assert.NotEqual(t, token1, token2)
-
-		// Create a properly labeled token
-		parts := strings.Split(token2, ".")
-		require.Len(t, parts, 2)
-
-		// Add the label to make it discoverable
-		secretName := fmt.Sprintf("bootstrap-token-%s", parts[0])
-		secret, err := client.CoreV1().Secrets("kube-system").Get(ctx, secretName, metav1.GetOptions{})
-		require.NoError(t, err)
-
-		secret.Labels = map[string]string{
-			"karpenter.sh/bootstrap-token": "true",
-		}
-		_, err = client.CoreV1().Secrets("kube-system").Update(ctx, secret, metav1.UpdateOptions{})
-		require.NoError(t, err)
-
-		// Now FindOrCreate should find the existing token
+		// Calling again should still return the same token
 		token3, err := FindOrCreateBootstrapToken(ctx, client, ttl)
 		require.NoError(t, err)
-		assert.Equal(t, token2, token3)
+		assert.Equal(t, token1, token3)
 	})
 }

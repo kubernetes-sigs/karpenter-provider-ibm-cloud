@@ -53,6 +53,9 @@ func GenerateBootstrapToken(ctx context.Context, client kubernetes.Interface, tt
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      tokenName,
 			Namespace: "kube-system",
+			Labels: map[string]string{
+				"karpenter.sh/bootstrap-token": "true",
+			},
 		},
 		Type: "bootstrap.kubernetes.io/token",
 		Data: map[string][]byte{

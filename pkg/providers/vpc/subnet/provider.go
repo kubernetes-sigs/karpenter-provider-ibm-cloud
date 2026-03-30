@@ -93,6 +93,10 @@ type subnetScore struct {
 // calculateSubnetScore computes a ranking score for a subnet
 // Higher scores are better
 func calculateSubnetScore(subnet SubnetInfo, criteria *v1alpha1.SubnetSelectionCriteria) float64 {
+	if subnet.TotalIPCount == 0 {
+		return 0
+	}
+
 	var score float64
 
 	// Factor 1: Available IP capacity (0-100 points)
