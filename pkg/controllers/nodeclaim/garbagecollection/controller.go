@@ -22,6 +22,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/awslabs/operatorpkg/reconciler"
@@ -196,8 +197,8 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	if err = multierr.Combine(filteredErrs...); err != nil {
 		return reconciler.Result{}, err
 	}
-	c.successfulCount++
-	return reconciler.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
+	count := atomic.AddUint64(&c.successfulCount, 1)
+	return reconciler.Result{RequeueAfter: lo.Ternary(count <= 20, time.Second*10, time.Minute*2)}, nil
 }
 
 // handleStuckTerminatingNodeClaims identifies and force-cleans stuck terminating NodeClaims
@@ -506,8 +507,9 @@ func (c *Controller) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeC
 	}
 
 	// Step 2: Find and delete the corresponding Kubernetes node
+	normalizedClaimID := c.normalizeProviderID(nodeClaim.Status.ProviderID)
 	if node, ok := lo.Find(nodeList.Items, func(n corev1.Node) bool {
-		return n.Spec.ProviderID == nodeClaim.Status.ProviderID
+		return c.normalizeProviderID(n.Spec.ProviderID) == normalizedClaimID
 	}); ok {
 		// Remove finalizers first
 		if err := c.removeNodeFinalizers(ctx, &node); err != nil {

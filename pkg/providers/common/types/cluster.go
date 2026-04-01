@@ -58,7 +58,11 @@ func DiscoverClusterConfig(ctx context.Context, client kubernetes.Interface) (*C
 	config.CNIPlugin = cniPlugin
 
 	// Determine IP family
-	if net.ParseIP(dnsIP).To4() != nil {
+	parsedIP := net.ParseIP(dnsIP)
+	if parsedIP == nil {
+		return nil, fmt.Errorf("failed to parse DNS IP %q", dnsIP)
+	}
+	if parsedIP.To4() != nil {
 		config.IPFamily = "ipv4"
 	} else {
 		config.IPFamily = "ipv6"

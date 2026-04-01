@@ -33,7 +33,7 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/registration"
 )
 
-const IBMNodeClassTerminationFinalizer = "termination.nodeclass.ibm.sh/finalizer"
+const IBMNodeClassTerminationFinalizer = "termination.nodeclass.karpenter-ibm.sh/finalizer"
 
 // Controller reconciles IBMNodeClass deletion by terminating associated nodes
 // +kubebuilder:rbac:groups=karpenter-ibm.sh,resources=ibmnodeclasses,verbs=get;list;watch;update;patch;delete

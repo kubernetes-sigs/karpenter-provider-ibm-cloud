@@ -249,12 +249,8 @@ func containsNotFoundError(err error) bool {
 // containsAnyString checks if a string contains any of the specified substrings
 func containsAnyString(s string, substrings []string) bool {
 	for _, substring := range substrings {
-		if len(substring) > 0 && len(s) >= len(substring) {
-			for i := 0; i <= len(s)-len(substring); i++ {
-				if s[i:i+len(substring)] == substring {
-					return true
-				}
-			}
+		if strings.Contains(s, substring) {
+			return true
 		}
 	}
 	return false
