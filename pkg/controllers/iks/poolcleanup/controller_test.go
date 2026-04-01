@@ -33,23 +33,31 @@ import (
 
 // mockIKSClient implements ibm.IKSClientInterface for testing pool cleanup.
 type mockIKSClient struct {
-	mu          sync.Mutex
-	pools       []*ibm.WorkerPool
-	listErr     error
-	deleteErr   error
-	deleteCalls []string
+	mu              sync.Mutex
+	pools           []*ibm.WorkerPool
+	listErr         error
+	deleteErr       error
+	deleteCalls     []string
+	expectedCluster string
+	t               *testing.T
 }
 
-func (m *mockIKSClient) ListWorkerPools(_ context.Context, _ string) ([]*ibm.WorkerPool, error) {
+func (m *mockIKSClient) ListWorkerPools(_ context.Context, clusterID string) ([]*ibm.WorkerPool, error) {
+	if m.t != nil && m.expectedCluster != "" {
+		assert.Equal(m.t, m.expectedCluster, clusterID, "ListWorkerPools called with wrong clusterID")
+	}
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
 	return m.pools, nil
 }
 
-func (m *mockIKSClient) DeleteWorkerPool(_ context.Context, _ string, poolID string) error {
+func (m *mockIKSClient) DeleteWorkerPool(_ context.Context, clusterID string, poolID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.t != nil && m.expectedCluster != "" {
+		assert.Equal(m.t, m.expectedCluster, clusterID, "DeleteWorkerPool called with wrong clusterID")
+	}
 	m.deleteCalls = append(m.deleteCalls, poolID)
 	return m.deleteErr
 }
@@ -340,6 +348,7 @@ func TestProcessPoolState_PartiallyEmpty_SizePerZoneNonZero(t *testing.T) {
 	c.processPoolState(context.Background(), mock, "cluster", pool, key, time.Minute, logr.Discard())
 
 	assert.NotContains(t, c.poolTracking, key)
+	assert.Empty(t, mock.getDeleteCalls(), "partially empty pool should not be deleted")
 }
 
 func TestProcessPoolState_PartiallyEmpty_ActualSizeNonZero(t *testing.T) {
@@ -351,6 +360,7 @@ func TestProcessPoolState_PartiallyEmpty_ActualSizeNonZero(t *testing.T) {
 	c.processPoolState(context.Background(), mock, "cluster", pool, key, time.Minute, logr.Discard())
 
 	assert.NotContains(t, c.poolTracking, key)
+	assert.Empty(t, mock.getDeleteCalls(), "partially empty pool should not be deleted")
 }
 
 // --- retry escalation ---
@@ -463,11 +473,14 @@ func TestCleanupEmptyPools_SkipsUnmanagedPools(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Empty(t, c.poolTracking)
+	assert.Empty(t, mock.getDeleteCalls(), "unmanaged pools should never be deleted")
 }
 
 func TestCleanupEmptyPools_ProcessesManagedPools(t *testing.T) {
 	c := newTestController()
 	mock := &mockIKSClient{
+		t:               t,
+		expectedCluster: "cluster",
 		pools: []*ibm.WorkerPool{
 			{ID: "default", Name: "default-pool"},
 			managedPool("m1", 0, 0),
@@ -519,7 +532,9 @@ func TestCleanupEmptyPools_CustomTTLAllowsDeletion(t *testing.T) {
 		emptyTime: time.Now().Add(-time.Hour),
 	}
 	mock := &mockIKSClient{
-		pools: []*ibm.WorkerPool{managedPool("p1", 0, 0)},
+		t:               t,
+		expectedCluster: "cluster",
+		pools:           []*ibm.WorkerPool{managedPool("p1", 0, 0)},
 	}
 	// 30m TTL: 1 hour elapsed > 30 minutes required
 	nc := nodeClassWithDynamicPools("cluster", &v1alpha1.IKSPoolCleanupPolicy{EmptyPoolTTL: "30m"})
