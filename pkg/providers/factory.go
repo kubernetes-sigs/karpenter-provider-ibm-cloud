@@ -47,7 +47,11 @@ type ProviderFactory struct {
 // NewProviderFactory creates a new provider factory
 func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface) *ProviderFactory {
 	// Create shared providers
-	pricingProvider := pricing.NewIBMPricingProvider(ctx, client)
+	var region string
+	if client != nil {
+		region = client.GetRegion()
+	}
+	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, region)
 	subnetProvider := subnet.NewProvider(client)
 	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider)
 

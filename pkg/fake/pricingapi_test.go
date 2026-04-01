@@ -32,7 +32,7 @@ func TestPricingAPI_GetPricing(t *testing.T) {
 		api := NewPricingAPI()
 		api.PricingByID["test-id"] = NewPricingGet(0.25)
 
-		result, err := api.GetPricing(ctx, "test-id")
+		result, err := api.GetPricing(ctx, "test-id", "us-south")
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -43,7 +43,7 @@ func TestPricingAPI_GetPricing(t *testing.T) {
 		api := NewPricingAPI()
 		api.ErrorByID["error-id"] = errors.New("test error")
 
-		result, err := api.GetPricing(ctx, "error-id")
+		result, err := api.GetPricing(ctx, "error-id", "us-south")
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -53,7 +53,7 @@ func TestPricingAPI_GetPricing(t *testing.T) {
 	t.Run("returns empty pricing by default", func(t *testing.T) {
 		api := NewPricingAPI()
 
-		result, err := api.GetPricing(ctx, "unknown-id")
+		result, err := api.GetPricing(ctx, "unknown-id", "us-south")
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -68,7 +68,7 @@ func TestNewPricingGet(t *testing.T) {
 	require.Len(t, pricing.Metrics, 1)
 	require.NotNil(t, pricing.Metrics[0].Amounts)
 	require.Len(t, pricing.Metrics[0].Amounts, 1)
-	assert.Equal(t, "USA", *pricing.Metrics[0].Amounts[0].Country)
+	assert.Equal(t, "USD", *pricing.Metrics[0].Amounts[0].Currency)
 	require.NotNil(t, pricing.Metrics[0].Amounts[0].Prices)
 	require.Len(t, pricing.Metrics[0].Amounts[0].Prices, 1)
 	assert.Equal(t, 0.15, *pricing.Metrics[0].Amounts[0].Prices[0].Price)
