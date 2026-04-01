@@ -81,7 +81,7 @@ func (nc *IBMNodeClass) validateNodeClass(nodeClass *IBMNodeClass) (admission.Wa
 
 	// Validate bootstrap mode
 	if nodeClass.Spec.BootstrapMode == nil {
-		warnings = append(warnings, "bootstrapMode not specified, defaulting to 'cloud-init'")
+		warnings = append(warnings, "bootstrapMode not specified, defaulting to 'auto'")
 	} else if *nodeClass.Spec.BootstrapMode != "cloud-init" && *nodeClass.Spec.BootstrapMode != "iks-api" && *nodeClass.Spec.BootstrapMode != "auto" {
 		errs = append(errs, fmt.Sprintf("invalid bootstrapMode '%s' (valid values: cloud-init, iks-api, auto)", *nodeClass.Spec.BootstrapMode))
 	}

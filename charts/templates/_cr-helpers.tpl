@@ -108,6 +108,6 @@ Generate bootstrap configuration based on mode
   value: "iks-api"
 {{- else if eq .Values.customResources.mode "vpc" }}
 - name: BOOTSTRAP_MODE
-  value: {{ .Values.bootstrapMode | default "cloud-init" | quote }}
+  value: {{ .Values.bootstrapMode | default "auto" | quote }}
 {{- end }}
 {{- end }}

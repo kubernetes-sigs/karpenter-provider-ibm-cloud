@@ -19,7 +19,7 @@ data:
   {{- else if eq .Values.customResources.mode "vpc" }}
   # VPC-specific configuration
   vpc-id: {{ .Values.customResources.nodeClass.vpc.vpcId | quote }}
-  bootstrap-mode: {{ .Values.bootstrapMode | default "cloud-init" | quote }}
+  bootstrap-mode: {{ .Values.bootstrapMode | default "auto" | quote }}
   {{- end }}
 
   # Global defaults

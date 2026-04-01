@@ -585,8 +585,9 @@ type IBMNodeClassSpec struct {
 	SSHKeys []string `json:"sshKeys,omitempty"`
 
 	// ResourceGroup is the ID of the resource group for the instance
-	// +optional
-	ResourceGroup string `json:"resourceGroup,omitempty"`
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ResourceGroup string `json:"resourceGroup"`
 
 	// PlacementTarget is the ID of the placement target (dedicated host, placement group)
 	// +optional
@@ -598,9 +599,9 @@ type IBMNodeClassSpec struct {
 
 	// BootstrapMode determines how nodes should be bootstrapped to join the cluster
 	// Valid values are:
-	// - "cloud-init" - Use cloud-init scripts to bootstrap nodes (default)
+	// - "auto" - Automatically select the best method based on cluster type (default)
+	// - "cloud-init" - Use cloud-init scripts to bootstrap nodes
 	// - "iks-api" - Use IKS Worker Pool API to add nodes to cluster
-	// - "auto" - Automatically select the best method based on cluster type
 	// +optional
 	// +kubebuilder:validation:Enum=cloud-init;iks-api;auto
 	// +kubebuilder:default=auto
@@ -611,9 +612,10 @@ type IBMNodeClassSpec struct {
 	// This is useful when the control plane is not accessible via standard discovery methods.
 	// Must be a valid HTTP or HTTPS URL with hostname/IP and port.
 	// Examples: "https://10.243.65.4:6443", "http://k8s-api.example.com:6443"
-	// +optional
+	// +required
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:Pattern="^https?://[a-zA-Z0-9.-]+:[0-9]+$"
-	APIServerEndpoint string `json:"apiServerEndpoint,omitempty"`
+	APIServerEndpoint string `json:"apiServerEndpoint"`
 
 	// IKSClusterID is the IKS cluster ID for API-based bootstrapping.
 	// Required when BootstrapMode is "iks-api".
