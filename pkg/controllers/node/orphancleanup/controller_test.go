@@ -31,7 +31,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
@@ -608,4 +610,275 @@ func TestHasKarpenterTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCordonNode(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	testCases := []struct {
+		name                  string
+		initialUnschedulable  bool
+		expectedUnschedulable bool
+	}{
+		{
+			name:                  "cordon schedulable node",
+			initialUnschedulable:  false,
+			expectedUnschedulable: true,
+		},
+		{
+			name:                  "skip already cordoned node",
+			initialUnschedulable:  true,
+			expectedUnschedulable: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Spec: corev1.NodeSpec{
+					Unschedulable: tc.initialUnschedulable,
+				},
+			}
+
+			fakeClient := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(node).Build()
+			controller := &Controller{kubeClient: fakeClient}
+
+			err := controller.cordonNode(context.Background(), node)
+			assert.NoError(t, err)
+
+			updated := &corev1.Node{}
+			err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-node"}, updated)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedUnschedulable, updated.Spec.Unschedulable)
+		})
+	}
+}
+
+func TestForceDeletePodsOnNode(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	t.Run("delete pods on node", func(t *testing.T) {
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod-1",
+				Namespace: "default",
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+			},
+		}
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod-2",
+				Namespace: "default",
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+			},
+		}
+
+		fakeClient := clientfake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(pod1, pod2).
+			WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+				p := obj.(*corev1.Pod)
+				return []string{p.Spec.NodeName}
+			}).
+			Build()
+		controller := &Controller{kubeClient: fakeClient}
+
+		err := controller.forceDeletePodsOnNode(context.Background(), "test-node")
+		assert.NoError(t, err)
+
+		podList := &corev1.PodList{}
+		err = fakeClient.List(context.Background(), podList, client.MatchingFields{"spec.nodeName": "test-node"})
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(podList.Items))
+	})
+
+	t.Run("skip terminating pods", func(t *testing.T) {
+		now := metav1.Time{Time: time.Now()}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "terminating-pod",
+				Namespace:         "default",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"test"},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+			},
+		}
+
+		fakeClient := clientfake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(pod).
+			WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+				p := obj.(*corev1.Pod)
+				return []string{p.Spec.NodeName}
+			}).
+			Build()
+		controller := &Controller{kubeClient: fakeClient}
+
+		err := controller.forceDeletePodsOnNode(context.Background(), "test-node")
+		assert.NoError(t, err)
+
+		podList := &corev1.PodList{}
+		err = fakeClient.List(context.Background(), podList, client.MatchingFields{"spec.nodeName": "test-node"})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(podList.Items))
+	})
+
+	t.Run("no pods on node", func(t *testing.T) {
+		fakeClient := clientfake.NewClientBuilder().
+			WithScheme(scheme).
+			WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+				p := obj.(*corev1.Pod)
+				return []string{p.Spec.NodeName}
+			}).
+			Build()
+		controller := &Controller{kubeClient: fakeClient}
+
+		err := controller.forceDeletePodsOnNode(context.Background(), "empty-node")
+		assert.NoError(t, err)
+	})
+}
+
+func TestProcessOrphanedNodeSafetyChecks(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	t.Run("skip non-karpenter node", func(t *testing.T) {
+		node := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "plain-node",
+				Labels: map[string]string{
+					"node-role.kubernetes.io/worker": "true",
+				},
+			},
+			Spec: corev1.NodeSpec{
+				ProviderID: "ibm:///us-south/instance-123",
+			},
+		}
+
+		fakeClient := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(&node).Build()
+		controller := &Controller{kubeClient: fakeClient, orphanTimeout: 10 * time.Minute}
+
+		err := controller.processOrphanedNode(context.Background(), node)
+		assert.NoError(t, err)
+	})
+
+	t.Run("skip node not orphaned long enough", func(t *testing.T) {
+		node := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "young-node",
+				Labels: map[string]string{
+					"karpenter.sh/nodepool": "test-pool",
+				},
+			},
+			Spec: corev1.NodeSpec{
+				ProviderID: "ibm:///us-south/instance-456",
+			},
+			Status: corev1.NodeStatus{
+				Conditions: []corev1.NodeCondition{
+					{
+						Type:               corev1.NodeReady,
+						Status:             corev1.ConditionFalse,
+						LastTransitionTime: metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+					},
+				},
+			},
+		}
+
+		fakeClient := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(&node).Build()
+		controller := &Controller{kubeClient: fakeClient, orphanTimeout: 10 * time.Minute}
+
+		err := controller.processOrphanedNode(context.Background(), node)
+		assert.NoError(t, err)
+	})
+
+	t.Run("skip node with empty provider ID", func(t *testing.T) {
+		node := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "no-provider-node",
+				Labels: map[string]string{
+					"karpenter.sh/nodepool": "test-pool",
+				},
+			},
+			Spec: corev1.NodeSpec{
+				ProviderID: "",
+			},
+			Status: corev1.NodeStatus{
+				Conditions: []corev1.NodeCondition{
+					{
+						Type:               corev1.NodeReady,
+						Status:             corev1.ConditionFalse,
+						LastTransitionTime: metav1.Time{Time: time.Now().Add(-15 * time.Minute)},
+					},
+				},
+			},
+		}
+
+		fakeClient := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(&node).Build()
+		controller := &Controller{kubeClient: fakeClient, orphanTimeout: 10 * time.Minute}
+
+		err := controller.processOrphanedNode(context.Background(), node)
+		assert.NoError(t, err)
+	})
+}
+
+func TestIsNodeOrphanedLongEnoughNoConditions(t *testing.T) {
+	controller := &Controller{orphanTimeout: 10 * time.Minute}
+
+	testCases := []struct {
+		name     string
+		node     corev1.Node
+		expected bool
+	}{
+		{
+			name: "old node without conditions is orphaned",
+			node: corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-15 * time.Minute)},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "young node without conditions is not orphaned",
+			node: corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-3 * time.Minute)},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := controller.isNodeOrphanedLongEnough(tc.node)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestIsNodeManagedByKarpenterInitializedAnnotation(t *testing.T) {
+	controller := &Controller{}
+
+	node := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				"karpenter.sh/initialized": "true",
+			},
+		},
+	}
+
+	result := controller.isNodeManagedByKarpenter(node)
+	assert.True(t, result)
 }

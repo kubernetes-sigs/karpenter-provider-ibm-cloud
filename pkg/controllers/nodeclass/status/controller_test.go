@@ -2372,3 +2372,368 @@ func TestRegister(t *testing.T) {
 		_ = controller.Register(ctx, nil)
 	})
 }
+
+func TestValidateRequiredFieldsImageSelector(t *testing.T) {
+	tests := []struct {
+		name          string
+		nodeClass     *v1alpha1.IBMNodeClass
+		expectedError string
+	}{
+		{
+			name: "imageSelector satisfies image requirement",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{
+					Region: "us-south",
+					VPC:    "vpc-12345678",
+					ImageSelector: &v1alpha1.ImageSelector{
+						OS:           "ubuntu",
+						Architecture: "amd64",
+						MajorVersion: "22",
+						MinorVersion: "04",
+					},
+				},
+			},
+			expectedError: "",
+		},
+		{
+			name: "imageSelector with image both set",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{
+					Region: "us-south",
+					VPC:    "vpc-12345678",
+					Image:  "r006-12345678-1234-1234-1234-123456789012",
+					ImageSelector: &v1alpha1.ImageSelector{
+						OS:           "ubuntu",
+						Architecture: "amd64",
+						MajorVersion: "22",
+						MinorVersion: "04",
+					},
+				},
+			},
+			expectedError: "",
+		},
+		{
+			name: "neither image nor imageSelector",
+			nodeClass: &v1alpha1.IBMNodeClass{
+				Spec: v1alpha1.IBMNodeClassSpec{
+					Region: "us-south",
+					VPC:    "vpc-12345678",
+				},
+			},
+			expectedError: "image or imageSelector",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			controller := &Controller{}
+			err := controller.validateRequiredFields(tt.nodeClass)
+
+			if tt.expectedError == "" {
+				assert.NoError(t, err, "Expected no validation error")
+			} else {
+				require.Error(t, err, "Expected validation error")
+				assert.Contains(t, err.Error(), tt.expectedError, "Error should contain expected field name")
+			}
+		})
+	}
+}
+
+func TestValidateRegionFormat(t *testing.T) {
+	tests := []struct {
+		name          string
+		region        string
+		expectedError string
+	}{
+		{
+			name:          "valid us-south",
+			region:        "us-south",
+			expectedError: "",
+		},
+		{
+			name:          "valid eu-de",
+			region:        "eu-de",
+			expectedError: "",
+		},
+		{
+			name:          "valid jp-tok",
+			region:        "jp-tok",
+			expectedError: "",
+		},
+		{
+			name:          "uppercase chars US-SOUTH",
+			region:        "US-SOUTH",
+			expectedError: "lowercase letters and hyphens",
+		},
+		{
+			name:          "contains numbers us-south1",
+			region:        "us-south1",
+			expectedError: "lowercase letters and hyphens",
+		},
+		{
+			name:          "too short ab-c",
+			region:        "ab-c",
+			expectedError: "invalid region format",
+		},
+		{
+			name:          "too long us-south-west-extra",
+			region:        "us-south-west-extra",
+			expectedError: "invalid region format",
+		},
+		{
+			name:          "no hyphen ussouth",
+			region:        "ussouth",
+			expectedError: "invalid region format",
+		},
+		{
+			name:          "empty string",
+			region:        "",
+			expectedError: "invalid region format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRegionFormat(tt.region)
+
+			if tt.expectedError == "" {
+				assert.NoError(t, err, "Expected no validation error")
+			} else {
+				require.Error(t, err, "Expected validation error")
+				assert.Contains(t, err.Error(), tt.expectedError, "Error should contain expected message")
+			}
+		})
+	}
+}
+
+func TestValidateFieldFormatsRegionIntegration(t *testing.T) {
+	t.Run("region with uppercase in full nodeclass", func(t *testing.T) {
+		controller := &Controller{}
+		nc := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Region: "US-South",
+				VPC:    "r006-12345678-1234-1234-1234-123456789012",
+				Image:  "r006-12345678-1234-1234-1234-123456789012",
+			},
+		}
+		err := controller.validateFieldFormats(nc)
+		require.Error(t, err, "Expected validation error for uppercase region")
+		assert.Contains(t, err.Error(), "lowercase letters and hyphens")
+	})
+
+	t.Run("region too short in full nodeclass", func(t *testing.T) {
+		controller := &Controller{}
+		nc := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Region: "ab",
+				VPC:    "r006-12345678-1234-1234-1234-123456789012",
+				Image:  "r006-12345678-1234-1234-1234-123456789012",
+			},
+		}
+		err := controller.validateFieldFormats(nc)
+		require.Error(t, err, "Expected validation error for short region")
+		assert.Contains(t, err.Error(), "invalid region format")
+	})
+}
+
+func TestValidateIBMCloudResourcesNilGuard(t *testing.T) {
+	t.Run("both ibmClient and subnetProvider nil", func(t *testing.T) {
+		controller := &Controller{
+			ibmClient:      nil,
+			subnetProvider: nil,
+		}
+		nc := getValidNodeClass()
+		err := controller.validateIBMCloudResources(context.Background(), nc)
+		assert.NoError(t, err, "Should skip validation when both clients are nil")
+	})
+
+	t.Run("ibmClient nil only", func(t *testing.T) {
+		mockProvider := new(MockSubnetProvider)
+		controller := &Controller{
+			ibmClient:      nil,
+			subnetProvider: mockProvider,
+		}
+		nc := getValidNodeClass()
+		err := controller.validateIBMCloudResources(context.Background(), nc)
+		assert.NoError(t, err, "Should skip validation when ibmClient is nil")
+	})
+}
+
+func TestValidateNodeClassPhaseErrorWrapping(t *testing.T) {
+	t.Run("phase 1 field validation wraps error", func(t *testing.T) {
+		controller := &Controller{}
+		nc := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				VPC:   "vpc-12345678",
+				Image: "r006-12345678-1234-1234-1234-123456789012",
+			},
+		}
+		err := controller.validateNodeClass(context.Background(), nc)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "field validation failed:")
+	})
+
+	t.Run("phase 2 format validation wraps error", func(t *testing.T) {
+		controller := &Controller{}
+		nc := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Region: "us-south",
+				VPC:    "x",
+				Image:  "r006-12345678-1234-1234-1234-123456789012",
+			},
+		}
+		err := controller.validateNodeClass(context.Background(), nc)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "format validation failed:")
+	})
+
+	t.Run("phase 4 business logic wraps error", func(t *testing.T) {
+		controller := &Controller{
+			cache: cache.New(15 * time.Minute),
+		}
+		nc := &v1alpha1.IBMNodeClass{
+			Spec: v1alpha1.IBMNodeClassSpec{
+				Region: "us-south",
+				VPC:    "r006-12345678-1234-1234-1234-123456789012",
+				Image:  "r006-12345678-1234-1234-1234-123456789012",
+				PlacementStrategy: &v1alpha1.PlacementStrategy{
+					ZoneBalance: "Invalid",
+				},
+			},
+		}
+		err := controller.validateNodeClass(context.Background(), nc)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "business logic validation failed:")
+	})
+}
+
+func TestValidateBusinessLogicZoneSubnetMismatch(t *testing.T) {
+	t.Run("zone-subnet mismatch detected", func(t *testing.T) {
+		mockProvider := new(MockSubnetProvider)
+		mockProvider.On("GetSubnet", mock.Anything, "subnet-123").Return(&subnet.SubnetInfo{
+			ID:    "subnet-123",
+			Zone:  "us-south-2",
+			State: "available",
+		}, nil)
+
+		controller := &Controller{
+			subnetProvider: mockProvider,
+			cache:          cache.New(15 * time.Minute),
+		}
+
+		nc := getValidNodeClass()
+		nc.Spec.Zone = "us-south-1"
+		nc.Spec.Subnet = "subnet-123"
+
+		err := controller.validateBusinessLogic(context.Background(), nc)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "zone-subnet compatibility")
+		mockProvider.AssertExpectations(t)
+	})
+
+	t.Run("zone-subnet match passes", func(t *testing.T) {
+		mockProvider := new(MockSubnetProvider)
+		mockProvider.On("GetSubnet", mock.Anything, "subnet-123").Return(&subnet.SubnetInfo{
+			ID:    "subnet-123",
+			Zone:  "us-south-1",
+			State: "available",
+		}, nil)
+
+		controller := &Controller{
+			subnetProvider: mockProvider,
+			cache:          cache.New(15 * time.Minute),
+		}
+
+		nc := getValidNodeClass()
+		nc.Spec.Zone = "us-south-1"
+		nc.Spec.Subnet = "subnet-123"
+
+		err := controller.validateBusinessLogic(context.Background(), nc)
+		assert.NoError(t, err)
+		mockProvider.AssertExpectations(t)
+	})
+}
+
+func TestReconcileStatusFieldsOnValidation(t *testing.T) {
+	t.Run("validation failure sets status fields", func(t *testing.T) {
+		nc := &v1alpha1.IBMNodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "failing-nodeclass",
+				Namespace: "default",
+			},
+			Spec: v1alpha1.IBMNodeClassSpec{
+				VPC:   "vpc-12345678",
+				Image: "r006-12345678-1234-1234-1234-123456789012",
+			},
+		}
+
+		s := getTestScheme()
+		kubeClient := fake.NewClientBuilder().
+			WithScheme(s).
+			WithObjects(nc).
+			WithStatusSubresource(nc).
+			Build()
+
+		controller := &Controller{kubeClient: kubeClient}
+
+		ctx := context.Background()
+		req := reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      nc.Name,
+				Namespace: nc.Namespace,
+			},
+		}
+
+		_, err := controller.Reconcile(ctx, req)
+		require.NoError(t, err, "Reconcile should not return error")
+
+		var updatedNodeClass v1alpha1.IBMNodeClass
+		err = kubeClient.Get(ctx, req.NamespacedName, &updatedNodeClass)
+		require.NoError(t, err)
+
+		assert.Contains(t, updatedNodeClass.Status.ValidationError, "field validation failed")
+		assert.WithinDuration(t, time.Now(), updatedNodeClass.Status.LastValidationTime.Time, 5*time.Second)
+		require.NotEmpty(t, updatedNodeClass.Status.Conditions)
+		cond := updatedNodeClass.Status.Conditions[0]
+		assert.Equal(t, "Ready", cond.Type)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, "ValidationFailed", cond.Reason)
+	})
+
+	t.Run("validation success sets status fields", func(t *testing.T) {
+		nc := getValidNodeClass()
+
+		s := getTestScheme()
+		kubeClient := fake.NewClientBuilder().
+			WithScheme(s).
+			WithObjects(nc).
+			WithStatusSubresource(nc).
+			Build()
+
+		controller := &Controller{kubeClient: kubeClient}
+
+		ctx := context.Background()
+		req := reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      nc.Name,
+				Namespace: nc.Namespace,
+			},
+		}
+
+		_, err := controller.Reconcile(ctx, req)
+		require.NoError(t, err, "Reconcile should not return error")
+
+		var updatedNodeClass v1alpha1.IBMNodeClass
+		err = kubeClient.Get(ctx, req.NamespacedName, &updatedNodeClass)
+		require.NoError(t, err)
+
+		assert.Equal(t, "", updatedNodeClass.Status.ValidationError)
+		assert.WithinDuration(t, time.Now(), updatedNodeClass.Status.LastValidationTime.Time, 5*time.Second)
+		require.NotEmpty(t, updatedNodeClass.Status.Conditions)
+		cond := updatedNodeClass.Status.Conditions[0]
+		assert.Equal(t, "Ready", cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, "Ready", cond.Reason)
+		assert.Equal(t, "NodeClass is ready", cond.Message)
+	})
+}

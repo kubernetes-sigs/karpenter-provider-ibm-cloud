@@ -616,7 +616,7 @@ func TestCloudProvider_Delete(t *testing.T) {
 		errorContains    string
 	}{
 		{
-			name: "node deletion fails due to nil client",
+			name: "delete fails due to nil IBM client",
 			nodeClaim: &karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-nodeclaim",
@@ -637,45 +637,6 @@ func TestCloudProvider_Delete(t *testing.T) {
 			instanceProvider: &mockInstanceProvider{},
 			expectError:      true,
 			errorContains:    "IBM client cannot be nil",
-		},
-		{
-			name: "node not found - fails due to nil client",
-			nodeClaim: &karpv1.NodeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclaim",
-				},
-				Status: karpv1.NodeClaimStatus{
-					NodeName: "non-existent-node",
-				},
-			},
-			instanceProvider: &mockInstanceProvider{},
-			expectError:      true,
-			errorContains:    "IBM client cannot be nil",
-		},
-		{
-			name: "instance deletion failure",
-			nodeClaim: &karpv1.NodeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclaim",
-				},
-				Status: karpv1.NodeClaimStatus{
-					ProviderID: "ibm://test-instance-id",
-					NodeName:   "test-node",
-				},
-			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-				Spec: corev1.NodeSpec{
-					ProviderID: "ibm://test-instance-id",
-				},
-			},
-			instanceProvider: &mockInstanceProvider{
-				deleteError: fmt.Errorf("failed to delete instance"),
-			},
-			expectError:   true,
-			errorContains: "IBM client cannot be nil",
 		},
 	}
 
@@ -1498,5 +1459,365 @@ func TestCloudProvider_List(t *testing.T) {
 				assert.Len(t, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestCloudProvider_List_FiltersNonIBMNodes(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	// Only non-IBM nodes: these should all be filtered by the ibm:// prefix check,
+	// never reaching the provider factory.
+	nodes := []runtime.Object{
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-node"},
+			Spec:       corev1.NodeSpec{ProviderID: "aws://i-12345"},
+		},
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "gce-node"},
+			Spec:       corev1.NodeSpec{ProviderID: "gce://project/zone/instance"},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(nodes...).
+		Build()
+
+	cp := &CloudProvider{
+		kubeClient:      fakeClient,
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	result, err := cp.List(ctx)
+
+	assert.NoError(t, err)
+	assert.Empty(t, result, "non-IBM nodes should be filtered out by provider ID prefix check")
+}
+
+func TestCloudProvider_List_SkipsEmptyProviderID(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	nodes := []runtime.Object{
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-provider"},
+			Spec:       corev1.NodeSpec{ProviderID: ""},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(nodes...).
+		Build()
+
+	cp := &CloudProvider{
+		kubeClient:      fakeClient,
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	result, err := cp.List(ctx)
+
+	assert.NoError(t, err)
+	assert.Len(t, result, 0)
+}
+
+func TestCloudProvider_List_EmptyNodeList(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	cp := &CloudProvider{
+		kubeClient:      fakeClient,
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	result, err := cp.List(ctx)
+
+	assert.NoError(t, err)
+	assert.Empty(t, result)
+}
+
+func TestCloudProvider_Get_ErrorWrapping(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	cp := &CloudProvider{
+		kubeClient: fakeClient,
+		instanceTypeProvider: &mockInstanceTypeProvider{
+			instanceTypes: []*cloudprovider.InstanceType{getTestInstanceType()},
+		},
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	_, err := cp.Get(ctx, "ibm://some-instance")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "getting instance provider")
+}
+
+func TestCloudProvider_Delete_WithNodeClassRef(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+	nodeClass := getTestNodeClass()
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		Build()
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclaim"},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{
+				Name: "test-nodeclass",
+			},
+		},
+		Status: karpv1.NodeClaimStatus{
+			ProviderID: "ibm://test-instance-id",
+		},
+	}
+
+	cp := &CloudProvider{
+		kubeClient:      fakeClient,
+		recorder:        &mockEventRecorder{},
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	err := cp.Delete(ctx, nodeClaim)
+
+	// Fails at provider factory (nil IBM client) but exercises the NodeClass lookup path
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "getting instance provider")
+}
+
+func TestCloudProvider_Delete_WithoutNodeClassRef(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclaim"},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: nil,
+		},
+		Status: karpv1.NodeClaimStatus{
+			ProviderID: "ibm://test-instance-id",
+		},
+	}
+
+	cp := &CloudProvider{
+		kubeClient:      fakeClient,
+		recorder:        &mockEventRecorder{},
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	err := cp.Delete(ctx, nodeClaim)
+
+	// Falls through to default provider mode, then fails at provider factory
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "getting instance provider")
+}
+
+func TestCloudProvider_Delete_EmptyNodeClassRefName(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclaim"},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{
+				Name: "",
+			},
+		},
+		Status: karpv1.NodeClaimStatus{
+			ProviderID: "ibm://test-instance-id",
+		},
+	}
+
+	cp := &CloudProvider{
+		kubeClient:      fakeClient,
+		recorder:        &mockEventRecorder{},
+		providerFactory: getTestProviderFactory(fakeClient),
+	}
+
+	err := cp.Delete(ctx, nodeClaim)
+
+	// Empty name triggers the default provider mode fallback path
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "getting instance provider")
+}
+
+func TestCloudProvider_IsDrifted_NilNodeClassRef(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclaim"},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: nil,
+		},
+	}
+
+	cp := &CloudProvider{kubeClient: fakeClient}
+
+	drift, err := cp.IsDrifted(ctx, nodeClaim)
+
+	assert.NoError(t, err)
+	assert.Equal(t, cloudprovider.DriftReason(""), drift)
+}
+
+func TestCloudProvider_IsDrifted_HashVersionDrift(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(getTestNodeClass()).
+		Build()
+
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-nodeclaim",
+			Annotations: map[string]string{
+				v1alpha1.AnnotationIBMNodeClassHashVersion: "0", // Different from IBMNodeClassHashVersion ("1")
+				v1alpha1.AnnotationIBMNodeClassHash:        "12345",
+			},
+		},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{
+				Name: "test-nodeclass",
+			},
+		},
+	}
+
+	cp := &CloudProvider{kubeClient: fakeClient}
+
+	drift, err := cp.IsDrifted(ctx, nodeClaim)
+
+	assert.NoError(t, err)
+	assert.Equal(t, NodeClassHashVersionChangedDrift, drift)
+}
+
+func TestCloudProvider_Create_NodeClassNotReady(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	nodeClass := getTestNodeClass()
+	nodeClass.Status.Conditions = []metav1.Condition{
+		{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "NotReady",
+			Message:            "missing subnet configuration",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		Build()
+
+	nodeClaim := getTestNodeClaim("test-nodeclass")
+
+	cp := &CloudProvider{
+		kubeClient:            fakeClient,
+		recorder:              &mockEventRecorder{},
+		instanceTypeProvider:  &mockInstanceTypeProvider{instanceTypes: []*cloudprovider.InstanceType{getTestInstanceType()}},
+		providerFactory:       getTestProviderFactory(fakeClient),
+		circuitBreakerManager: NewNodeClassCircuitBreakerManager(DefaultCircuitBreakerConfig(), logr.Discard()),
+	}
+
+	_, err := cp.Create(ctx, nodeClaim)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "missing subnet configuration")
+}
+
+func TestCloudProvider_Create_NodeClassReadinessUnknown(t *testing.T) {
+	ctx := context.Background()
+	scheme := getTestScheme()
+
+	nodeClass := getTestNodeClass()
+	nodeClass.Status.Conditions = []metav1.Condition{
+		{
+			Type:               "Ready",
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "Pending",
+			Message:            "waiting for image resolution",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		Build()
+
+	nodeClaim := getTestNodeClaim("test-nodeclass")
+
+	cp := &CloudProvider{
+		kubeClient:            fakeClient,
+		recorder:              &mockEventRecorder{},
+		instanceTypeProvider:  &mockInstanceTypeProvider{instanceTypes: []*cloudprovider.InstanceType{getTestInstanceType()}},
+		providerFactory:       getTestProviderFactory(fakeClient),
+		circuitBreakerManager: NewNodeClassCircuitBreakerManager(DefaultCircuitBreakerConfig(), logr.Discard()),
+	}
+
+	_, err := cp.Create(ctx, nodeClaim)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "resolving NodeClass readiness")
+	assert.Contains(t, err.Error(), "Ready=Unknown")
+	assert.Contains(t, err.Error(), "waiting for image resolution")
+}
+
+func TestCloudProvider_Name_ReturnsIBMCloud(t *testing.T) {
+	cp := &CloudProvider{}
+	assert.Equal(t, "ibmcloud", cp.Name())
+}
+
+func TestCloudProvider_GetSupportedNodeClasses_ReturnsIBMNodeClass(t *testing.T) {
+	cp := &CloudProvider{}
+	classes := cp.GetSupportedNodeClasses()
+
+	assert.Len(t, classes, 1)
+	_, ok := classes[0].(*v1alpha1.IBMNodeClass)
+	assert.True(t, ok, "expected IBMNodeClass type")
+}
+
+func TestCloudProvider_RepairPolicies_ReturnsFivePolicies(t *testing.T) {
+	cp := &CloudProvider{}
+	policies := cp.RepairPolicies()
+
+	assert.Len(t, policies, 5)
+
+	expected := []struct {
+		conditionType   corev1.NodeConditionType
+		conditionStatus corev1.ConditionStatus
+		toleration      time.Duration
+	}{
+		{corev1.NodeReady, corev1.ConditionFalse, 5 * time.Minute},
+		{corev1.NodeReady, corev1.ConditionUnknown, 5 * time.Minute},
+		{corev1.NodeMemoryPressure, corev1.ConditionTrue, 10 * time.Minute},
+		{corev1.NodeDiskPressure, corev1.ConditionTrue, 5 * time.Minute},
+		{corev1.NodePIDPressure, corev1.ConditionTrue, 5 * time.Minute},
+	}
+
+	for i, exp := range expected {
+		assert.Equal(t, exp.conditionType, policies[i].ConditionType, "policy %d condition type", i)
+		assert.Equal(t, exp.conditionStatus, policies[i].ConditionStatus, "policy %d condition status", i)
+		assert.Equal(t, exp.toleration, policies[i].TolerationDuration, "policy %d toleration duration", i)
 	}
 }

@@ -17,6 +17,7 @@ package instancetype
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,129 +28,6 @@ import (
 
 	v1alpha1 "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
-
-type mockProvider struct {
-	instanceTypes map[string]*karpcp.InstanceType
-}
-
-func newMockProvider() *mockProvider {
-	requirements := scheduling.NewRequirements(
-		scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "test-instance"),
-	)
-	return &mockProvider{
-		instanceTypes: map[string]*karpcp.InstanceType{
-			"test-instance": {
-				Name:         "test-instance",
-				Requirements: requirements,
-				Capacity: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("4"),
-					corev1.ResourceMemory: resource.MustParse("8Gi"),
-				},
-			},
-		},
-	}
-}
-
-func (m *mockProvider) Get(ctx context.Context, name string) (*karpcp.InstanceType, error) {
-	if it, ok := m.instanceTypes[name]; ok {
-		return it, nil
-	}
-	return nil, nil
-}
-
-func (m *mockProvider) List(ctx context.Context) ([]*karpcp.InstanceType, error) {
-	var instances []*karpcp.InstanceType
-	for _, it := range m.instanceTypes {
-		instances = append(instances, it)
-	}
-	return instances, nil
-}
-
-func (m *mockProvider) Create(ctx context.Context, instanceType *karpcp.InstanceType) error {
-	// no-op as mentioned in the interface
-	return nil
-}
-
-func (m *mockProvider) Delete(ctx context.Context, instanceType *karpcp.InstanceType) error {
-	// no-op as mentioned in the interface
-	return nil
-}
-
-func TestProviderGet(t *testing.T) {
-	ctx := context.Background()
-	provider := newMockProvider()
-
-	tests := []struct {
-		name           string
-		instanceName   string
-		expectInstance bool
-	}{
-		{
-			name:           "existing instance type",
-			instanceName:   "test-instance",
-			expectInstance: true,
-		},
-		{
-			name:           "non-existent instance type",
-			instanceName:   "non-existent",
-			expectInstance: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			instance, err := provider.Get(ctx, tt.instanceName)
-			assert.NoError(t, err)
-
-			if tt.expectInstance {
-				assert.NotNil(t, instance)
-				assert.Equal(t, tt.instanceName, instance.Name)
-				assert.Equal(t, resource.MustParse("4"), instance.Capacity[corev1.ResourceCPU])
-				assert.Equal(t, resource.MustParse("8Gi"), instance.Capacity[corev1.ResourceMemory])
-			} else {
-				assert.Nil(t, instance)
-			}
-		})
-	}
-}
-
-func TestProviderList(t *testing.T) {
-	ctx := context.Background()
-	provider := newMockProvider()
-
-	instances, err := provider.List(ctx)
-	assert.NoError(t, err)
-	assert.Len(t, instances, 1)
-	assert.Equal(t, "test-instance", instances[0].Name)
-	assert.Equal(t, resource.MustParse("4"), instances[0].Capacity[corev1.ResourceCPU])
-	assert.Equal(t, resource.MustParse("8Gi"), instances[0].Capacity[corev1.ResourceMemory])
-}
-
-func TestProviderCreate(t *testing.T) {
-	ctx := context.Background()
-	provider := newMockProvider()
-
-	// Create should be no-op for IBM Cloud
-	err := provider.Create(ctx, &karpcp.InstanceType{
-		Name: "new-instance",
-		Capacity: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("2"),
-			corev1.ResourceMemory: resource.MustParse("4Gi"),
-		},
-	})
-	assert.NoError(t, err)
-}
-
-func TestProviderDelete(t *testing.T) {
-	ctx := context.Background()
-	provider := newMockProvider()
-
-	// Delete should be no-op for IBM Cloud
-	err := provider.Delete(ctx, &karpcp.InstanceType{
-		Name: "test-instance",
-	})
-	assert.NoError(t, err)
-}
 
 func TestIBMInstanceTypeProvider_Get(t *testing.T) {
 	ctx := context.Background()
@@ -271,7 +149,7 @@ func TestCalculateInstanceTypeScore(t *testing.T) {
 				},
 				Price: 0.20, // $0.20/hour
 			},
-			expectedScore: 0.036111111111111115, // (0.20/4 + 0.20/9) / 2 = (0.05 + 0.0222) / 2 = 0.0361 (8Gi = 9 decimal GB)
+			expectedScore: 0.036111111111111115, // (0.20/4 + 0.20/9) / 2; ScaledValue(8Gi, Giga) rounds up to 9
 		},
 		{
 			name: "instance without pricing",
@@ -284,7 +162,7 @@ func TestCalculateInstanceTypeScore(t *testing.T) {
 				},
 				Price: 0.0, // No pricing data
 			},
-			expectedScore: 7.0, // 2 + 5 (CPU + memory where 4Gi = 5 decimal GB)
+			expectedScore: 7.0, // 2 + 5; ScaledValue(4Gi, Giga) rounds up to 5
 		},
 	}
 
@@ -362,59 +240,295 @@ func TestRankInstanceTypes(t *testing.T) {
 
 	ranked := provider.RankInstanceTypes(instanceTypes)
 
-	// Should return same number of instance types
-	assert.Len(t, ranked, len(instanceTypes))
+	// With no pricing, score = CPU + ScaledValue(memory, Giga).
+	// small-expensive: 2 + 5 = 7, large-cheap: 8 + 18 = 26. Lower ranks first.
+	assert.Len(t, ranked, 2)
+	assert.Equal(t, "small-expensive", ranked[0].Name)
+	assert.Equal(t, "large-cheap", ranked[1].Name)
+}
 
-	// All instance types should be present
-	names := make([]string, len(ranked))
-	for i, it := range ranked {
-		names[i] = it.Name
+func TestCalculateOverhead_Defaults(t *testing.T) {
+	ctx := context.Background()
+	provider := &IBMInstanceTypeProvider{}
+
+	overhead := provider.calculateOverhead(ctx, nil)
+
+	assert.Equal(t, resource.MustParse("100m"), overhead.KubeReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.KubeReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("100m"), overhead.SystemReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.SystemReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("500Mi"), overhead.EvictionThreshold[corev1.ResourceMemory])
+}
+
+func TestCalculateOverhead_WithKubeletConfig(t *testing.T) {
+	ctx := context.Background()
+	provider := &IBMInstanceTypeProvider{}
+
+	nodeClass := &v1alpha1.IBMNodeClass{
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Kubelet: &v1alpha1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					"cpu":    "200m",
+					"memory": "2Gi",
+				},
+				SystemReserved: map[string]string{
+					"cpu":    "300m",
+					"memory": "3Gi",
+				},
+				EvictionHard: map[string]string{
+					"memory.available": "1Gi",
+				},
+			},
+		},
 	}
-	assert.Contains(t, names, "small-expensive")
-	assert.Contains(t, names, "large-cheap")
+
+	overhead := provider.calculateOverhead(ctx, nodeClass)
+
+	assert.Equal(t, resource.MustParse("200m"), overhead.KubeReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("2Gi"), overhead.KubeReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("300m"), overhead.SystemReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("3Gi"), overhead.SystemReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.EvictionThreshold[corev1.ResourceMemory])
 }
 
-func TestNewProvider_ErrorHandling(t *testing.T) {
-	// Test that NewProvider handles nil arguments gracefully
-	provider := NewProvider(nil, nil)
-	// Should not panic but provider methods should handle nil clients gracefully
-	assert.NotNil(t, provider)
+func TestCalculateOverhead_InvalidKubeletValues(t *testing.T) {
+	ctx := context.Background()
+	provider := &IBMInstanceTypeProvider{}
+
+	nodeClass := &v1alpha1.IBMNodeClass{
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Kubelet: &v1alpha1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					"cpu":    "notavalue",
+					"memory": "garbage",
+				},
+				SystemReserved: map[string]string{
+					"cpu":    "???",
+					"memory": "invalid",
+				},
+				EvictionHard: map[string]string{
+					"memory.available": "nope",
+				},
+			},
+		},
+	}
+
+	overhead := provider.calculateOverhead(ctx, nodeClass)
+
+	// All invalid values should fall back to defaults
+	assert.Equal(t, resource.MustParse("100m"), overhead.KubeReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.KubeReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("100m"), overhead.SystemReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.SystemReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("500Mi"), overhead.EvictionThreshold[corev1.ResourceMemory])
 }
 
-func TestV1Alpha1InstanceTypeRequirements(t *testing.T) {
+func TestCalculateOverhead_PartialKubeletConfig(t *testing.T) {
+	ctx := context.Background()
+	provider := &IBMInstanceTypeProvider{}
+
+	nodeClass := &v1alpha1.IBMNodeClass{
+		Spec: v1alpha1.IBMNodeClassSpec{
+			Kubelet: &v1alpha1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					"cpu": "500m",
+					// memory not set, should use default
+				},
+				// SystemReserved not set at all, should use defaults
+				EvictionHard: map[string]string{
+					"memory.available": "2Gi",
+				},
+			},
+		},
+	}
+
+	overhead := provider.calculateOverhead(ctx, nodeClass)
+
+	assert.Equal(t, resource.MustParse("500m"), overhead.KubeReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.KubeReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("100m"), overhead.SystemReserved[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1Gi"), overhead.SystemReserved[corev1.ResourceMemory])
+	assert.Equal(t, resource.MustParse("2Gi"), overhead.EvictionThreshold[corev1.ResourceMemory])
+}
+
+func TestGetRegion_NilClient(t *testing.T) {
+	provider := &IBMInstanceTypeProvider{
+		client: nil,
+	}
+	assert.Equal(t, "unknown", provider.GetRegion())
+}
+
+func TestCalculateInstanceTypeScore_EdgeCases(t *testing.T) {
 	tests := []struct {
-		name string
-		req  v1alpha1.InstanceTypeRequirements
+		name     string
+		instance *ExtendedInstanceType
+		check    func(t *testing.T, score float64)
 	}{
 		{
-			name: "basic CPU and memory requirements",
-			req: v1alpha1.InstanceTypeRequirements{
-				MinimumCPU:    4,
-				MinimumMemory: 8,
+			name: "very large instance",
+			instance: &ExtendedInstanceType{
+				InstanceType: &karpcp.InstanceType{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("128"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+				Price: 5.0,
+			},
+			check: func(t *testing.T, score float64) {
+				// cpuEff = 5.0/128, memEff = 5.0/550 (512Gi ~ 550 decimal GB)
+				// score = (0.0390625 + 0.009090...) / 2 ~ 0.02408
+				assert.InDelta(t, 0.02408, score, 0.001)
 			},
 		},
 		{
-			name: "GPU requirements",
-			req: v1alpha1.InstanceTypeRequirements{
-				MinimumCPU:    2,
-				MinimumMemory: 4,
+			name: "single CPU instance",
+			instance: &ExtendedInstanceType{
+				InstanceType: &karpcp.InstanceType{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+				},
+				Price: 0.05,
+			},
+			check: func(t *testing.T, score float64) {
+				// cpuEff = 0.05/1, memEff = 0.05/3 (2Gi ~ 3 decimal GB)
+				// score = (0.05 + 0.01666) / 2 ~ 0.03333
+				assert.InDelta(t, 0.03333, score, 0.001)
 			},
 		},
 		{
-			name: "arm64 architecture",
-			req: v1alpha1.InstanceTypeRequirements{
-				Architecture:  "arm64",
-				MinimumCPU:    2,
-				MinimumMemory: 4,
+			name: "zero memory instance with price",
+			instance: &ExtendedInstanceType{
+				InstanceType: &karpcp.InstanceType{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("0"),
+					},
+				},
+				Price: 0.10,
+			},
+			check: func(t *testing.T, score float64) {
+				// memoryGB = 0, division by zero yields +Inf
+				assert.True(t, math.IsInf(score, 1), "expected +Inf for zero memory with pricing")
+			},
+		},
+		{
+			name: "same price larger resources scores lower",
+			instance: &ExtendedInstanceType{
+				InstanceType: &karpcp.InstanceType{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
+				Price: 0.20,
+			},
+			check: func(t *testing.T, score float64) {
+				smallerInstance := &ExtendedInstanceType{
+					InstanceType: &karpcp.InstanceType{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("8Gi"),
+						},
+					},
+					Price: 0.20,
+				}
+				smallerScore := calculateInstanceTypeScore(smallerInstance)
+				assert.Less(t, score, smallerScore, "larger instance at same price should have lower (better) score")
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test that we can create and access the requirements structure
-			assert.GreaterOrEqual(t, tt.req.MinimumCPU, int32(0))
-			assert.GreaterOrEqual(t, tt.req.MinimumMemory, int32(0))
+			score := calculateInstanceTypeScore(tt.instance)
+			tt.check(t, score)
 		})
 	}
+}
+
+func TestRankInstanceTypes_WithPricing(t *testing.T) {
+	provider := &IBMInstanceTypeProvider{}
+
+	instances := []*ExtendedInstanceType{
+		{
+			InstanceType: &karpcp.InstanceType{
+				Name: "expensive",
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				Requirements: scheduling.NewRequirements(),
+			},
+			Price: 0.50,
+		},
+		{
+			InstanceType: &karpcp.InstanceType{
+				Name: "cheap",
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				Requirements: scheduling.NewRequirements(),
+			},
+			Price: 0.10,
+		},
+		{
+			InstanceType: &karpcp.InstanceType{
+				Name: "mid",
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				Requirements: scheduling.NewRequirements(),
+			},
+			Price: 0.20,
+		},
+	}
+
+	ranked := provider.rankInstanceTypes(instances)
+
+	assert.Len(t, ranked, 3)
+	assert.Equal(t, "cheap", ranked[0].Name)
+	assert.Equal(t, "mid", ranked[1].Name)
+	assert.Equal(t, "expensive", ranked[2].Name)
+}
+
+func TestRankInstanceTypes_MixedPricing(t *testing.T) {
+	provider := &IBMInstanceTypeProvider{}
+
+	instances := []*ExtendedInstanceType{
+		{
+			InstanceType: &karpcp.InstanceType{
+				Name: "no-price",
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				Requirements: scheduling.NewRequirements(),
+			},
+			Price: 0.0,
+		},
+		{
+			InstanceType: &karpcp.InstanceType{
+				Name: "priced",
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				Requirements: scheduling.NewRequirements(),
+			},
+			Price: 0.10,
+		},
+	}
+
+	ranked := provider.rankInstanceTypes(instances)
+
+	assert.Len(t, ranked, 2)
+	// Priced instance scores ~0.018, no-price instance scores 4+9=13
+	// Lower score is ranked first, so priced comes before no-price
+	assert.Equal(t, "priced", ranked[0].Name)
+	assert.Equal(t, "no-price", ranked[1].Name)
 }
