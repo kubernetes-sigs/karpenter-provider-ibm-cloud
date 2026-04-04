@@ -90,6 +90,14 @@ func (p *IBMPricingProvider) GetPrice(ctx context.Context, instanceType string, 
 	return 0, fmt.Errorf("no pricing data available for instance type %s in zone %s", instanceType, zone)
 }
 
+func (p *IBMPricingProvider) GetSpotPrice(ctx context.Context, instanceType string, zone string, discountPercent int32) (float64, error) {
+	onDemandPrice, err := p.GetPrice(ctx, instanceType, zone)
+	if err != nil {
+		return 0, err
+	}
+	return onDemandPrice * float64(discountPercent) / 100.0, nil
+}
+
 func (p *IBMPricingProvider) GetPrices(ctx context.Context, zone string) (map[string]float64, error) {
 	p.mutex.RLock()
 	if time.Since(p.lastUpdate) > p.ttl {

@@ -1274,3 +1274,21 @@ func TestFetchPricingFromAPI_WithBatcher(t *testing.T) {
 		assert.Equal(t, int64(1), fakePricing.GetCallCount())
 	})
 }
+
+func TestGetSpotPrice(t *testing.T) {
+	provider := newTestProvider()
+	provider.pricingMap = map[string]map[string]float64{
+		"bx2-2x8": {
+			"us-south-1": 1.0,
+		},
+	}
+	provider.lastUpdate = time.Now()
+
+	price, err := provider.GetSpotPrice(context.Background(), "bx2-2x8", "us-south-1", 60)
+	require.NoError(t, err)
+	assert.Equal(t, 0.6, price)
+
+	price, err = provider.GetSpotPrice(context.Background(), "bx2-2x8", "us-south-1", 25)
+	require.NoError(t, err)
+	assert.Equal(t, 0.25, price)
+}
