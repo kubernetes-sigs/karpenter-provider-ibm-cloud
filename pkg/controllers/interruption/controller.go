@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclaim/registration"
@@ -457,10 +459,14 @@ func (c *Controller) handleVPCInterruption(ctx context.Context, node *v1.Node, r
 	if c.isCapacityRelated(node, reason) {
 		instanceType := node.Labels["node.kubernetes.io/instance-type"]
 		zone := node.Labels["topology.kubernetes.io/zone"]
+		capacityType := node.Labels[karpv1.CapacityTypeLabelKey]
+		if capacityType == "" {
+			capacityType = karpv1.CapacityTypeOnDemand
+		}
 		if instanceType != "" && zone != "" {
-			c.unavailableOfferings.Add(instanceType+":"+zone, time.Now().Add(time.Hour))
+			c.unavailableOfferings.Add(instanceType+":"+zone+":"+capacityType, time.Now().Add(time.Hour))
 			logger.Info("Marked instance type as unavailable due to capacity issue",
-				"instanceType", instanceType, "zone", zone)
+				"instanceType", instanceType, "zone", zone, "capacityType", capacityType)
 		}
 	}
 
@@ -496,10 +502,14 @@ func (c *Controller) handleIKSInterruption(ctx context.Context, node *v1.Node, r
 	if c.isCapacityRelated(node, reason) {
 		instanceType := node.Labels["node.kubernetes.io/instance-type"]
 		zone := node.Labels["topology.kubernetes.io/zone"]
+		capacityType := node.Labels[karpv1.CapacityTypeLabelKey]
+		if capacityType == "" {
+			capacityType = karpv1.CapacityTypeOnDemand
+		}
 		if instanceType != "" && zone != "" {
-			c.unavailableOfferings.Add(instanceType+":"+zone, time.Now().Add(time.Hour))
+			c.unavailableOfferings.Add(instanceType+":"+zone+":"+capacityType, time.Now().Add(time.Hour))
 			logger.Info("Marked instance type as unavailable due to capacity issue",
-				"instanceType", instanceType, "zone", zone)
+				"instanceType", instanceType, "zone", zone, "capacityType", capacityType)
 		}
 	}
 
