@@ -45,6 +45,7 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/capacitytype"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/image"
 	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/bootstrap"
@@ -1065,10 +1066,28 @@ func (p *VPCInstanceProvider) Get(ctx context.Context, providerID string) (*core
 		return nil, fmt.Errorf("getting VPC instance %s: %w", instanceID, err)
 	}
 
+	// Determine capacity type from availability class
+	availabilityClass := ""
+	if instance.Availability != nil && instance.Availability.Class != nil {
+		availabilityClass = *instance.Availability.Class
+	}
+	capacityType := capacitytype.GetCapacityTypeFromAvailabilityClass(ctx, availabilityClass)
+
+	labels := map[string]string{
+		karpv1.CapacityTypeLabelKey: capacityType,
+	}
+	if instance.Profile != nil && instance.Profile.Name != nil {
+		labels[corev1.LabelInstanceTypeStable] = *instance.Profile.Name
+	}
+	if instance.Zone != nil && instance.Zone.Name != nil {
+		labels[corev1.LabelTopologyZone] = *instance.Zone.Name
+	}
+
 	// Convert VPC instance to Node representation
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: *instance.Name,
+			Name:   *instance.Name,
+			Labels: labels,
 		},
 		Spec: corev1.NodeSpec{
 			ProviderID: providerID,
