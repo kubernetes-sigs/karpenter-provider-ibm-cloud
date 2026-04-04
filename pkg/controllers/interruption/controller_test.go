@@ -858,6 +858,7 @@ func TestHandleVPCInterruption(t *testing.T) {
 		node                  *v1.Node
 		reason                InterruptionReason
 		expectCapacityMarking bool
+		expectedCacheKey      string
 		expectNodeCordoning   bool
 		expectNodeDeletion    bool
 		expectError           bool
@@ -878,6 +879,7 @@ func TestHandleVPCInterruption(t *testing.T) {
 			},
 			reason:                CapacityUnavailable,
 			expectCapacityMarking: true,
+			expectedCacheKey:      "bx2-2x8:us-south-1:on-demand",
 			expectNodeCordoning:   true,
 			expectNodeDeletion:    true,
 			expectError:           false,
@@ -918,7 +920,30 @@ func TestHandleVPCInterruption(t *testing.T) {
 			},
 			reason:                CapacityUnavailable,
 			expectCapacityMarking: true,
+			expectedCacheKey:      "bx2-2x8:us-south-1:on-demand",
 			expectNodeCordoning:   false, // Already cordoned
+			expectNodeDeletion:    true,
+			expectError:           false,
+		},
+		{
+			name: "spot instance capacity interruption should include spot in cache key",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "spot-node",
+					Labels: map[string]string{
+						"node.kubernetes.io/instance-type": "gx2-8x64x1v100",
+						"topology.kubernetes.io/zone":      "us-south-2",
+						"karpenter.sh/capacity-type":       "spot",
+					},
+				},
+				Spec: v1.NodeSpec{
+					Unschedulable: false,
+				},
+			},
+			reason:                CapacityUnavailable,
+			expectCapacityMarking: true,
+			expectedCacheKey:      "gx2-8x64x1v100:us-south-2:spot",
+			expectNodeCordoning:   true,
 			expectNodeDeletion:    true,
 			expectError:           false,
 		},
@@ -966,12 +991,7 @@ func TestHandleVPCInterruption(t *testing.T) {
 
 			// Check if capacity was marked as unavailable
 			if tt.expectCapacityMarking {
-				instanceType := tt.node.Labels["node.kubernetes.io/instance-type"]
-				zone := tt.node.Labels["topology.kubernetes.io/zone"]
-				if instanceType != "" && zone != "" {
-					key := instanceType + ":" + zone
-					assert.True(t, unavailableOfferings.IsUnavailable(key))
-				}
+				assert.True(t, unavailableOfferings.IsUnavailable(tt.expectedCacheKey))
 			}
 
 			// Verify node state changes by fetching the updated node
@@ -998,6 +1018,7 @@ func TestHandleIKSInterruption(t *testing.T) {
 		node                  *v1.Node
 		reason                InterruptionReason
 		expectCapacityMarking bool
+		expectedCacheKey      string
 		expectNodeCordoning   bool
 		expectNodeDeletion    bool
 		expectError           bool
@@ -1018,6 +1039,7 @@ func TestHandleIKSInterruption(t *testing.T) {
 			},
 			reason:                CapacityUnavailable,
 			expectCapacityMarking: true,
+			expectedCacheKey:      "bx2-2x8:us-south-1:on-demand",
 			expectNodeCordoning:   true,
 			expectNodeDeletion:    false, // IKS doesn't delete for capacity issues
 			expectError:           false,
@@ -1040,6 +1062,28 @@ func TestHandleIKSInterruption(t *testing.T) {
 			expectCapacityMarking: false,
 			expectNodeCordoning:   true,
 			expectNodeDeletion:    true,
+			expectError:           false,
+		},
+		{
+			name: "spot instance capacity interruption should include spot in cache key in IKS mode",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "iks-spot-node",
+					Labels: map[string]string{
+						"node.kubernetes.io/instance-type": "gx2-8x64x1v100",
+						"topology.kubernetes.io/zone":      "us-south-2",
+						"karpenter.sh/capacity-type":       "spot",
+					},
+				},
+				Spec: v1.NodeSpec{
+					Unschedulable: false,
+				},
+			},
+			reason:                CapacityUnavailable,
+			expectCapacityMarking: true,
+			expectedCacheKey:      "gx2-8x64x1v100:us-south-2:spot",
+			expectNodeCordoning:   true,
+			expectNodeDeletion:    false,
 			expectError:           false,
 		},
 		{
@@ -1090,12 +1134,7 @@ func TestHandleIKSInterruption(t *testing.T) {
 
 			// Check if capacity was marked as unavailable
 			if tt.expectCapacityMarking {
-				instanceType := tt.node.Labels["node.kubernetes.io/instance-type"]
-				zone := tt.node.Labels["topology.kubernetes.io/zone"]
-				if instanceType != "" && zone != "" {
-					key := instanceType + ":" + zone
-					assert.True(t, unavailableOfferings.IsUnavailable(key))
-				}
+				assert.True(t, unavailableOfferings.IsUnavailable(tt.expectedCacheKey))
 			}
 
 			// Verify node state changes
