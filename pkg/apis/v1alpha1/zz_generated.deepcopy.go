@@ -121,6 +121,11 @@ func (in *IBMNodeClassSpec) DeepCopyInto(out *IBMNodeClassSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.SpotDiscountPercent != nil {
+		in, out := &in.SpotDiscountPercent, &out.SpotDiscountPercent
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make(map[string]string, len(*in))
