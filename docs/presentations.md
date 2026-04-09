@@ -4,6 +4,14 @@ This page contains links to presentations, talks, demos, and blog posts about th
 
 ## Conference Talks
 
+### KubeCon + CloudNativeCon Europe 2026
+#### [From Static Tokens to Attestation: The Evolution of Secure Node Joining](https://kccnceu2026.sched.com/event/2EoKz/from-static-tokens-to-attestation-the-evolution-of-secure-node-joining-ciprian-hacman-jack-francis-microsoft-michael-mccune-josephine-pfeiffer-red-hat-justin-santa-barbara-google)
+- **Speakers**: Ciprian Hacman, Jack Francis (Microsoft), Michael McCune, Josephine Pfeiffer (Red Hat), Justin Santa Barbara (Google)
+- **Date**: March 23-26, 2026
+- **Location**: Amsterdam, Netherlands
+- **Resources**: [Recording](https://youtu.be/MIO3tDk0GnI)
+- **Description**: Cross-provider discussion on the evolution of Kubernetes node joining, covering the shift from static bootstrap tokens toward attestation-based mechanisms for securely admitting nodes to a cluster.
+
 ### DevConf.CZ 2025
 #### [Beyond CAS: Why the world needs another Kubernetes Cluster Autoscaler](https://pretalx.devconf.info/devconf-cz-2025/talk/EHDDFT/)
 - **Speaker**: Josephine Pfeffer
