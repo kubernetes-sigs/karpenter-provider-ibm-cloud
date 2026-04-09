@@ -18,25 +18,25 @@ The Karpenter IBM Cloud Provider enables automatic node provisioning and scaling
 
 <div class="grid cards" markdown>
 
-- :rocket: **[Getting Started](getting-started.md)**
+- **[Getting Started](getting-started.md)**
   Get up and running with Karpenter on IBM Cloud in minutes
 
-- :cloud: **[VPC Integration](vpc-integration.md)**
+- **[VPC Integration](vpc-integration.md)**
   Deploy on self-managed Kubernetes clusters with full control
 
-- :office: **[IKS Integration](iks-integration.md)**
+- **[IKS Integration](iks-integration.md)**
   Seamless integration with IBM Kubernetes Service
 
-- :gear: **[Configuration](bootstrap-methods.md)**
+- **[Configuration](bootstrap-methods.md)**
   Learn about bootstrap methods and configuration options
 
-- :building_construction: **[Nightly Builds](nightly-builds.md)**
+- **[Nightly Builds](nightly-builds.md)**
   Access bleeding-edge features and development versions
 
-- :speaking_head: **[Presentations](presentations.md)**
+- **[Presentations](presentations.md)**
   Conference talks and demos about the project
 
-- :question: **[FAQ](faq.md)**
+- **[FAQ](faq.md)**
   Frequently asked questions about Karpenter IBM Cloud Provider
 
 </div>

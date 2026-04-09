@@ -205,8 +205,8 @@ kubectl get ibmnodeclass YOUR-NODECLASS -o yaml | grep resourceGroupID
     **Symptoms:**
     ```bash
     # From worker node:
-    ping API_SERVER_IP              # ✅ SUCCESS
-    curl https://API_SERVER_IP:6443 # ❌ TIMEOUT
+    ping API_SERVER_IP              # SUCCESS
+    curl https://API_SERVER_IP:6443 # TIMEOUT
     ```
 
     **Required Security Group Rules:**

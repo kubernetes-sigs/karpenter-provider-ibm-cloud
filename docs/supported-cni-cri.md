@@ -8,9 +8,9 @@ This document outlines the supported Container Network Interface (CNI) plugins a
 
 | CNI Plugin | Status | Bootstrap Mode | Notes |
 |------------|--------|----------------|-------|
-| **Calico** | ✅ Fully Supported | cloud-init, iks-api | Default for most IBM Cloud deployments |
-| **Cilium** | ✅ Fully Supported | cloud-init | Advanced networking features supported |
-| **Flannel** | ✅ Basic Support | cloud-init | Simple overlay networking |
+| **Calico** | Fully Supported | cloud-init, iks-api | Default for most IBM Cloud deployments |
+| **Cilium** | Fully Supported | cloud-init | Advanced networking features supported |
+| **Flannel** | Basic Support | cloud-init | Simple overlay networking |
 
 ### CNI Auto-Detection
 
@@ -53,8 +53,8 @@ spec:
 
 | Runtime        | Status             | Detection Method     | Default Version     |
 |----------------|--------------------|----------------------|---------------------|
-| **containerd** | ✅ Fully Supported | Auto-detected        | 1.7.0+              |
-| **CRI-O**      | 🔄 Basic Support   | Manual configuration | 1.24+               |
+| **containerd** | Fully Supported | Auto-detected        | 1.7.0+              |
+| **CRI-O**      | Basic Support   | Manual configuration | 1.24+               |
 
 ### Runtime Auto-Detection
 
