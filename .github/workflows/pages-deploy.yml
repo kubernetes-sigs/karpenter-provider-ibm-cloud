@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -50,24 +50,21 @@ jobs:
         run: pip install -r docs/requirements.txt
 
       - name: Build documentation
-        run: |
-          mkdocs build
+        run: mkdocs build
 
       - name: Package Helm charts
         run: |
           mkdir -p _helm-repo
 
-          # Download existing index if it exists
+          # Download existing index to preserve prior chart versions
           echo "Downloading existing index.yaml..."
           curl -s https://karpenter-ibm.sh/index.yaml > _helm-repo/old-index.yaml || echo "No existing index found"
 
-          # Package the current chart
           if [ -f "charts/Chart.yaml" ]; then
             echo "Packaging chart: charts/"
             helm package charts/ --destination _helm-repo
           fi
 
-          # Merge with existing index (preserves all versions)
           if [ -f "_helm-repo/old-index.yaml" ] && [ -s "_helm-repo/old-index.yaml" ]; then
             echo "Merging with existing index..."
             helm repo index _helm-repo --url https://karpenter-ibm.sh --merge _helm-repo/old-index.yaml
@@ -76,26 +73,28 @@ jobs:
             helm repo index _helm-repo --url https://karpenter-ibm.sh
           fi
 
-      - name: Combine site content
+          rm -f _helm-repo/old-index.yaml
+
+      - name: Assemble site
         run: |
-          # Put docs at root (since we build with root URL)
-          cp -r site/* .
+          mkdir -p _site
+          cp -r site/. _site/
+          cp _helm-repo/*.tgz _site/ 2>/dev/null || true
+          cp _helm-repo/index.yaml _site/
+          cp docs/CNAME _site/
 
-          # Keep charts at root (existing customer configs)
-          cp -r _helm-repo/* .
-
-          # Preserve custom domain configuration
-          cp docs/CNAME .
-
-          # Clean up build directories
-          rm -rf site _helm-repo
-
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          publish_branch: gh-pages
-          force_orphan: false
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
