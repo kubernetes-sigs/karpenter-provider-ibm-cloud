@@ -10,7 +10,7 @@ edit_uri: edit/main/docs/
 
 # Copyright
 copyright: |
-  Copyright &copy; 2025 Karpenter IBM Cloud Provider Contributors<br>
+  Copyright &copy; 2026 Karpenter IBM Cloud Provider Contributors<br>
   <a href="https://github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/blob/main/LICENSE">Apache License 2.0</a>
 
 # Configuration
