@@ -99,6 +99,7 @@ func (m *mockInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovi
 // Mock Instance Provider
 type mockInstanceProvider struct {
 	createNode  *corev1.Node
+	getNode     *corev1.Node
 	createError error
 	deleteError error
 	getError    error
@@ -151,9 +152,17 @@ func (m *mockInstanceProvider) Get(ctx context.Context, providerID string) (*cor
 	if m.getError != nil {
 		return nil, m.getError
 	}
+	if m.getNode != nil {
+		return m.getNode, nil
+	}
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
+			Labels: map[string]string{
+				karpv1.CapacityTypeLabelKey:    karpv1.CapacityTypeOnDemand,
+				corev1.LabelInstanceTypeStable: "bx2-4x16",
+				corev1.LabelTopologyZone:       "us-south-1",
+			},
 		},
 		Spec: corev1.NodeSpec{
 			ProviderID: providerID,
