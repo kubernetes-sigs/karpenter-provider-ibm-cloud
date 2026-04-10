@@ -96,7 +96,7 @@ func New(ctx context.Context, kubeClient client.Client,
 		ibmClient:  ibmClient,
 
 		instanceTypeProvider:  instanceTypeProvider,
-		providerFactory:       providers.NewProviderFactory(ctx, ibmClient, kubeClient, nil),
+		providerFactory:       providers.NewProviderFactory(ctx, ibmClient, kubeClient, nil, nil),
 		subnetProvider:        subnetProvider,
 		defaultProviderMode:   defaultMode,
 		circuitBreakerManager: circuitBreakerManager,

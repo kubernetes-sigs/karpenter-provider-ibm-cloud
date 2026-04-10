@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
+	ibmcache "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
@@ -36,7 +37,7 @@ type Controller struct {
 	instanceTypeProvider instancetype.Provider
 }
 
-func NewController(ctx context.Context) (*Controller, error) {
+func NewController(ctx context.Context, unavailableOfferings *ibmcache.UnavailableOfferings) (*Controller, error) {
 	// Create IBM client
 	client, err := ibm.NewClient()
 	if err != nil {
@@ -47,7 +48,7 @@ func NewController(ctx context.Context) (*Controller, error) {
 	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, client.GetRegion())
 
 	// Create instance type provider
-	provider := instancetype.NewProvider(client, pricingProvider)
+	provider := instancetype.NewProvider(client, pricingProvider, unavailableOfferings)
 
 	return &Controller{
 		instanceTypeProvider: provider,

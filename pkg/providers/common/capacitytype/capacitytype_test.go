@@ -17,8 +17,10 @@ limitations under the License.
 package capacitytype
 
 import (
+	"context"
 	"testing"
 
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -165,3 +167,84 @@ func TestResolveCapacityType(t *testing.T) {
 		})
 	}
 }
+
+func TestGetSupportedCapacityTypes(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name              string
+		availabilityClass vpcv1.InstanceProfileAvailabilityClassIntf
+		want              []string
+	}{
+		{
+			name:              "nil availability class defaults to on-demand",
+			availabilityClass: nil,
+			want:              []string{karpv1.CapacityTypeOnDemand},
+		},
+		{
+			name: "enum with standard only",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassEnum{
+				Values: []string{"standard"},
+			},
+			want: []string{karpv1.CapacityTypeOnDemand},
+		},
+		{
+			name: "enum with spot only",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassEnum{
+				Values: []string{"spot"},
+			},
+			want: []string{karpv1.CapacityTypeSpot},
+		},
+		{
+			name: "enum with standard and spot",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassEnum{
+				Values: []string{"standard", "spot"},
+			},
+			want: []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
+		},
+		{
+			name: "fixed with standard",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassFixed{
+				Value: strPtr("standard"),
+			},
+			want: []string{karpv1.CapacityTypeOnDemand},
+		},
+		{
+			name: "fixed with spot",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassFixed{
+				Value: strPtr("spot"),
+			},
+			want: []string{karpv1.CapacityTypeSpot},
+		},
+		{
+			name: "fixed with nil value defaults to on-demand",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassFixed{
+				Value: nil,
+			},
+			want: []string{karpv1.CapacityTypeOnDemand},
+		},
+		{
+			name: "enum with empty values defaults to on-demand",
+			availabilityClass: &vpcv1.InstanceProfileAvailabilityClassEnum{
+				Values: []string{},
+			},
+			want: []string{karpv1.CapacityTypeOnDemand},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetSupportedCapacityTypes(ctx, tt.availabilityClass)
+			if len(got) != len(tt.want) {
+				t.Fatalf("GetSupportedCapacityTypes() returned %d items %v, want %d items %v", len(got), got, len(tt.want), tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("GetSupportedCapacityTypes()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func strPtr(s string) *string { return &s }

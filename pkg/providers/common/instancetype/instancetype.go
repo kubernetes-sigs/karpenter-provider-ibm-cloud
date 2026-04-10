@@ -32,12 +32,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	v1alpha1 "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	ibmcache "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/capacitytype"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
@@ -49,22 +53,29 @@ type ExtendedInstanceType struct {
 	Price        float64
 }
 
-type IBMInstanceTypeProvider struct {
-	client           *ibm.Client
-	pricingProvider  pricing.Provider
-	vpcClientManager *vpcclient.Manager
-	zonesMu          sync.RWMutex
-	zonesCache       map[string][]string // Cache zones by region
-	zonesCacheTime   map[string]time.Time
+type IBMCloudClient interface {
+	GetRegion() string
+	GetVPCClient(ctx context.Context) (*ibm.VPCClient, error)
 }
 
-func NewProvider(client *ibm.Client, pricingProvider pricing.Provider) Provider {
+type IBMInstanceTypeProvider struct {
+	client               IBMCloudClient
+	pricingProvider      pricing.Provider
+	vpcClientManager     *vpcclient.Manager
+	zonesMu              sync.RWMutex
+	zonesCache           map[string][]string // Cache zones by region
+	zonesCacheTime       map[string]time.Time
+	unavailableOfferings *ibmcache.UnavailableOfferings
+}
+
+func NewProvider(client *ibm.Client, pricingProvider pricing.Provider, unavailableOfferings *ibmcache.UnavailableOfferings) Provider {
 	return &IBMInstanceTypeProvider{
-		client:           client,
-		pricingProvider:  pricingProvider,
-		vpcClientManager: vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
-		zonesCache:       make(map[string][]string),
-		zonesCacheTime:   make(map[string]time.Time),
+		client:               client,
+		pricingProvider:      pricingProvider,
+		vpcClientManager:     vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
+		zonesCache:           make(map[string][]string),
+		zonesCacheTime:       make(map[string]time.Time),
+		unavailableOfferings: unavailableOfferings,
 	}
 }
 
@@ -730,16 +741,37 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 		return nil, fmt.Errorf("no zones found for region %s", region)
 	}
 
-	// Create offerings with on-demand capacity in all supported zones
-	offerings := cloudprovider.Offerings{
-		{
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zones...),
-				scheduling.NewRequirement("karpenter.sh/capacity-type", corev1.NodeSelectorOpIn, "on-demand"),
-			),
-			Price:     0.1, // Default price when pricing provider unavailable
-			Available: true,
-		},
+	supportedCapacityTypes := capacitytype.GetSupportedCapacityTypes(ctx, profile.AvailabilityClass)
+
+	spotDiscountPercent := options.FromContext(ctx).SpotDiscountPercent
+	if spotDiscountPercent == 0 {
+		spotDiscountPercent = 60
+	}
+
+	// Create per-zone, per-capacity-type offerings
+	var offerings cloudprovider.Offerings
+	for _, zone := range zones {
+		for _, capacityType := range supportedCapacityTypes {
+			price, _ := p.pricingProvider.GetPrice(ctx, *profile.Name, zone)
+			if capacityType == karpv1.CapacityTypeSpot {
+				price = price * float64(spotDiscountPercent) / 100.0
+			}
+
+			cacheKey := *profile.Name + ":" + zone + ":" + capacityType
+			available := true
+			if p.unavailableOfferings != nil {
+				available = !p.unavailableOfferings.IsUnavailable(cacheKey)
+			}
+
+			offerings = append(offerings, &cloudprovider.Offering{
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
+					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
+				),
+				Price:     price,
+				Available: available,
+			})
+		}
 	}
 
 	// Calculate overhead from kubelet configuration

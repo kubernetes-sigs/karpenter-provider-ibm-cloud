@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	ibmcache "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
@@ -45,7 +46,7 @@ type ProviderFactory struct {
 }
 
 // NewProviderFactory creates a new provider factory
-func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface) *ProviderFactory {
+func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient client.Client, kubernetesClient kubernetes.Interface, unavailableOfferings *ibmcache.UnavailableOfferings) *ProviderFactory {
 	// Create shared providers
 	var region string
 	if client != nil {
@@ -53,7 +54,7 @@ func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient clie
 	}
 	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, region)
 	subnetProvider := subnet.NewProvider(client)
-	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider)
+	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider, unavailableOfferings)
 
 	return &ProviderFactory{
 		client:               client,

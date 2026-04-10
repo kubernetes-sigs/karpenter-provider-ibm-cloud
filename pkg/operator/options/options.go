@@ -51,6 +51,11 @@ type Options struct {
 	// ResourceGroupID is the ID of the resource group to use
 	ResourceGroupID string
 
+	// SpotDiscountPercent is the estimated spot price as a percentage of on-demand pricing (1-100).
+	// IBM Cloud does not expose a public spot pricing API, so this is used to estimate spot costs.
+	// For example, 60 means spot is estimated at 60% of on-demand price (40% savings).
+	SpotDiscountPercent int
+
 	// CircuitBreaker configuration
 	CircuitBreakerEnabled                bool
 	CircuitBreakerFailureThreshold       int
@@ -68,6 +73,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.Region, "region", env.WithDefaultString("IBMCLOUD_REGION", ""), "IBM Cloud region")
 	fs.StringVar(&o.Zone, "zone", env.WithDefaultString("IBMCLOUD_ZONE", ""), "IBM Cloud availability zone")
 	fs.StringVar(&o.ResourceGroupID, "resource-group-id", env.WithDefaultString("IBMCLOUD_RESOURCE_GROUP_ID", ""), "IBM Cloud resource group ID")
+	fs.IntVar(&o.SpotDiscountPercent, "spot-discount-percent", env.WithDefaultInt("KARPENTER_SPOT_DISCOUNT_PERCENT", 60), "Estimated spot price as percentage of on-demand (1-100)")
 }
 
 // Parse parses command-line flags
@@ -111,12 +117,15 @@ func WithOptions(ctx context.Context, options Options) context.Context {
 // NewOptions creates a new Options instance with values from environment variables
 func NewOptions() Options {
 	options := Options{
-		Interruption:    true, // Enable interruption controller by default
-		APIKey:          os.Getenv("IBMCLOUD_API_KEY"),
-		Region:          os.Getenv("IBMCLOUD_REGION"),
-		Zone:            os.Getenv("IBMCLOUD_ZONE"),
-		ResourceGroupID: os.Getenv("IBMCLOUD_RESOURCE_GROUP_ID"),
+		Interruption:        true, // Enable interruption controller by default
+		APIKey:              os.Getenv("IBMCLOUD_API_KEY"),
+		Region:              os.Getenv("IBMCLOUD_REGION"),
+		Zone:                os.Getenv("IBMCLOUD_ZONE"),
+		ResourceGroupID:     os.Getenv("IBMCLOUD_RESOURCE_GROUP_ID"),
+		SpotDiscountPercent: 60,
 	}
+
+	options.parseSpotDiscountPercent()
 
 	// Parse circuit breaker configuration from environment variables
 	options.parseCircuitBreakerConfig()
@@ -124,7 +133,24 @@ func NewOptions() Options {
 	return options
 }
 
-// parseCircuitBreakerConfig reads circuit breaker configuration from environment variables
+func (o *Options) parseSpotDiscountPercent() {
+	v := os.Getenv("KARPENTER_SPOT_DISCOUNT_PERCENT")
+	if v == "" {
+		return
+	}
+	logger := log.Log.WithName("options-parsing")
+	val, err := strconv.Atoi(v)
+	if err != nil {
+		logger.Info("invalid KARPENTER_SPOT_DISCOUNT_PERCENT, must be an integer, using default", "value", v, "default", o.SpotDiscountPercent)
+		return
+	}
+	if val < 1 || val > 100 {
+		logger.Info("invalid KARPENTER_SPOT_DISCOUNT_PERCENT, must be between 1 and 100, using default", "value", val, "default", o.SpotDiscountPercent)
+		return
+	}
+	o.SpotDiscountPercent = val
+}
+
 func (o *Options) parseCircuitBreakerConfig() {
 	// Parse enabled state
 	if enabled := os.Getenv("CIRCUIT_BREAKER_ENABLED"); enabled != "" {
@@ -241,6 +267,11 @@ func (o *Options) Validate() error {
 		if err := validateRegionZonePair(o.Region, o.Zone); err != nil {
 			return err
 		}
+	}
+
+	// Validate spot discount percent
+	if o.SpotDiscountPercent < 1 || o.SpotDiscountPercent > 100 {
+		return fmt.Errorf("KARPENTER_SPOT_DISCOUNT_PERCENT must be between 1 and 100, got %d", o.SpotDiscountPercent)
 	}
 
 	// Validate circuit breaker configuration if enabled

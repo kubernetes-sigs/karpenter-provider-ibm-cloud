@@ -46,7 +46,7 @@ func TestRealInstanceTypeProvider(t *testing.T) {
 	}
 
 	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, client.GetRegion())
-	provider := NewProvider(client, pricingProvider)
+	provider := NewProvider(client, pricingProvider, nil)
 
 	t.Logf("Instance type provider created successfully")
 

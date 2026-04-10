@@ -593,15 +593,6 @@ type IBMNodeClassSpec struct {
 	// +optional
 	PlacementTarget string `json:"placementTarget,omitempty"`
 
-	// SpotDiscountPercent is the estimated spot price as a percentage of on-demand pricing (1-100).
-	// IBM Cloud advertises "up to 75%" savings but does not expose a public spot pricing API.
-	// For example, 60 means spot is estimated at 60% of on-demand price (40% savings).
-	// +optional
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
-	// +kubebuilder:default=60
-	SpotDiscountPercent *int32 `json:"spotDiscountPercent,omitempty"`
-
 	// Tags to apply to the instances
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`

@@ -36,6 +36,7 @@ func TestNewOptions(t *testing.T) {
 	_ = os.Unsetenv("IBMCLOUD_RESOURCE_GROUP_ID")
 	_ = os.Unsetenv("CIRCUIT_BREAKER_ENABLED")
 	_ = os.Unsetenv("CIRCUIT_BREAKER_RATE_LIMIT_PER_MINUTE")
+	_ = os.Unsetenv("KARPENTER_SPOT_DISCOUNT_PERCENT")
 
 	opts := NewOptions()
 
@@ -44,6 +45,7 @@ func TestNewOptions(t *testing.T) {
 	assert.Empty(t, opts.Region)
 	assert.Empty(t, opts.Zone)
 	assert.Empty(t, opts.ResourceGroupID)
+	assert.Equal(t, 60, opts.SpotDiscountPercent)
 
 	// Check circuit breaker defaults
 	assert.True(t, opts.CircuitBreakerEnabled)
@@ -61,12 +63,14 @@ func TestNewOptionsWithEnvironment(t *testing.T) {
 	_ = os.Setenv("IBMCLOUD_REGION", "us-south")
 	_ = os.Setenv("IBMCLOUD_ZONE", "us-south-1")
 	_ = os.Setenv("IBMCLOUD_RESOURCE_GROUP_ID", "test-rg-id")
+	_ = os.Setenv("KARPENTER_SPOT_DISCOUNT_PERCENT", "45")
 
 	defer func() {
 		_ = os.Unsetenv("IBMCLOUD_API_KEY")
 		_ = os.Unsetenv("IBMCLOUD_REGION")
 		_ = os.Unsetenv("IBMCLOUD_ZONE")
 		_ = os.Unsetenv("IBMCLOUD_RESOURCE_GROUP_ID")
+		_ = os.Unsetenv("KARPENTER_SPOT_DISCOUNT_PERCENT")
 	}()
 
 	opts := NewOptions()
@@ -76,6 +80,7 @@ func TestNewOptionsWithEnvironment(t *testing.T) {
 	assert.Equal(t, "us-south", opts.Region)
 	assert.Equal(t, "us-south-1", opts.Zone)
 	assert.Equal(t, "test-rg-id", opts.ResourceGroupID)
+	assert.Equal(t, 45, opts.SpotDiscountPercent)
 }
 
 func TestOptionsAddFlags(t *testing.T) {
@@ -179,38 +184,42 @@ func TestOptionsValidation(t *testing.T) {
 		{
 			name: "valid options",
 			opts: Options{
-				APIKey:          "test-key",
-				Region:          "us-south",
-				Zone:            "us-south-1",
-				ResourceGroupID: "test-rg",
+				APIKey:              "test-key",
+				Region:              "us-south",
+				Zone:                "us-south-1",
+				ResourceGroupID:     "test-rg",
+				SpotDiscountPercent: 60,
 			},
 			expectError: false,
 		},
 		{
 			name: "missing API key",
 			opts: Options{
-				Region:          "us-south",
-				Zone:            "us-south-1",
-				ResourceGroupID: "test-rg",
+				Region:              "us-south",
+				Zone:                "us-south-1",
+				ResourceGroupID:     "test-rg",
+				SpotDiscountPercent: 60,
 			},
 			expectError: true,
 		},
 		{
 			name: "missing region",
 			opts: Options{
-				APIKey:          "test-key",
-				Zone:            "us-south-1",
-				ResourceGroupID: "test-rg",
+				APIKey:              "test-key",
+				Zone:                "us-south-1",
+				ResourceGroupID:     "test-rg",
+				SpotDiscountPercent: 60,
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid zone for region",
 			opts: Options{
-				APIKey:          "test-key",
-				Region:          "us-south",
-				Zone:            "eu-gb-1", // Wrong zone for us-south
-				ResourceGroupID: "test-rg",
+				APIKey:              "test-key",
+				Region:              "us-south",
+				Zone:                "eu-gb-1",
+				ResourceGroupID:     "test-rg",
+				SpotDiscountPercent: 60,
 			},
 			expectError: true,
 		},
@@ -218,6 +227,51 @@ func TestOptionsValidation(t *testing.T) {
 			name:        "empty options should be invalid",
 			opts:        Options{},
 			expectError: true,
+		},
+		{
+			name: "spot discount percent zero is invalid",
+			opts: Options{
+				APIKey:              "test-key",
+				Region:              "us-south",
+				SpotDiscountPercent: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "spot discount percent negative is invalid",
+			opts: Options{
+				APIKey:              "test-key",
+				Region:              "us-south",
+				SpotDiscountPercent: -5,
+			},
+			expectError: true,
+		},
+		{
+			name: "spot discount percent over 100 is invalid",
+			opts: Options{
+				APIKey:              "test-key",
+				Region:              "us-south",
+				SpotDiscountPercent: 150,
+			},
+			expectError: true,
+		},
+		{
+			name: "spot discount percent at min boundary",
+			opts: Options{
+				APIKey:              "test-key",
+				Region:              "us-south",
+				SpotDiscountPercent: 1,
+			},
+			expectError: false,
+		},
+		{
+			name: "spot discount percent at max boundary",
+			opts: Options{
+				APIKey:              "test-key",
+				Region:              "us-south",
+				SpotDiscountPercent: 100,
+			},
+			expectError: false,
 		},
 	}
 
@@ -243,15 +297,17 @@ func TestOptionsValidateRequiredFields(t *testing.T) {
 		{
 			name: "all required fields present",
 			opts: &Options{
-				APIKey: "test-api-key",
-				Region: "us-south",
+				APIKey:              "test-api-key",
+				Region:              "us-south",
+				SpotDiscountPercent: 60,
 			},
 			expectError: false,
 		},
 		{
 			name: "missing API key",
 			opts: &Options{
-				Region: "us-south",
+				Region:              "us-south",
+				SpotDiscountPercent: 60,
 			},
 			expectError: true,
 			errorMsg:    "missing required environment variables: [IBMCLOUD_API_KEY]",
@@ -259,7 +315,8 @@ func TestOptionsValidateRequiredFields(t *testing.T) {
 		{
 			name: "missing region",
 			opts: &Options{
-				APIKey: "test-api-key",
+				APIKey:              "test-api-key",
+				SpotDiscountPercent: 60,
 			},
 			expectError: true,
 			errorMsg:    "missing required environment variables: [IBMCLOUD_REGION]",
@@ -267,27 +324,29 @@ func TestOptionsValidateRequiredFields(t *testing.T) {
 		{
 			name: "zone and resource group ID are optional",
 			opts: &Options{
-				APIKey: "test-api-key",
-				Region: "us-south",
-				// Zone and ResourceGroupID are not set
+				APIKey:              "test-api-key",
+				Region:              "us-south",
+				SpotDiscountPercent: 60,
 			},
 			expectError: false,
 		},
 		{
 			name: "valid with zone but no resource group",
 			opts: &Options{
-				APIKey: "test-api-key",
-				Region: "us-south",
-				Zone:   "us-south-1",
+				APIKey:              "test-api-key",
+				Region:              "us-south",
+				Zone:                "us-south-1",
+				SpotDiscountPercent: 60,
 			},
 			expectError: false,
 		},
 		{
 			name: "invalid zone for region",
 			opts: &Options{
-				APIKey: "test-api-key",
-				Region: "us-south",
-				Zone:   "eu-de-1", // Wrong zone for us-south region
+				APIKey:              "test-api-key",
+				Region:              "us-south",
+				Zone:                "eu-de-1",
+				SpotDiscountPercent: 60,
 			},
 			expectError: true,
 			errorMsg:    "zone eu-de-1 does not match region us-south",
@@ -328,6 +387,7 @@ func TestOptionsParse(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "test-key", opts.APIKey)
 	assert.Equal(t, "us-south", opts.Region)
+	assert.Equal(t, 60, opts.SpotDiscountPercent)
 }
 
 func TestOptionsParseWithArgs(t *testing.T) {
@@ -546,6 +606,7 @@ func TestCircuitBreakerValidation(t *testing.T) {
 				Region:                               "us-south",
 				Zone:                                 "us-south-1",
 				ResourceGroupID:                      "test-rg",
+				SpotDiscountPercent:                  60,
 				CircuitBreakerEnabled:                true,
 				CircuitBreakerFailureThreshold:       3,
 				CircuitBreakerFailureWindow:          5 * time.Minute,
@@ -563,6 +624,7 @@ func TestCircuitBreakerValidation(t *testing.T) {
 				Region:                         "us-south",
 				Zone:                           "us-south-1",
 				ResourceGroupID:                "test-rg",
+				SpotDiscountPercent:            60,
 				CircuitBreakerEnabled:          false,
 				CircuitBreakerFailureThreshold: 0, // Invalid, but should be ignored
 			},
@@ -575,6 +637,7 @@ func TestCircuitBreakerValidation(t *testing.T) {
 				Region:                               "us-south",
 				Zone:                                 "us-south-1",
 				ResourceGroupID:                      "test-rg",
+				SpotDiscountPercent:                  60,
 				CircuitBreakerEnabled:                true,
 				CircuitBreakerFailureThreshold:       0,
 				CircuitBreakerFailureWindow:          5 * time.Minute,
@@ -593,6 +656,7 @@ func TestCircuitBreakerValidation(t *testing.T) {
 				Region:                               "us-south",
 				Zone:                                 "us-south-1",
 				ResourceGroupID:                      "test-rg",
+				SpotDiscountPercent:                  60,
 				CircuitBreakerEnabled:                true,
 				CircuitBreakerFailureThreshold:       3,
 				CircuitBreakerFailureWindow:          5 * time.Minute,
@@ -615,6 +679,80 @@ func TestCircuitBreakerValidation(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestParseSpotDiscountPercent(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		setEnv   bool
+		expected int
+	}{
+		{
+			name:     "valid value from env",
+			envValue: "75",
+			setEnv:   true,
+			expected: 75,
+		},
+		{
+			name:     "min boundary",
+			envValue: "1",
+			setEnv:   true,
+			expected: 1,
+		},
+		{
+			name:     "max boundary",
+			envValue: "100",
+			setEnv:   true,
+			expected: 100,
+		},
+		{
+			name:     "non-integer falls back to default",
+			envValue: "abc",
+			setEnv:   true,
+			expected: 60,
+		},
+		{
+			name:     "below range falls back to default",
+			envValue: "0",
+			setEnv:   true,
+			expected: 60,
+		},
+		{
+			name:     "above range falls back to default",
+			envValue: "150",
+			setEnv:   true,
+			expected: 60,
+		},
+		{
+			name:     "negative falls back to default",
+			envValue: "-10",
+			setEnv:   true,
+			expected: 60,
+		},
+		{
+			name:     "unset env keeps default",
+			setEnv:   false,
+			expected: 60,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setEnv {
+				_ = os.Setenv("KARPENTER_SPOT_DISCOUNT_PERCENT", tt.envValue)
+			} else {
+				_ = os.Unsetenv("KARPENTER_SPOT_DISCOUNT_PERCENT")
+			}
+			defer func() {
+				_ = os.Unsetenv("KARPENTER_SPOT_DISCOUNT_PERCENT")
+			}()
+
+			opts := &Options{SpotDiscountPercent: 60}
+			opts.parseSpotDiscountPercent()
+			assert.Equal(t, tt.expected, opts.SpotDiscountPercent)
 		})
 	}
 }

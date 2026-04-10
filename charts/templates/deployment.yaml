@@ -91,6 +91,8 @@ spec:
             - name: CLUSTER_NAME
               value: {{ .Values.clusterName | quote }}
             {{- end }}
+            - name: KARPENTER_SPOT_DISCOUNT_PERCENT
+              value: {{ .Values.spotDiscountPercent | default 60 | quote }}
             - name: BOOTSTRAP_MODE
               value: {{ .Values.bootstrapMode | default "auto" | quote }}
             - name: METRICS_PORT
