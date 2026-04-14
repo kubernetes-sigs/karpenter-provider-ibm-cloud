@@ -17,6 +17,7 @@ package capacitytype
 import (
 	"context"
 
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -38,6 +39,37 @@ func ResolveCapacityType(nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprov
 	}
 
 	return karpv1.CapacityTypeOnDemand
+}
+
+// GetSupportedCapacityTypes returns the Karpenter capacity types a profile supports.
+// The IBM VPC SDK represents this as a polymorphic interface:
+//   - Enum: the profile permits multiple availability classes (e.g. ["standard", "spot"])
+//   - Fixed: the profile is locked to a single availability class (e.g. "standard" only)
+func GetSupportedCapacityTypes(ctx context.Context, availabilityClass vpcv1.InstanceProfileAvailabilityClassIntf) []string {
+	supportedCapacityTypes := make([]string, 0)
+
+	if availabilityClass == nil {
+		return []string{karpv1.CapacityTypeOnDemand}
+	}
+
+	switch ac := availabilityClass.(type) {
+	case *vpcv1.InstanceProfileAvailabilityClassEnum:
+		for _, v := range ac.Values {
+			capacityType := GetCapacityTypeFromAvailabilityClass(ctx, v)
+			supportedCapacityTypes = append(supportedCapacityTypes, capacityType)
+		}
+	case *vpcv1.InstanceProfileAvailabilityClassFixed:
+		if ac.Value != nil {
+			capacityType := GetCapacityTypeFromAvailabilityClass(ctx, *ac.Value)
+			supportedCapacityTypes = append(supportedCapacityTypes, capacityType)
+		}
+	}
+
+	if len(supportedCapacityTypes) == 0 {
+		return []string{karpv1.CapacityTypeOnDemand}
+	}
+
+	return supportedCapacityTypes
 }
 
 func GetCapacityTypeFromAvailabilityClass(ctx context.Context, class string) string {

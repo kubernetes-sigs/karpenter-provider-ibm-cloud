@@ -89,7 +89,7 @@ func TestNewController(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setupEnv()
 
-			controller, err := NewController(context.Background())
+			controller, err := NewController(context.Background(), nil)
 
 			if tt.expectError {
 				assert.Error(t, err)

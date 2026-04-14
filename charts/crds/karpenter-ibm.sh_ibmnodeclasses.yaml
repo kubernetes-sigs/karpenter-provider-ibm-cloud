@@ -664,16 +664,6 @@ spec:
                 items:
                   type: string
                 type: array
-              spotDiscountPercent:
-                default: 60
-                description: |-
-                  SpotDiscountPercent is the estimated spot price as a percentage of on-demand pricing (1-100).
-                  IBM Cloud advertises "up to 75%" savings but does not expose a public spot pricing API.
-                  For example, 60 means spot is estimated at 60% of on-demand price (40% savings).
-                format: int32
-                maximum: 100
-                minimum: 1
-                type: integer
               sshKeys:
                 description: |-
                   SSHKeys is a list of SSH key IDs to add to the instance.

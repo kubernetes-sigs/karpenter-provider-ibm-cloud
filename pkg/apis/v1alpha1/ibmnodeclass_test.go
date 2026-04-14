@@ -415,18 +415,17 @@ func TestIBMNodeClass_ValidConfigurationExamples(t *testing.T) {
 			Name: "production-ready-nodeclass",
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
-			Region:              "eu-de",
-			Zone:                "eu-de-2",
-			VPC:                 "r010-2b1c3cdc-a678-4eda-86af-731130de1c0a",
-			Image:               "r010-dd3c20fa-71d3-4dc0-913f-2f097bf3e500",
-			InstanceProfile:     "bx2-2x8",
-			Subnet:              "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", // same as cluster nodes
-			SecurityGroups:      []string{"r010-36f045e2-86a1-4af8-917e-b17a41f8abe3"},
-			SSHKeys:             []string{"r010-82091c89-68e4-4b3f-bd2b-4e63ca2f67da"}, // SSH key ID format
-			ResourceGroup:       "88427352321742ef8cfac50b0ee6cc26",
-			APIServerEndpoint:   "https://10.243.65.4:6443", // internal endpoint
-			BootstrapMode:       stringPtr("cloud-init"),
-			SpotDiscountPercent: int32Ptr(50),
+			Region:            "eu-de",
+			Zone:              "eu-de-2",
+			VPC:               "r010-2b1c3cdc-a678-4eda-86af-731130de1c0a",
+			Image:             "r010-dd3c20fa-71d3-4dc0-913f-2f097bf3e500",
+			InstanceProfile:   "bx2-2x8",
+			Subnet:            "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", // same as cluster nodes
+			SecurityGroups:    []string{"r010-36f045e2-86a1-4af8-917e-b17a41f8abe3"},
+			SSHKeys:           []string{"r010-82091c89-68e4-4b3f-bd2b-4e63ca2f67da"}, // SSH key ID format
+			ResourceGroup:     "88427352321742ef8cfac50b0ee6cc26",
+			APIServerEndpoint: "https://10.243.65.4:6443", // internal endpoint
+			BootstrapMode:     stringPtr("cloud-init"),
 		},
 	}
 
@@ -437,8 +436,6 @@ func TestIBMNodeClass_ValidConfigurationExamples(t *testing.T) {
 	assert.Equal(t, "02c7-ac2802cf-54bb-4508-aad7-eba7e8c2034c", validNodeClass.Spec.Subnet)
 	assert.Equal(t, "https://10.243.65.4:6443", validNodeClass.Spec.APIServerEndpoint)
 	assert.Equal(t, "cloud-init", *validNodeClass.Spec.BootstrapMode)
-	assert.Equal(t, int32(50), *validNodeClass.Spec.SpotDiscountPercent)
-
 	// Validate SSH key ID format
 	for _, sshKey := range validNodeClass.Spec.SSHKeys {
 		sshKeyPattern := `^r[0-9]{3}-[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$`
@@ -455,59 +452,6 @@ func TestIBMNodeClass_ValidConfigurationExamples(t *testing.T) {
 	vpcPattern := `^r[0-9]{3}-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`
 	matched, _ = regexp.MatchString(vpcPattern, validNodeClass.Spec.VPC)
 	assert.True(t, matched, "VPC should match valid ID format")
-}
-
-func TestIBMNodeClass_SpotDiscountPercent(t *testing.T) {
-	tests := []struct {
-		name  string
-		value *int32
-		want  int32
-	}{
-		{
-			name:  "nil defaults via kubebuilder to 60",
-			value: nil,
-			want:  0,
-		},
-		{
-			name:  "custom value 25",
-			value: int32Ptr(25),
-			want:  25,
-		},
-		{
-			name:  "minimum boundary 1",
-			value: int32Ptr(1),
-			want:  1,
-		},
-		{
-			name:  "maximum boundary 100",
-			value: int32Ptr(100),
-			want:  100,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			nodeClass := &v1alpha1.IBMNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: v1alpha1.IBMNodeClassSpec{
-					Region:              "us-south",
-					VPC:                 "r010-12345678-1234-1234-1234-123456789012",
-					SecurityGroups:      []string{"r010-12345678-1234-1234-1234-123456789012"},
-					ResourceGroup:       "88427352321742ef8cfac50b0ee6cc26",
-					APIServerEndpoint:   "https://10.243.65.4:6443",
-					SpotDiscountPercent: tt.value,
-				},
-			}
-
-			if tt.value == nil {
-				assert.Nil(t, nodeClass.Spec.SpotDiscountPercent)
-			} else {
-				assert.Equal(t, tt.want, *nodeClass.Spec.SpotDiscountPercent)
-			}
-		})
-	}
 }
 
 func stringPtr(s string) *string {

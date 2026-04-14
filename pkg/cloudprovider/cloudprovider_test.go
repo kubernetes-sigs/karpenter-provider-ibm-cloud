@@ -145,7 +145,7 @@ func (m *mockInstanceProvider) List(ctx context.Context) ([]*corev1.Node, error)
 
 func getTestProviderFactory(kubeClient client.Client) *providers.ProviderFactory {
 	// Create a real factory with nil IBM client - tests will handle this properly
-	return providers.NewProviderFactory(context.Background(), nil, kubeClient, nil)
+	return providers.NewProviderFactory(context.Background(), nil, kubeClient, nil, nil)
 }
 
 func (m *mockInstanceProvider) Get(ctx context.Context, providerID string) (*corev1.Node, error) {

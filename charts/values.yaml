@@ -18,6 +18,10 @@ logLevel: "debug"           # Options: debug, info, error
 controllerVerbosity: "4"    # Controller manager verbosity (0-5)
 controllerLogLevel: "debug" # Controller manager log level
 
+# Estimated spot price as a percentage of on-demand pricing (1-100).
+# 60 means spot is estimated at 60% of on-demand price (40% savings).
+spotDiscountPercent: 60
+
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""

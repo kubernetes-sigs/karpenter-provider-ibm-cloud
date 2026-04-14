@@ -32,7 +32,9 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	ibmcache "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
 )
 
 // MockIBMClient implements the IBM client interface for testing
@@ -43,7 +45,7 @@ type MockIBMClient struct {
 	instanceProfiles []vpcv1.InstanceProfile
 }
 
-func (m *MockIBMClient) GetVPCClient() (*ibm.VPCClient, error) {
+func (m *MockIBMClient) GetVPCClient(_ context.Context) (*ibm.VPCClient, error) {
 	if m.vpcClientError != nil {
 		return nil, m.vpcClientError
 	}
@@ -86,6 +88,7 @@ func (m *MockPricingProvider) GetPrice(ctx context.Context, instanceType string,
 	prices := map[string]float64{
 		"bx2.2x8":  0.095,
 		"bx2.4x16": 0.190,
+		"bx2-4x16": 0.190,
 	}
 	if price, exists := prices[instanceType]; exists {
 		return price, nil
@@ -213,7 +216,7 @@ func TestNewProvider(t *testing.T) {
 	// Create mock IBM client and pricing provider for testing
 	mockClient := &MockIBMClient{}
 	mockPricing := &MockPricingProvider{}
-	provider := NewProvider((*ibm.Client)(unsafe.Pointer(mockClient)), mockPricing)
+	provider := NewProvider((*ibm.Client)(unsafe.Pointer(mockClient)), mockPricing, nil)
 	if provider == nil {
 		t.Fatal("NewProvider() returned nil provider")
 	}
@@ -840,12 +843,9 @@ func TestGetInstanceSize(t *testing.T) {
 
 // Test FilterInstanceTypes with more comprehensive coverage
 func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
-	// Create a mock provider with a client
-	var mockClient *ibm.Client = nil // Use nil for error testing
 	mockPricing := &MockPricingProvider{}
 
 	provider := &IBMInstanceTypeProvider{
-		client:          mockClient,
 		pricingProvider: mockPricing,
 		zonesCache:      make(map[string][]string),
 		zonesCacheTime:  map[string]time.Time{"us-south": time.Now().Add(-2 * time.Hour)},
@@ -886,11 +886,9 @@ func TestFilterInstanceTypes_Comprehensive(t *testing.T) {
 
 // Test RankInstanceTypes with comprehensive coverage
 func TestRankInstanceTypes_Comprehensive(t *testing.T) {
-	var mockClient *ibm.Client = nil
 	mockPricing := &MockPricingProvider{}
 
 	provider := &IBMInstanceTypeProvider{
-		client:          mockClient,
 		pricingProvider: mockPricing,
 	}
 
@@ -1079,4 +1077,126 @@ func TestConvertVPCProfileToInstanceType_PodCapacity(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "IBM client not initialized")
+}
+
+func TestConvertVPCProfileToInstanceType_PerZonePerCapacityTypeOfferings(t *testing.T) {
+	mockClient := &MockIBMClient{}
+	mockPricing := &MockPricingProvider{}
+
+	unavailableCache := ibmcache.NewUnavailableOfferings()
+	// Mark bx2-4x16 spot in us-south-2 as unavailable
+	unavailableCache.Add("bx2-4x16:us-south-2:spot", time.Now().Add(time.Hour))
+
+	provider := &IBMInstanceTypeProvider{
+		client:               mockClient,
+		pricingProvider:      mockPricing,
+		zonesCache:           map[string][]string{"us-south": {"us-south-1", "us-south-2"}},
+		zonesCacheTime:       map[string]time.Time{"us-south": time.Now()},
+		unavailableOfferings: unavailableCache,
+	}
+
+	profileName := "bx2-4x16"
+	cpuCount := int64(4)
+	memoryValue := int64(16)
+	archValue := "amd64"
+	gpuCount := int64(0)
+
+	profile := vpcv1.InstanceProfile{
+		Name: &profileName,
+		VcpuCount: &vpcv1.InstanceProfileVcpu{
+			Value: &cpuCount,
+		},
+		Memory: &vpcv1.InstanceProfileMemory{
+			Value: &memoryValue,
+		},
+		VcpuArchitecture: &vpcv1.InstanceProfileVcpuArchitecture{
+			Value: &archValue,
+		},
+		GpuCount: &vpcv1.InstanceProfileGpu{
+			Value: &gpuCount,
+		},
+		AvailabilityClass: &vpcv1.InstanceProfileAvailabilityClassEnum{
+			Values: []string{"standard", "spot"},
+		},
+	}
+
+	it, err := provider.convertVPCProfileToInstanceType(context.Background(), profile, nil)
+	assert.NoError(t, err)
+
+	// 2 zones x 2 capacity types = 4 offerings
+	assert.Equal(t, 4, len(it.Offerings))
+
+	// Verify each offering has the correct single-zone, single-capacity-type structure
+	for _, o := range it.Offerings {
+		zones := o.Requirements.Get(corev1.LabelTopologyZone).Values()
+		assert.Equal(t, 1, len(zones), "each offering should have exactly one zone")
+
+		capTypes := o.Requirements.Get("karpenter.sh/capacity-type").Values()
+		assert.Equal(t, 1, len(capTypes), "each offering should have exactly one capacity type")
+	}
+
+	// Find the spot offering in us-south-2 — it should be unavailable
+	for _, o := range it.Offerings {
+		zone := o.Requirements.Get(corev1.LabelTopologyZone).Values()[0]
+		capType := o.Requirements.Get("karpenter.sh/capacity-type").Values()[0]
+		if zone == "us-south-2" && capType == "spot" {
+			assert.False(t, o.Available, "spot in us-south-2 should be unavailable (cached)")
+		} else {
+			assert.True(t, o.Available, "%s in %s should be available", capType, zone)
+		}
+	}
+}
+
+func TestConvertVPCProfileToInstanceType_SpotPricing(t *testing.T) {
+	mockClient := &MockIBMClient{}
+	mockPricing := &MockPricingProvider{}
+
+	provider := &IBMInstanceTypeProvider{
+		client:          mockClient,
+		pricingProvider: mockPricing,
+		zonesCache:      map[string][]string{"us-south": {"us-south-1"}},
+		zonesCacheTime:  map[string]time.Time{"us-south": time.Now()},
+	}
+
+	profileName := "bx2-4x16"
+	cpuCount := int64(4)
+	memoryValue := int64(16)
+	archValue := "amd64"
+	gpuCount := int64(0)
+
+	profile := vpcv1.InstanceProfile{
+		Name: &profileName,
+		VcpuCount: &vpcv1.InstanceProfileVcpu{
+			Value: &cpuCount,
+		},
+		Memory: &vpcv1.InstanceProfileMemory{
+			Value: &memoryValue,
+		},
+		VcpuArchitecture: &vpcv1.InstanceProfileVcpuArchitecture{
+			Value: &archValue,
+		},
+		GpuCount: &vpcv1.InstanceProfileGpu{
+			Value: &gpuCount,
+		},
+		AvailabilityClass: &vpcv1.InstanceProfileAvailabilityClassEnum{
+			Values: []string{"standard", "spot"},
+		},
+	}
+
+	ctx := options.ToContext(context.Background(), &options.Options{SpotDiscountPercent: 40})
+	it, err := provider.convertVPCProfileToInstanceType(ctx, profile, nil)
+	assert.NoError(t, err)
+
+	// 1 zone x 2 capacity types = 2 offerings
+	assert.Equal(t, 2, len(it.Offerings))
+
+	for _, o := range it.Offerings {
+		capType := o.Requirements.Get("karpenter.sh/capacity-type").Values()[0]
+		if capType == "on-demand" {
+			assert.Equal(t, 0.190, o.Price, "on-demand price should match mock")
+		} else {
+			// 0.190 * 40 / 100 = 0.076
+			assert.Equal(t, 0.076, o.Price, "spot price should be on-demand * discountPercent/100")
+		}
+	}
 }
