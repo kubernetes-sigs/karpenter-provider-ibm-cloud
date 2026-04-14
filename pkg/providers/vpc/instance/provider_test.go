@@ -2076,6 +2076,75 @@ func TestProviderGet_CacheHit(t *testing.T) {
 	assert.Equal(t, "test-nodeclaim", node2.Name)
 }
 
+func TestProviderGet_SetsLabels(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name                 string
+		availabilityClass    *string
+		expectedCapacityType string
+	}{
+		{
+			name:                 "standard instance maps to on-demand",
+			availabilityClass:    ptrString("standard"),
+			expectedCapacityType: "on-demand",
+		},
+		{
+			name:                 "spot instance maps to spot",
+			availabilityClass:    ptrString("spot"),
+			expectedCapacityType: "spot",
+		},
+		{
+			name:                 "nil availability defaults to on-demand",
+			availabilityClass:    nil,
+			expectedCapacityType: "on-demand",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
+
+			instance := getTestVPCInstance()
+			if tt.availabilityClass != nil {
+				instance.Availability = &vpcv1.InstanceAvailability{
+					Class: tt.availabilityClass,
+				}
+			}
+
+			mockVPC.EXPECT().
+				GetInstanceWithContext(gomock.Any(), gomock.Any()).
+				Return(instance, &core.DetailedResponse{StatusCode: 200}, nil).
+				Times(1)
+
+			vpcClient := ibm.NewVPCClientWithMock(mockVPC)
+			manager := vpcclient.NewManagerWithMockClient(vpcClient)
+			instanceCache := cache.New(5 * time.Minute)
+			defer instanceCache.Stop()
+
+			provider, err := NewVPCInstanceProvider(
+				&ibm.Client{},
+				&mockKubeClient{},
+				WithVPCClientManager(manager),
+				WithInstanceCache(instanceCache),
+			)
+			assert.NoError(t, err)
+
+			node, err := provider.Get(ctx, "ibm:///us-south/test-instance-id")
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedCapacityType, node.Labels["karpenter.sh/capacity-type"])
+			assert.Equal(t, "bx2-4x16", node.Labels["node.kubernetes.io/instance-type"])
+			assert.Equal(t, "us-south-1", node.Labels["topology.kubernetes.io/zone"])
+		})
+	}
+}
+
 func TestProviderDelete_InvalidatesCache(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

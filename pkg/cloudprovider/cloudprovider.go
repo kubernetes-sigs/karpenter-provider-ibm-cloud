@@ -147,6 +147,11 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	}
 
 	nc := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				karpv1.CapacityTypeLabelKey: node.Labels[karpv1.CapacityTypeLabelKey],
+			},
+		},
 		Status: karpv1.NodeClaimStatus{
 			ProviderID: providerID,
 		},
