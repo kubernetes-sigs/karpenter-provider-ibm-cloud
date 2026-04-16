@@ -37,7 +37,7 @@ jobs:
     steps:
     - name: Checkout
       id: checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
     - name: Install dependencies
       id: install-dependencies
@@ -398,7 +398,7 @@ jobs:
     - name: Upload test artifacts
       id: upload-test-artifacts
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
       with:
         name: e2e-test-artifacts-${{ github.run_id }}
         path: test-artifacts/
