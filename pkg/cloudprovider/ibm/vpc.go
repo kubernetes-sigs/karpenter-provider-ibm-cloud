@@ -188,6 +188,23 @@ func (c *VPCClient) ListInstances(ctx context.Context) ([]vpcv1.Instance, error)
 	return instances.Instances, nil
 }
 
+func (c *VPCClient) ListSpotInstances(ctx context.Context) ([]vpcv1.Instance, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("VPC client not initialized")
+	}
+
+	options := &vpcv1.ListInstancesOptions{
+		AvailabilityClass: core.StringPtr(vpcv1.InstanceAvailabilityPrototypeClassSpotConst),
+	}
+
+	instances, _, err := c.client.ListInstancesWithContext(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("listing spot instances: %w", err)
+	}
+
+	return instances.Instances, nil
+}
+
 func (c *VPCClient) UpdateInstanceTags(ctx context.Context, id string, tags map[string]string) error {
 	if c.client == nil {
 		return fmt.Errorf("VPC client not initialized")

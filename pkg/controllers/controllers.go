@@ -72,6 +72,7 @@ import (
 	nodeclasstermination "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/nodeclass/termination"
 	providersinstancetype "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/providers/instancetype"
 	controllerspricing "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/providers/pricing"
+	spotpreemption "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers/spot/preemption"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
@@ -216,6 +217,11 @@ func NewControllers(
 	}
 	interruptionCtrl := interruption.NewController(kubeClient, recorderAdapter, unavailableOfferings, providerFactory)
 	controllers = append(controllers, interruptionCtrl)
+
+	if ibmClient != nil {
+		spotPreemptionCtrl := spotpreemption.NewController(kubeClient, recorderAdapter, unavailableOfferings, ibmClient)
+		controllers = append(controllers, spotPreemptionCtrl)
+	}
 
 	// Add pricing controller with the real provider from the factory when available
 	var pricingProvider pricing.Provider
