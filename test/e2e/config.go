@@ -323,44 +323,36 @@ func (s *E2ETestSuite) CreateNodePoolFromConfig(t *testing.T, config NodePoolCon
 	// Instance types
 	if len(config.InstanceTypes) > 0 {
 		requirements = append(requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelInstanceTypeStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   config.InstanceTypes,
-			},
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   config.InstanceTypes,
 		})
 	}
 
 	// Architecture
 	if len(config.Architecture) > 0 {
 		requirements = append(requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelArchStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   config.Architecture,
-			},
+			Key:      corev1.LabelArchStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   config.Architecture,
 		})
 	}
 
 	// Capacity types
 	if len(config.CapacityTypes) > 0 {
 		requirements = append(requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      karpv1.CapacityTypeLabelKey,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   config.CapacityTypes,
-			},
+			Key:      karpv1.CapacityTypeLabelKey,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   config.CapacityTypes,
 		})
 	}
 
 	// Zones
 	if len(config.Zones) > 0 {
 		requirements = append(requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelTopologyZone,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   config.Zones,
-			},
+			Key:      corev1.LabelTopologyZone,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   config.Zones,
 		})
 	}
 

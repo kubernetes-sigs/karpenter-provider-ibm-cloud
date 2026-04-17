@@ -96,11 +96,10 @@ func TestE2EStartupTaints(t *testing.T) {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
+
 						},
 					},
 					StartupTaints: []corev1.Taint{
@@ -315,11 +314,10 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
+
 						},
 					},
 					StartupTaints: []corev1.Taint{
@@ -514,11 +512,10 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
+
 						},
 					},
 					Taints: []corev1.Taint{
@@ -670,11 +667,10 @@ func TestE2ETaintValues(t *testing.T) {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
+
 						},
 					},
 					Taints: []corev1.Taint{
@@ -836,11 +832,10 @@ func TestE2ETaintSync(t *testing.T) {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
+
 						},
 					},
 					Taints: []corev1.Taint{
@@ -1007,11 +1002,10 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   suite.GetMultipleInstanceTypes(t, 1), // Dynamically detected instance type
+
 						},
 					},
 				},

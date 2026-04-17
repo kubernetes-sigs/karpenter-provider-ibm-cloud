@@ -130,11 +130,9 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 				Spec: karpv1.NodeClaimTemplateSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelInstanceTypeStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"bx2-4x16"},
-							},
+							Key:      corev1.LabelInstanceTypeStable,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"bx2-4x16"},
 						},
 					},
 					NodeClassRef: &karpv1.NodeClassReference{
