@@ -418,10 +418,13 @@ func (c *Controller) hasKarpenterTags(ctx context.Context, instanceCRN *string, 
 		}
 		tagName := *tag.Name
 
-		// Check for Karpenter management indicators
-		if tagName == "karpenter.sh/managed" ||
-			strings.HasPrefix(tagName, "karpenter.sh/") ||
-			strings.Contains(tagName, "karpenter") {
+		// Check for Karpenter management indicators. Match only the namespaced
+		// tag prefixes Karpenter applies itself, not any string containing
+		// "karpenter": user-applied tags like "purpose:karpenter-e2e" would
+		// otherwise mark unrelated instances as Karpenter-managed and get them
+		// deleted on the next orphan sweep.
+		if strings.HasPrefix(tagName, "karpenter.sh/") ||
+			strings.HasPrefix(tagName, "karpenter-ibm.sh/") {
 			logger.V(1).Info("Identifying instance as Karpenter-managed (via Global Tagging API)", "instance-id", instanceID, "tag", tagName)
 			return true
 		}
