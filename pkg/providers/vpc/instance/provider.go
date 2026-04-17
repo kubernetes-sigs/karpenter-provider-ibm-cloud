@@ -231,8 +231,11 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 			"This will cause IBM VPC oneOf constraint validation to fail", instanceProfile)
 	}
 
+	capacityType := capacitytype.ResolveCapacityType(nodeClaim, instanceTypes)
+
 	logger.Info("Selected instance type",
 		"instanceType", instanceProfile,
+		"capacityType", capacityType,
 		"availableTypes", len(instanceTypes),
 		"selectedInstanceTypeDetails", fmt.Sprintf("%+v", selectedInstanceType),
 		"nodeClaim", nodeClaim.Name)
@@ -510,8 +513,27 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		Name: &instanceProfile,
 	}
 	instancePrototype.BootVolumeAttachment = bootVolumeAttachment
-	instancePrototype.AvailabilityPolicy = &vpcv1.InstanceAvailabilityPolicyPrototype{
-		HostFailure: &[]string{"restart"}[0],
+
+	switch capacityType {
+	case karpv1.CapacityTypeSpot:
+		instancePrototype.Availability = &vpcv1.InstanceAvailabilityPrototype{
+			Class: &[]string{karpv1.CapacityTypeSpot}[0],
+		}
+		instancePrototype.AvailabilityPolicy = &vpcv1.InstanceAvailabilityPolicyPrototype{
+			Preemption: &[]string{"stop"}[0],
+		}
+		instancePrototype.ReservationAffinity = &vpcv1.InstanceReservationAffinityPrototype{
+			Policy: &[]string{"disabled"}[0],
+		}
+	case karpv1.CapacityTypeOnDemand:
+		instancePrototype.AvailabilityPolicy = &vpcv1.InstanceAvailabilityPolicyPrototype{
+			HostFailure: &[]string{"restart"}[0],
+		}
+	default:
+		logger.Info("Unknown capacity type, defaulting to on-demand", "capacityType", capacityType)
+		instancePrototype.AvailabilityPolicy = &vpcv1.InstanceAvailabilityPolicyPrototype{
+			HostFailure: &[]string{"restart"}[0],
+		}
 	}
 
 	// Add placement target if specified
@@ -829,7 +851,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 				"node.kubernetes.io/instance-type": instanceProfile,
 				"topology.kubernetes.io/zone":      zone,
 				"topology.kubernetes.io/region":    nodeClass.Spec.Region,
-				"karpenter.sh/capacity-type":       "on-demand",
+				karpv1.CapacityTypeLabelKey:        capacityType,
 				"karpenter.sh/nodepool":            nodeClaim.Labels["karpenter.sh/nodepool"],
 			},
 			Annotations: map[string]string{
