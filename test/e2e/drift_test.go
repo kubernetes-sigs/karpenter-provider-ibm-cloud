@@ -116,6 +116,11 @@ func TestE2ESubnetDrift_PlacementStrategy_DetectedAndReplaced(t *testing.T) {
 				t.Logf("Waiting: NodeClaims exist but none are READY yet")
 				return false, nil
 			})
+		if waitErr != nil {
+			suite.dumpNodeClassOnFailure(t, nodeClass.Name, "no READY NodeClaim for subnet drift test")
+			suite.logNodeClaimStatus(t)
+			suite.logNodePoolStatus(t, nodePool.Name)
+		}
 		require.NoError(t, waitErr, "Should find a READY NodeClaim")
 
 		// Step 5: Verify subnet annotation was set by instance provider
@@ -236,14 +241,13 @@ func TestE2ESecurityGroupDrift_DetectedAndReplaced(t *testing.T) {
 
 		// Step 1: Create NodeClass with explicit security groups
 		nodeClass := suite.createTestNodeClass(t, testName)
-		suite.waitForNodeClassReady(t, nodeClass.Name)
+		suite.waitForNodeClassResolved(t, nodeClass.Name)
 		require.NotEmpty(t, nodeClass.Spec.SecurityGroups, "NodeClass must have security groups")
 
 		// Verify Status.ResolvedSecurityGroups mirrors spec.SecurityGroups
 		var currentNodeClass v1alpha1.IBMNodeClass
 		err := suite.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClass.Name}, &currentNodeClass)
 		require.NoError(t, err)
-		require.NotEmpty(t, currentNodeClass.Status.ResolvedSecurityGroups)
 		require.ElementsMatch(t, nodeClass.Spec.SecurityGroups, currentNodeClass.Status.ResolvedSecurityGroups)
 		t.Logf("OK: NodeClass %s ready with security groups: %v", nodeClass.Name, nodeClass.Spec.SecurityGroups)
 
@@ -283,6 +287,11 @@ func TestE2ESecurityGroupDrift_DetectedAndReplaced(t *testing.T) {
 				t.Logf("Waiting: NodeClaims exist but none are READY yet")
 				return false, nil
 			})
+		if waitErr != nil {
+			suite.dumpNodeClassOnFailure(t, nodeClass.Name, "no READY NodeClaim for SG drift test")
+			suite.logNodeClaimStatus(t)
+			suite.logNodePoolStatus(t, nodePool.Name)
+		}
 		require.NoError(t, waitErr, "Should find a READY NodeClaim")
 
 		// Step 4: Verify security group annotation was set by instance provider
@@ -323,6 +332,10 @@ func TestE2ESecurityGroupDrift_DetectedAndReplaced(t *testing.T) {
 				t.Logf("Waiting: NodeClaim %s not yet marked Drifted", originalName)
 				return false, nil
 			})
+		if waitErr != nil {
+			suite.dumpNodeClassOnFailure(t, nodeClass.Name, "drift detection did not fire after SG change")
+			suite.logNodeClaimStatus(t)
+		}
 		require.NoError(t, waitErr, "NodeClaim should become drifted after security groups change")
 
 		// Step 7: Wait for replacement NodeClaim
@@ -343,6 +356,11 @@ func TestE2ESecurityGroupDrift_DetectedAndReplaced(t *testing.T) {
 				t.Logf("Waiting: No ready replacement NodeClaim found yet")
 				return false, nil
 			})
+		if waitErr != nil {
+			suite.dumpNodeClassOnFailure(t, nodeClass.Name, "no replacement NodeClaim after SG drift")
+			suite.logNodeClaimStatus(t)
+			suite.logNodePoolStatus(t, nodePool.Name)
+		}
 		require.NoError(t, waitErr, "Replacement NodeClaim should become ready")
 
 		// Step 8: Verify the replacement NodeClaim has the new security groups
@@ -393,14 +411,13 @@ func TestE2ESecurityGroupDrift_DefaultSecurityGroup(t *testing.T) {
 
 		// Step 1: Create NodeClass WITHOUT explicit security groups
 		nodeClass := suite.createTestNodeClassWithoutSecurityGroups(t, testName)
-		suite.waitForNodeClassReady(t, nodeClass.Name)
+		suite.waitForNodeClassResolved(t, nodeClass.Name)
 		require.Empty(t, nodeClass.Spec.SecurityGroups, "NodeClass must NOT have explicit security groups")
 
 		// Verify Status.ResolvedSecurityGroups is populated with default SG
 		var currentNodeClass v1alpha1.IBMNodeClass
 		err := suite.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClass.Name}, &currentNodeClass)
 		require.NoError(t, err)
-		require.NotEmpty(t, currentNodeClass.Status.ResolvedSecurityGroups)
 		t.Logf("OK: NodeClass %s ready with resolved SGs: %v", nodeClass.Name, currentNodeClass.Status.ResolvedSecurityGroups)
 
 		// Step 2: Create NodePool and workload to trigger provisioning

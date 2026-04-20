@@ -716,7 +716,6 @@ spec:
             - apiServerEndpoint
             - region
             - resourceGroup
-            - securityGroups
             - vpc
             type: object
             x-kubernetes-validations:

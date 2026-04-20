@@ -560,8 +560,9 @@ type IBMNodeClassSpec struct {
 
 	// SecurityGroups is a list of security group IDs to attach to nodes.
 	// If empty, the VPC default security group is used.
+	// +optional
 	// +kubebuilder:validation:Items:Pattern="^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$"
-	SecurityGroups []string `json:"securityGroups"`
+	SecurityGroups []string `json:"securityGroups,omitempty"`
 
 	// UserData contains user data script to run on instance initialization
 	// When specified, this completely overrides the default bootstrap script

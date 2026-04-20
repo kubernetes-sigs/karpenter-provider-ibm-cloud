@@ -459,6 +459,12 @@ func (s *E2ETestSuite) createTestNodeClaim(t *testing.T, testName, nodeClassName
 
 // createTestWorkload creates a deployment that will trigger Karpenter to provision nodes
 func (s *E2ETestSuite) createTestWorkload(t *testing.T, testName string) *appsv1.Deployment {
+	return s.createTestWorkloadWithReplicas(t, testName, 3)
+}
+
+// createTestWorkloadWithReplicas sets replicas at Create time, avoiding a
+// Create-then-Update race against the deployment controller.
+func (s *E2ETestSuite) createTestWorkloadWithReplicas(t *testing.T, testName string, replicas int32) *appsv1.Deployment {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-workload", testName),
@@ -470,7 +476,7 @@ func (s *E2ETestSuite) createTestWorkload(t *testing.T, testName string) *appsv1
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &[]int32{3}[0],
+			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": fmt.Sprintf("%s-workload", testName),

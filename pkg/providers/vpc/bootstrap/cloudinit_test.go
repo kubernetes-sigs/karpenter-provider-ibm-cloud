@@ -83,6 +83,11 @@ func TestGenerateCloudInitScript(t *testing.T) {
 		assert.Contains(t, script, "calico")
 		assert.Contains(t, script, "/etc/cni/net.d/10-calico.conflist")
 		assert.Contains(t, script, "/opt/cni/bin/calico")
+		// Calico CNI kubeconfig must point at the SA kubeconfig, not the
+		// kubelet bootstrap kubeconfig (whose system:bootstrap:<token> user
+		// has no RBAC for clusterinformations.crd.projectcalico.org).
+		assert.Contains(t, script, `s/__KUBECONFIG_FILEPATH__/\/etc\/cni\/net.d\/calico-kubeconfig/g`)
+		assert.NotContains(t, script, `s/__KUBECONFIG_FILEPATH__/\/var\/lib\/kubelet\/bootstrap-kubeconfig/g`)
 
 		// Verify kubelet configuration
 		assert.Contains(t, script, "kubelet")

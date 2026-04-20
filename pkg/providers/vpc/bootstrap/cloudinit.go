@@ -702,9 +702,11 @@ case "$CNI_PLUGIN" in
   ]
 }
 EOF
-    # Replace placeholders in CNI configuration
+    # Point at calico-node's ServiceAccount kubeconfig (written by its
+    # install-cni init container). The kubelet bootstrap kubeconfig lacks
+    # RBAC for clusterinformations.crd.projectcalico.org.
     sed -i "s/__KUBERNETES_NODE_NAME__/$(hostname)/g" /etc/cni/net.d/10-calico.conflist
-    sed -i "s/__KUBECONFIG_FILEPATH__/\/var\/lib\/kubelet\/bootstrap-kubeconfig/g" /etc/cni/net.d/10-calico.conflist
+    sed -i "s/__KUBECONFIG_FILEPATH__/\/etc\/cni\/net.d\/calico-kubeconfig/g" /etc/cni/net.d/10-calico.conflist
     ;;
   "cilium")
     echo "$(date): Creating temporary CNI configuration for Cilium bootstrap..."

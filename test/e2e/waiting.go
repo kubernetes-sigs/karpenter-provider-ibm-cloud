@@ -38,6 +38,56 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
 
+// waitForNodeClassResolved waits for Ready AND Status.ResolvedSecurityGroups
+// populated. Ready=true can fire before the default-SG resolver finishes.
+// One testTimeout budget is shared across both conditions.
+func (s *E2ETestSuite) waitForNodeClassResolved(t *testing.T, nodeClassName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(ctx, pollInterval, true, func(ctx context.Context) (bool, error) {
+		var nc v1alpha1.IBMNodeClass
+		if err := s.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClassName}, &nc); err != nil {
+			return false, nil
+		}
+		if len(nc.Status.ResolvedSecurityGroups) == 0 {
+			return false, nil
+		}
+		for _, c := range nc.Status.Conditions {
+			if c.Type == "Ready" && c.Status == metav1.ConditionTrue {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		s.dumpNodeClassOnFailure(t, nodeClassName, "Ready + ResolvedSecurityGroups never observed")
+	}
+	require.NoError(t, err, "NodeClass should be Ready with ResolvedSecurityGroups populated")
+}
+
+// dumpNodeClassOnFailure logs NodeClass spec, status, conditions, and events.
+func (s *E2ETestSuite) dumpNodeClassOnFailure(t *testing.T, nodeClassName, reason string) {
+	ctx := context.Background()
+	t.Logf("DIAGNOSTICS (reason=%s, nodeClass=%s):", reason, nodeClassName)
+
+	var nc v1alpha1.IBMNodeClass
+	if err := s.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClassName}, &nc); err != nil {
+		t.Logf("  Get NodeClass failed: %v", err)
+	} else {
+		t.Logf("  Spec.VPC=%s Subnet=%s Region=%s Zone=%s InstanceProfile=%s",
+			nc.Spec.VPC, nc.Spec.Subnet, nc.Spec.Region, nc.Spec.Zone, nc.Spec.InstanceProfile)
+		t.Logf("  Spec.SecurityGroups=%v", nc.Spec.SecurityGroups)
+		t.Logf("  Status.ResolvedSecurityGroups=%v", nc.Status.ResolvedSecurityGroups)
+		t.Logf("  Status.SelectedSubnets=%v", nc.Status.SelectedSubnets)
+		t.Logf("  Status.LastValidationTime=%s", nc.Status.LastValidationTime.Format("15:04:05"))
+		for _, c := range nc.Status.Conditions {
+			t.Logf("  Condition %s=%s reason=%s msg=%s",
+				c.Type, c.Status, c.Reason, c.Message)
+		}
+	}
+	s.logNodeClassEvents(t, nodeClassName)
+}
+
 // waitForNodeClassReady waits for a NodeClass to be in a ready state with cache-aware validation
 func (s *E2ETestSuite) waitForNodeClassReady(t *testing.T, nodeClassName string) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
@@ -223,6 +273,15 @@ func (s *E2ETestSuite) waitForPodsToBeScheduled(t *testing.T, deploymentName, na
 
 		return false, nil
 	})
+	if err != nil {
+		t.Logf("DIAGNOSTICS (reason=deployment pods did not schedule, deployment=%s):", deploymentName)
+		s.logDeploymentDiagnostics(t, deploymentName, namespace)
+		s.logNodeClaimStatus(t)
+		if strings.HasSuffix(deploymentName, "-workload") {
+			testName := strings.TrimSuffix(deploymentName, "-workload")
+			s.logNodePoolStatus(t, testName+"-nodepool")
+		}
+	}
 	require.NoError(t, err, "Deployment pods should be scheduled and running within timeout")
 }
 

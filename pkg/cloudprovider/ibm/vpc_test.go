@@ -38,6 +38,7 @@ type mockVPCClient struct {
 	listSubnetsResponse        *vpcv1.SubnetCollection
 	getSubnetResponse          *vpcv1.Subnet
 	getInstanceProfileResponse *vpcv1.InstanceProfile
+	getVPCResponse             *vpcv1.VPC
 }
 
 func (m *mockVPCClient) CreateInstanceWithContext(_ context.Context, _ *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
@@ -92,6 +93,9 @@ func (m *mockVPCClient) GetSubnetWithContext(_ context.Context, _ *vpcv1.GetSubn
 func (m *mockVPCClient) GetVPCWithContext(_ context.Context, _ *vpcv1.GetVPCOptions) (*vpcv1.VPC, *core.DetailedResponse, error) {
 	if m.err != nil {
 		return nil, nil, m.err
+	}
+	if m.getVPCResponse != nil {
+		return m.getVPCResponse, &core.DetailedResponse{}, nil
 	}
 	vpcID := "test-vpc"
 	vpcName := "test-vpc-name"
@@ -1246,3 +1250,67 @@ func TestVPCClientErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+// TestGetDefaultSecurityGroup covers the branch that IBMNodeClass
+// SecurityGroups=optional relies on: when the CRD admits an empty list,
+// the status controller calls this to fill Status.ResolvedSecurityGroups
+// with the VPC's default security group ID.
+func TestGetDefaultSecurityGroup(t *testing.T) {
+	sgID := "r010-default-sg-id"
+
+	tests := []struct {
+		name    string
+		vpc     *vpcv1.VPC
+		mockErr error
+		wantID  string
+		wantErr string
+	}{
+		{
+			name: "returns default SG ID",
+			vpc: &vpcv1.VPC{
+				ID:                   ptrStr("r010-test-vpc"),
+				DefaultSecurityGroup: &vpcv1.SecurityGroupReference{ID: &sgID, Name: ptrStr("default")},
+			},
+			wantID: sgID,
+		},
+		{
+			name: "errors when VPC has no default SG",
+			vpc: &vpcv1.VPC{
+				ID: ptrStr("r010-test-vpc"),
+			},
+			wantErr: "has no default security group",
+		},
+		{
+			name:    "propagates GetVPC error",
+			mockErr: fmt.Errorf("vpc not found"),
+			wantErr: "vpc not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockVPCClient{getVPCResponse: tt.vpc, err: tt.mockErr}
+			client := NewVPCClientWithMock(mock)
+
+			sg, err := client.GetDefaultSecurityGroup(context.Background(), "r010-test-vpc")
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if sg == nil || sg.ID == nil || *sg.ID != tt.wantID {
+				t.Fatalf("expected SG ID %q, got %+v", tt.wantID, sg)
+			}
+		})
+	}
+}
+
+func ptrStr(s string) *string { return &s }

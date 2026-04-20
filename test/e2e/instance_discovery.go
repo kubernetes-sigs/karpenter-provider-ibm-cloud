@@ -20,44 +20,48 @@ package e2e
 
 import (
 	"testing"
+
+	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 )
 
-// GetAvailableInstanceType returns a suitable instance type for testing
+// GetAvailableInstanceType returns the smallest 2-4 vCPU / 4-16 GB profile
+// offered in the test region.
 func (s *E2ETestSuite) GetAvailableInstanceType(t *testing.T) string {
-	// Use hardcoded instance types that are commonly available
-	availableTypes := []string{
-		"bx2-2x8",   // 2 vCPU, 8 GB RAM
-		"bx3d-2x10", // 2 vCPU, 10 GB RAM
-		"cx2-2x4",   // 2 vCPU, 4 GB RAM
-		"mx2-2x16",  // 2 vCPU, 16 GB RAM
-	}
-
-	selected := availableTypes[0]
-	t.Logf("Selected instance type for testing: %s", selected)
-	return selected
+	profiles := s.discoverInstanceProfiles(t)
+	t.Logf("Selected instance type for testing: %s", profiles[0])
+	return profiles[0]
 }
 
-// GetMultipleInstanceTypes returns multiple instance types for testing NodePool with multiple types
+// GetMultipleInstanceTypes returns up to count small profiles.
 func (s *E2ETestSuite) GetMultipleInstanceTypes(t *testing.T, count int) []string {
 	if count <= 0 {
 		count = 3
 	}
-
-	availableTypes := []string{
-		"bx2-2x8",  // 2 vCPU, 8 GB RAM
-		"bx2-4x16", // 4 vCPU, 16 GB RAM
-		"mx2-2x16", // 2 vCPU, 16 GB RAM
-		"cx2-4x8",  // 4 vCPU, 8 GB RAM
-		"bx2-8x32", // 8 vCPU, 32 GB RAM
+	profiles := s.discoverInstanceProfiles(t)
+	if count > len(profiles) {
+		count = len(profiles)
 	}
-
-	// Return requested count, up to available types
-	maxCount := count
-	if maxCount > len(availableTypes) {
-		maxCount = len(availableTypes)
-	}
-	selected := availableTypes[:maxCount]
-
+	selected := profiles[:count]
 	t.Logf("Selected %d instance types for testing: %v", len(selected), selected)
 	return selected
+}
+
+// discoverInstanceProfiles queries VPC for 2-4 vCPU / 4-16 GB profiles. A VPC
+// API failure is fatal: the provider needs the same API at runtime, so
+// falling back to a static list would just mask the real problem.
+func (s *E2ETestSuite) discoverInstanceProfiles(t *testing.T) []string {
+	s.profileOnce.Do(func() {
+		baseURL := "https://" + s.testRegion + ".iaas.cloud.ibm.com/v1"
+		client, err := ibm.NewVPCClient(baseURL, "iam", s.apiKey, s.testRegion, s.testResourceGroup)
+		require.NoError(t, err, "create VPC client for instance profile discovery")
+		// VPCClient.ListInstanceProfiles uses context.Background internally; no ctx wiring.
+		coll, _, err := client.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
+		require.NoError(t, err, "list VPC instance profiles")
+		s.profiles = filterSmallProfiles(coll.Profiles)
+		require.NotEmpty(t, s.profiles, "VPC returned no profiles matching 2-4 vCPU / 4-16 GB in %s", s.testRegion)
+	})
+	return s.profiles
 }

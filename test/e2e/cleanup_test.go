@@ -48,12 +48,8 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
 	t.Logf("Created NodePool: %s", nodePool.Name)
 
-	// Create test workload to trigger provisioning
-	deployment := suite.createTestWorkload(t, testName)
-	// Modify the deployment to have 2 replicas
-	deployment.Spec.Replicas = &[]int32{2}[0]
-	err := suite.kubeClient.Update(ctx, deployment)
-	require.NoError(t, err)
+	// Create test workload with 2 replicas to trigger provisioning
+	deployment := suite.createTestWorkloadWithReplicas(t, testName, 2)
 	t.Logf("Created test workload with 2 replicas: %s", deployment.Name)
 
 	// Wait for pods to be scheduled and nodes to be provisioned
@@ -66,7 +62,7 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	t.Logf("Initial provisioned nodes: %d", len(initialNodes))
 
 	// Delete the NodePool first - this should trigger cleanup
-	err = suite.kubeClient.Delete(ctx, nodePool)
+	err := suite.kubeClient.Delete(ctx, nodePool)
 	require.NoError(t, err)
 	t.Logf("Deleted NodePool: %s", nodePool.Name)
 
@@ -205,12 +201,8 @@ func TestE2ECleanupIBMCloudResources(t *testing.T) {
 	suite.waitForNodeClassReady(t, nodeClass.Name)
 	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
 
-	// Create test workload to trigger provisioning
-	deployment := suite.createTestWorkload(t, testName)
-	// Modify the deployment to have 2 replicas
-	deployment.Spec.Replicas = &[]int32{2}[0]
-	err = suite.kubeClient.Update(ctx, deployment)
-	require.NoError(t, err)
+	// Create test workload with 2 replicas to trigger provisioning
+	deployment := suite.createTestWorkloadWithReplicas(t, testName, 2)
 	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
 
 	// Get the list of instances after provisioning (pods scheduled means instances exist)
