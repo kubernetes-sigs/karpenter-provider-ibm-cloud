@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -375,7 +376,64 @@ func (s *E2ETestSuite) cleanupAllStaleResources(t *testing.T) {
 		s.deleteResourcesByNamePattern(ctx, t, resource.listObj, namePatterns, resource.objType)
 	}
 
+	// Block until deletes complete so the next test's workload does not
+	// schedule on residual karpenter nodes.
+	s.waitForStaleResourcesGone(ctx, t)
+
 	t.Logf("Aggressive cleanup completed")
+}
+
+// waitForStaleResourcesGone blocks until karpenter NodeClaims, NodePools,
+// and IBMNodeClasses drain, force-removing finalizers on timeout.
+func (s *E2ETestSuite) waitForStaleResourcesGone(ctx context.Context, t *testing.T) {
+	deadline := 2 * time.Minute
+	waitCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+
+	err := wait.PollUntilContextTimeout(waitCtx, 5*time.Second, deadline, true, func(ctx context.Context) (bool, error) {
+		var ncList karpv1.NodeClaimList
+		if err := s.kubeClient.List(ctx, &ncList); err != nil {
+			return false, nil
+		}
+		var npList karpv1.NodePoolList
+		if err := s.kubeClient.List(ctx, &npList); err != nil {
+			return false, nil
+		}
+		var nodeClassList v1alpha1.IBMNodeClassList
+		if err := s.kubeClient.List(ctx, &nodeClassList); err != nil {
+			return false, nil
+		}
+		total := len(ncList.Items) + len(npList.Items) + len(nodeClassList.Items)
+		if total == 0 {
+			return true, nil
+		}
+		t.Logf("Waiting for stale resources to drain: %d NodeClaims, %d NodePools, %d IBMNodeClasses",
+			len(ncList.Items), len(npList.Items), len(nodeClassList.Items))
+		return false, nil
+	})
+	if err == nil {
+		return
+	}
+
+	t.Logf("Stale resources did not drain in %s; force-removing finalizers", deadline)
+	var ncList karpv1.NodeClaimList
+	if listErr := s.kubeClient.List(ctx, &ncList); listErr == nil {
+		for i := range ncList.Items {
+			s.forceDeleteWithFinalizers(ctx, t, &ncList.Items[i])
+		}
+	}
+	var npList karpv1.NodePoolList
+	if listErr := s.kubeClient.List(ctx, &npList); listErr == nil {
+		for i := range npList.Items {
+			s.forceDeleteWithFinalizers(ctx, t, &npList.Items[i])
+		}
+	}
+	var nodeClassList v1alpha1.IBMNodeClassList
+	if listErr := s.kubeClient.List(ctx, &nodeClassList); listErr == nil {
+		for i := range nodeClassList.Items {
+			s.forceDeleteWithFinalizers(ctx, t, &nodeClassList.Items[i])
+		}
+	}
 }
 
 // forceDeleteWithFinalizers removes finalizers and force deletes a resource

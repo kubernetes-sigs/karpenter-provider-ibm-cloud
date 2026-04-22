@@ -21,6 +21,7 @@ package e2e
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,8 +44,9 @@ import (
 )
 
 const (
-	testTimeout  = 10 * time.Minute // Timeout for node provisioning
-	pollInterval = 5 * time.Second  // Faster polling for quicker test completion
+	// Budget covers two back-to-back IBM VPC cold provisions (drift + replacement).
+	testTimeout  = 20 * time.Minute
+	pollInterval = 5 * time.Second
 )
 
 // E2ETestSuite contains the test environment
@@ -61,6 +63,10 @@ type E2ETestSuite struct {
 	testResourceGroup string
 	testSshKeyId      string
 	APIServerEndpoint string
+	apiKey            string
+
+	profileOnce sync.Once
+	profiles    []string
 }
 
 // NodeSnapshot represents a snapshot of a node's state for stability monitoring
@@ -154,6 +160,7 @@ func SetupE2ETestSuite(t *testing.T) *E2ETestSuite {
 		testResourceGroup: os.Getenv("IBM_RESOURCE_GROUP_ID"),
 		testSshKeyId:      os.Getenv("IBM_SSH_KEY_ID"),
 		APIServerEndpoint: os.Getenv("KUBERNETES_API_SERVER_ENDPOINT"),
+		apiKey:            os.Getenv("IBMCLOUD_API_KEY"),
 	}
 
 	// CRITICAL: Pre-test cleanup to prevent circuit breaker issues

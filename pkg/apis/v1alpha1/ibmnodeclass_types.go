@@ -480,8 +480,8 @@ type ImageSelector struct {
 
 // +kubebuilder:validation:XValidation:rule="!has(self.subnet) || self.subnet == \"\" || self.subnet.matches('^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')", message="subnet must be a valid IBM Cloud subnet ID format"
 // +kubebuilder:validation:XValidation:rule="!has(self.image) || self.image.matches('^[a-z0-9-]+$')", message="image must contain only lowercase letters, numbers, and hyphens"
-// +kubebuilder:validation:XValidation:rule="self.image != ” || has(self.imageSelector)", message="either image or imageSelector must be specified"
-// +kubebuilder:validation:XValidation:rule="!(self.image != ” && has(self.imageSelector))", message="image and imageSelector are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="has(self.image) || has(self.imageSelector)", message="either image or imageSelector must be specified"
+// +kubebuilder:validation:XValidation:rule="!(has(self.image) && has(self.imageSelector))", message="image and imageSelector are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!(has(self.instanceProfile) && has(self.instanceRequirements))", message="instanceProfile and instanceRequirements are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!has(self.bootstrapMode) || self.bootstrapMode != 'iks-api' || has(self.iksClusterID)", message="iksClusterID is required when bootstrapMode is 'iks-api'"
 // +kubebuilder:validation:XValidation:rule="!has(self.zone) || self.zone == \"\" || self.region.startsWith(self.zone.split('-')[0] + '-' + self.zone.split('-')[1])", message="zone must be within the specified region"
@@ -560,8 +560,9 @@ type IBMNodeClassSpec struct {
 
 	// SecurityGroups is a list of security group IDs to attach to nodes.
 	// If empty, the VPC default security group is used.
+	// +optional
 	// +kubebuilder:validation:Items:Pattern="^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$"
-	SecurityGroups []string `json:"securityGroups"`
+	SecurityGroups []string `json:"securityGroups,omitempty"`
 
 	// UserData contains user data script to run on instance initialization
 	// When specified, this completely overrides the default bootstrap script

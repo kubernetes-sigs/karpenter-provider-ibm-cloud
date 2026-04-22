@@ -338,14 +338,16 @@ func (p *VPCBootstrapProvider) detectClusterKubernetesVersion(ctx context.Contex
 func (p *VPCBootstrapProvider) detectCNIPluginAndVersion(ctx context.Context) (string, string, error) {
 	logger := log.FromContext(ctx)
 
-	// Check for Calico
-	if _, err := p.k8sClient.AppsV1().DaemonSets("kube-system").Get(ctx, "calico-node", metav1.GetOptions{}); err == nil {
-		cniVersion, err := p.getLatestCNIVersion(ctx, "calico")
-		if err != nil {
-			return "", "", fmt.Errorf("failed to get Calico CNI version: %w", err)
+	// Check for Calico (classic manifest install in kube-system, or tigera-operator install in calico-system)
+	for _, ns := range []string{"kube-system", "calico-system"} {
+		if _, err := p.k8sClient.AppsV1().DaemonSets(ns).Get(ctx, "calico-node", metav1.GetOptions{}); err == nil {
+			cniVersion, err := p.getLatestCNIVersion(ctx, "calico")
+			if err != nil {
+				return "", "", fmt.Errorf("failed to get Calico CNI version: %w", err)
+			}
+			logger.Info("Detected Calico CNI plugin", "namespace", ns, "cniVersion", cniVersion)
+			return "calico", cniVersion, nil
 		}
-		logger.Info("Detected Calico CNI plugin", "cniVersion", cniVersion)
-		return "calico", cniVersion, nil
 	}
 
 	// Check for Cilium

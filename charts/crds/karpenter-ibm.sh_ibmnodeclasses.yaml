@@ -716,7 +716,6 @@ spec:
             - apiServerEndpoint
             - region
             - resourceGroup
-            - securityGroups
             - vpc
             type: object
             x-kubernetes-validations:
@@ -725,9 +724,9 @@ spec:
             - message: image must contain only lowercase letters, numbers, and hyphens
               rule: '!has(self.image) || self.image.matches(''^[a-z0-9-]+$'')'
             - message: either image or imageSelector must be specified
-              rule: self.image != ” || has(self.imageSelector)
+              rule: has(self.image) || has(self.imageSelector)
             - message: image and imageSelector are mutually exclusive
-              rule: '!(self.image != ” && has(self.imageSelector))'
+              rule: '!(has(self.image) && has(self.imageSelector))'
             - message: instanceProfile and instanceRequirements are mutually exclusive
               rule: '!(has(self.instanceProfile) && has(self.instanceRequirements))'
             - message: iksClusterID is required when bootstrapMode is 'iks-api'

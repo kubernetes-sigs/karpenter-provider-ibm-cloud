@@ -95,39 +95,38 @@ The provider supports two deployment modes with different IAM requirements:
     {
       "role": "Editor",
       "resources": [
-        {
-          "service": "is",
-          "resourceType": "instance"
-        },
-        {
-          "service": "is",
-          "resourceType": "subnet"
-        },
-        {
-          "service": "is",
-          "resourceType": "security-group"
-        },
-        {
-          "service": "is",
-          "resourceType": "image"
-        },
-        {
-          "service": "is",
-          "resourceType": "vpc"
-        }
+        {"service": "is", "resourceType": "instance"}
       ]
     },
     {
       "role": "Viewer",
       "resources": [
-        {
-          "service": "globalcatalog-collection"
-        }
+        {"service": "is", "resourceType": "subnet"},
+        {"service": "is", "resourceType": "security-group"},
+        {"service": "is", "resourceType": "image"},
+        {"service": "is", "resourceType": "vpc"},
+        {"service": "is", "resourceType": "key"},
+        {"service": "globalcatalog-collection"},
+        {"service": "resource-group"}
       ]
     }
   ]
 }
 ```
+
+Instance lifecycle (`is.instance.create`, `is.instance.delete`, `is.instance.get`,
+`is.instance.list`, `is.instance.update`) is the only write path; everything
+else is read-only at runtime. `resource-group` Viewer is required to place
+VSIs in the configured resource group (without it VSI create returns
+`user does not have access to selected resource group`).
+
+Read-only actions the controller exercises at runtime:
+- `is.vpc.get` (default security-group resolution)
+- `is.security-group.list`, `is.security-group.get`
+- `is.subnet.list`
+- `is.image.list`, `is.image.get`
+- `is.key.get`
+- `is.instance-profile.list`
 
 **Deployment Mode Differences:**
 - **IKS Mode**: Used with managed IBM Kubernetes Service clusters. Requires `Operator` role for worker pool resizing and worker node management, plus `Viewer` access to VPC instances for worker-to-instance mapping.

@@ -171,6 +171,7 @@ jobs:
         E2E_SEQUENTIAL: "true"
         E2E_CLEANUP_TIMEOUT: "300s"
         E2E_STABILIZATION_WAIT: "60s"
+        E2E_AGGRESSIVE_CLEANUP: "true"
       run: |
         echo "Starting E2E test suite..."
 

@@ -107,21 +107,17 @@ func CreateSimpleNodePool(
 	requirements := []karpv1.NodeSelectorRequirementWithMinValues{}
 	if len(instanceTypes) > 0 {
 		requirements = append(requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelInstanceTypeStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   instanceTypes,
-			},
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   instanceTypes,
 		})
 	}
 
 	// Add capacity type requirement (on-demand by default)
 	requirements = append(requirements, karpv1.NodeSelectorRequirementWithMinValues{
-		NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-			Key:      karpv1.CapacityTypeLabelKey,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"on-demand"},
-		},
+		Key:      karpv1.CapacityTypeLabelKey,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{"on-demand"},
 	})
 
 	nodePool := &karpv1.NodePool{

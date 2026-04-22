@@ -492,19 +492,15 @@ func (s *E2ETestSuite) createMultiZoneNodePool(t *testing.T, testName, nodeClass
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						// Allow multiple instance types for flexibility
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelInstanceTypeStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"bx2-4x16", "bx2-2x8"},
-							},
+							Key:      corev1.LabelInstanceTypeStable,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"bx2-4x16", "bx2-2x8"},
 						},
 						// Allow any zone in the region (multi-zone)
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "topology.kubernetes.io/zone",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{s.testRegion + "-1", s.testRegion + "-2", s.testRegion + "-3"},
-							},
+							Key:      "topology.kubernetes.io/zone",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{s.testRegion + "-1", s.testRegion + "-2", s.testRegion + "-3"},
 						},
 					},
 					NodeClassRef: &karpv1.NodeClassReference{

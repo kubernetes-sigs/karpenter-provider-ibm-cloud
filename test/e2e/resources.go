@@ -251,11 +251,9 @@ func (s *E2ETestSuite) createTestNodePool(t *testing.T, testName, nodeClassName 
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   instanceTypes,
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   instanceTypes,
 						},
 					},
 					ExpireAfter: expireAfter,
@@ -294,11 +292,9 @@ func (s *E2ETestSuite) createTestNodePoolObject(t *testing.T, testName, nodeClas
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      "node.kubernetes.io/instance-type",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   instanceTypes,
-							},
+							Key:      "node.kubernetes.io/instance-type",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   instanceTypes,
 						},
 					},
 					ExpireAfter: expireAfter,
@@ -344,25 +340,19 @@ func (s *E2ETestSuite) createTestNodePoolWithMultipleInstanceTypes(t *testing.T,
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelInstanceTypeStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   instanceTypes,
-							},
+							Key:      corev1.LabelInstanceTypeStable,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   instanceTypes,
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelArchStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"amd64"},
-							},
+							Key:      corev1.LabelArchStable,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"amd64"},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      karpv1.CapacityTypeLabelKey,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"on-demand"},
-							},
+							Key:      karpv1.CapacityTypeLabelKey,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"on-demand"},
 						},
 					},
 					ExpireAfter: expireAfter,
@@ -406,25 +396,19 @@ func (s *E2ETestSuite) createDriftStabilityNodePool(t *testing.T, testName, node
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelInstanceTypeStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"bx2-4x16", "mx2-2x16"},
-							},
+							Key:      corev1.LabelInstanceTypeStable,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"bx2-4x16", "mx2-2x16"},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelArchStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"amd64"},
-							},
+							Key:      corev1.LabelArchStable,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"amd64"},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      karpv1.CapacityTypeLabelKey,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"on-demand"},
-							},
+							Key:      karpv1.CapacityTypeLabelKey,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"on-demand"},
 						},
 					},
 					ExpireAfter: expireAfter,
@@ -458,11 +442,9 @@ func (s *E2ETestSuite) createTestNodeClaim(t *testing.T, testName, nodeClassName
 			},
 			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"bx2-2x8"},
-					},
+					Key:      "node.kubernetes.io/instance-type",
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"bx2-2x8"},
 				},
 			},
 			ExpireAfter: expireAfter,
@@ -477,6 +459,12 @@ func (s *E2ETestSuite) createTestNodeClaim(t *testing.T, testName, nodeClassName
 
 // createTestWorkload creates a deployment that will trigger Karpenter to provision nodes
 func (s *E2ETestSuite) createTestWorkload(t *testing.T, testName string) *appsv1.Deployment {
+	return s.createTestWorkloadWithReplicas(t, testName, 3)
+}
+
+// createTestWorkloadWithReplicas sets replicas at Create time, avoiding a
+// Create-then-Update race against the deployment controller.
+func (s *E2ETestSuite) createTestWorkloadWithReplicas(t *testing.T, testName string, replicas int32) *appsv1.Deployment {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-workload", testName),
@@ -488,7 +476,7 @@ func (s *E2ETestSuite) createTestWorkload(t *testing.T, testName string) *appsv1
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &[]int32{3}[0],
+			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": fmt.Sprintf("%s-workload", testName),
