@@ -37,6 +37,7 @@ import (
 
 // ProviderFactory creates the appropriate instance provider based on the NodeClass configuration
 type ProviderFactory struct {
+	ctx                  context.Context
 	client               *ibm.Client
 	kubeClient           client.Client
 	kubernetesClient     kubernetes.Interface
@@ -57,6 +58,7 @@ func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient clie
 	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider, unavailableOfferings)
 
 	return &ProviderFactory{
+		ctx:                  ctx,
 		client:               client,
 		kubeClient:           kubeClient,
 		kubernetesClient:     kubernetesClient,
@@ -79,10 +81,10 @@ func (f *ProviderFactory) GetInstanceProvider(nodeClass *v1alpha1.IBMNodeClass) 
 		return iksProvider.NewIKSWorkerPoolProvider(f.client, f.kubeClient)
 	case commonTypes.VPCMode:
 		if f.kubernetesClient != nil {
-			return vpcProvider.NewVPCInstanceProvider(f.client, f.kubeClient, vpcProvider.WithKubernetesClient(f.kubernetesClient))
+			return vpcProvider.NewVPCInstanceProvider(f.ctx, f.client, f.kubeClient, vpcProvider.WithKubernetesClient(f.kubernetesClient))
 		}
 		// Standard constructor without kubernetes client
-		return vpcProvider.NewVPCInstanceProvider(f.client, f.kubeClient)
+		return vpcProvider.NewVPCInstanceProvider(f.ctx, f.client, f.kubeClient)
 	default:
 		return nil, fmt.Errorf("unknown provider mode: %s", mode)
 	}
@@ -100,10 +102,10 @@ func (f *ProviderFactory) GetVPCProvider(nodeClass *v1alpha1.IBMNodeClass) (comm
 	}
 
 	if f.kubernetesClient != nil {
-		return vpcProvider.NewVPCInstanceProvider(f.client, f.kubeClient, vpcProvider.WithKubernetesClient(f.kubernetesClient))
+		return vpcProvider.NewVPCInstanceProvider(f.ctx, f.client, f.kubeClient, vpcProvider.WithKubernetesClient(f.kubernetesClient))
 	}
 	// Standard constructor without kubernetes client
-	return vpcProvider.NewVPCInstanceProvider(f.client, f.kubeClient)
+	return vpcProvider.NewVPCInstanceProvider(f.ctx, f.client, f.kubeClient)
 }
 
 // GetIKSProvider returns an IKS-specific provider
