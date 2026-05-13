@@ -5,6 +5,7 @@ aliases:
   karpenter-ibm-maintainers:
     - pfeifferj
     - jirn073-76
+    - meomnzak
 
   # Platform and infrastructure experts
   platform-team:
