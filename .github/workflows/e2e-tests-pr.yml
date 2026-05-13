@@ -40,7 +40,10 @@ jobs:
 
   build:
     needs: compute-tag
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/build-image.yaml
     with:
       tag: ${{ needs.compute-tag.outputs.tag }}
@@ -51,7 +54,10 @@ jobs:
   e2e:
     name: Run E2E against PR image
     needs: [compute-tag, build]
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, ibm-e2e]
     timeout-minutes: 210
     container:
