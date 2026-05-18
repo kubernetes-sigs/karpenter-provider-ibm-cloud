@@ -41,7 +41,7 @@ on:
         required: false
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.26'
   KO_DOCKER_REPO: quay.io/karpenter-provider-ibm-cloud/controller
 
 jobs:
