@@ -91,7 +91,7 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 					RootVolume: false,
 					VolumeSpec: &v1alpha1.VolumeSpec{
 						Capacity:            int64Ptr(100), // 100GB data volume
-						Profile:             stringPtr("5iops-tier"),
+						Profile:             stringPtr("custom"),
 						IOPS:                int64Ptr(1000),
 						Bandwidth:           int64Ptr(500),
 						DeleteOnTermination: &[]bool{true}[0],
