@@ -81,6 +81,8 @@ manifests: ## generate the controller-gen kubernetes manifests
 	@echo "Generating base Karpenter CRDs and IBM-specific CRDs directly to Helm chart..."
 	$(CONTROLLER_GEN) crd paths="./pkg/apis/v1alpha1" output:crd:artifacts:config=charts/crds
 	$(CONTROLLER_GEN) crd paths="./vendor/sigs.k8s.io/karpenter/pkg/apis/..." output:crd:artifacts:config=charts/crds
+	@echo "Expanding NodeSelectorRequirement operator enum in generated CRDs..."
+	@hack/expand-operator-enum.sh charts/crds
 	@echo "Generating RBAC manifests..."
 	@rm -f charts/templates/rbac_*.yaml charts/templates/role_*.yaml charts/templates/clusterrole_*.yaml
 	GOFLAGS="-mod=mod" $(CONTROLLER_GEN) rbac:roleName=karpenter-manager paths="./pkg/controllers/..." output:rbac:dir=charts/templates
@@ -102,12 +104,12 @@ e2e: ## Run e2e tests against real cluster (requires env vars)
 		echo "Warning: RUN_E2E_TESTS not set, tests will be skipped"; \
 		echo "Set RUN_E2E_TESTS=true and required env vars to run e2e tests"; \
 	fi
-	go test -v -timeout 45m ./test/e2e/... -run TestE2E
+	go test -v -tags=e2e -timeout 45m ./test/e2e/... -run TestE2E
 
 .PHONY: e2e-benchmark
 e2e-benchmark: ## Run e2e performance benchmarks
 	@echo "Running E2E benchmarks..."
-	RUN_E2E_BENCHMARKS=true go test -v -timeout 30m ./test/e2e/... -run=^$$ -bench=.
+	RUN_E2E_BENCHMARKS=true go test -v -tags=e2e -timeout 30m ./test/e2e/... -run=^$$ -bench=.
 
 .PHONY: lint
 lint:
