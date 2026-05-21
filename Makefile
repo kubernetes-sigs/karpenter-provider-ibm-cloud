@@ -81,6 +81,8 @@ manifests: ## generate the controller-gen kubernetes manifests
 	@echo "Generating base Karpenter CRDs and IBM-specific CRDs directly to Helm chart..."
 	$(CONTROLLER_GEN) crd paths="./pkg/apis/v1alpha1" output:crd:artifacts:config=charts/crds
 	$(CONTROLLER_GEN) crd paths="./vendor/sigs.k8s.io/karpenter/pkg/apis/..." output:crd:artifacts:config=charts/crds
+	@echo "Expanding NodeSelectorRequirement operator enum in generated CRDs..."
+	@hack/expand-operator-enum.sh charts/crds
 	@echo "Generating RBAC manifests..."
 	@rm -f charts/templates/rbac_*.yaml charts/templates/role_*.yaml charts/templates/clusterrole_*.yaml
 	GOFLAGS="-mod=mod" $(CONTROLLER_GEN) rbac:roleName=karpenter-manager paths="./pkg/controllers/..." output:rbac:dir=charts/templates
