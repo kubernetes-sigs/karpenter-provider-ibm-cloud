@@ -34,6 +34,13 @@ jobs:
           region: "us-south"
           vpcApiKey: "ci-test-vpc-key"
           vpcUrl: "https://us-south.iaas.cloud.ibm.com/v1"
+        additionalCAs:
+          enabled: true
+          certs:
+            cluster-ca: |
+              -----BEGIN CERTIFICATE-----
+              CI TEST CA
+              -----END CERTIFICATE-----
         EOF
 
     - name: Create yamllint config
@@ -54,4 +61,6 @@ jobs:
         helm lint . -f ci-values.yaml
 
         # Validate template rendering
-        helm template . -f ci-values.yaml
+        helm template . -f ci-values.yaml > rendered.yaml
+        grep -q 'name: ca_crt' rendered.yaml
+        grep -q 'key: ca_crt' rendered.yaml
