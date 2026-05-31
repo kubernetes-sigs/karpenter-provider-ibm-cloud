@@ -44,8 +44,11 @@ import (
 )
 
 const (
-	// Budget covers two back-to-back IBM VPC cold provisions (drift + replacement).
-	testTimeout  = 20 * time.Minute
+	// Budget covers two back-to-back IBM VPC cold provisions (drift + replacement)
+	// plus the worst-case calico-node initialization window on a fresh karpenter
+	// node, where kubelet reports Ready before CNI is usable and kubelet's pod
+	// sandbox creation backoff can climb to several minutes before retrying.
+	testTimeout  = 30 * time.Minute
 	pollInterval = 5 * time.Second
 )
 
