@@ -145,13 +145,14 @@ spec:
                   name: {{ include "karpenter.fullname" . }}-circuit-breaker
                   key: max-concurrent-instances
             {{- end }}
-          {{- if .Values.additionalCAs.enabled }}
-          envFrom:
-            # Mount additional CA bundle for cross-VPC kubelet authentication
-            - secretRef:
-                name: {{ include "karpenter.fullname" . }}-additional-ca
-                optional: true
-          {{- end }}
+            {{- if .Values.additionalCAs.enabled }}
+            - name: ca_crt
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karpenter.fullname" . }}-additional-ca
+                  key: ca_crt
+                  optional: true
+            {{- end }}
           ports:
             - name: metrics
               containerPort: {{ .Values.controller.metrics.port }}

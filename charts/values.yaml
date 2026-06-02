@@ -450,11 +450,18 @@ circuitBreaker:
 # Additional CA certificates for cross-VPC kubelet authentication
 additionalCAs:
   enabled: false
-  # Map of CA certificates (key: filename, value: base64-encoded certificate)
+  # Map of PEM certificates. Entries are concatenated into the controller's
+  # ca_crt environment variable and injected into generated bootstrap scripts.
   # Example:
   # certs:
-  #   rke2-ca.crt: "LS0tLS1CRUdJTi1DRVJUSUZJQ0FURS0tLS0t..."
-  #   proxy-ca.crt: "LS0tLS1CRUdJTi1DRVJUSUZJQ0FURS0tLS0t..."
+  #   rke2-ca: |
+  #     -----BEGIN CERTIFICATE-----
+  #     ...
+  #     -----END CERTIFICATE-----
+  #   proxy-ca: |
+  #     -----BEGIN CERTIFICATE-----
+  #     ...
+  #     -----END CERTIFICATE-----
   certs: {}
 
 # Controller configuration
