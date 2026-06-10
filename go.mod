@@ -3,7 +3,7 @@ module github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 go 1.26.2
 
 require (
-	github.com/IBM/go-sdk-core/v5 v5.21.2
+	github.com/IBM/go-sdk-core/v5 v5.21.4
 	github.com/IBM/platform-services-go-sdk v0.98.0
 	github.com/IBM/vpc-go-sdk v0.83.2
 	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737
@@ -96,7 +96,7 @@ require (
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
