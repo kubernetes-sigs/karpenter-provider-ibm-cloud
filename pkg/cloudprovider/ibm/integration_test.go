@@ -96,7 +96,7 @@ func TestRealVPCConnection(t *testing.T) {
 	// Test ListInstanceProfiles
 	t.Run("list_instance_profiles", func(t *testing.T) {
 		options := &vpcv1.ListInstanceProfilesOptions{}
-		profiles, _, err := client.ListInstanceProfiles(options)
+		profiles, _, err := client.ListInstanceProfiles(t.Context(), options)
 		if err != nil {
 			t.Errorf("Failed to list instance profiles: %v", err)
 			return
