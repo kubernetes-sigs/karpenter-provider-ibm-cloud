@@ -153,8 +153,7 @@ func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string, nodeClas
 		}
 
 		// List all profiles
-		// Note: VPCClient wrapper doesn't support context, uses internal timeout
-		profiles, response, err := vpcClient.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
+		profiles, response, err := vpcClient.ListInstanceProfiles(ctx, &vpcv1.ListInstanceProfilesOptions{})
 		if err != nil {
 			lastErr = fmt.Errorf("failed to list instance profiles: %w", err)
 
@@ -459,9 +458,8 @@ func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context, nodeClass *v1
 		}
 
 		// List instance profiles from VPC
-		// Note: VPCClient wrapper doesn't support context, uses internal timeout
 		options := &vpcv1.ListInstanceProfilesOptions{}
-		result, response, err := vpcClient.ListInstanceProfiles(options)
+		result, response, err := vpcClient.ListInstanceProfiles(ctx, options)
 
 		if err != nil {
 			lastErr = fmt.Errorf("listing VPC instance profiles: %w", err)
