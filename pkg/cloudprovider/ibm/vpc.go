@@ -457,12 +457,12 @@ func (c *VPCClient) ListSubnetsWithContext(ctx context.Context, options *vpcv1.L
 }
 
 // ListInstanceProfiles lists available instance profiles
-func (c *VPCClient) ListInstanceProfiles(options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+func (c *VPCClient) ListInstanceProfiles(ctx context.Context, options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
 	if c.client == nil {
 		return nil, nil, fmt.Errorf("VPC client not initialized")
 	}
 
-	return c.client.ListInstanceProfilesWithContext(context.Background(), options)
+	return c.client.ListInstanceProfilesWithContext(ctx, options)
 }
 
 // GetInstanceProfile retrieves a specific instance profile by name

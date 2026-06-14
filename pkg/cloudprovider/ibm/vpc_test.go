@@ -1077,7 +1077,7 @@ func TestListInstanceProfiles(t *testing.T) {
 				client = &VPCClient{}
 			}
 
-			profiles, _, err := client.ListInstanceProfiles(tt.options)
+			profiles, _, err := client.ListInstanceProfiles(t.Context(), tt.options)
 
 			if tt.wantErr {
 				if err == nil {

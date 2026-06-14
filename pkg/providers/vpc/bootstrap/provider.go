@@ -140,7 +140,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 
 	// First: Use the selectedInstanceType parameter if provided (most reliable)
 	if selectedInstanceType != "" {
-		architecture, err = p.detectArchitectureFromInstanceProfile(selectedInstanceType)
+		architecture, err = p.detectArchitectureFromInstanceProfile(ctx, selectedInstanceType)
 		if err != nil {
 			logger.Error(err, "Failed to detect architecture from selected instance type, trying fallbacks", "instanceType", selectedInstanceType)
 		} else {
@@ -152,7 +152,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 	if architecture == "" && nodeClaimObj != nil {
 		instanceType := nodeClaimObj.Labels["node.kubernetes.io/instance-type"]
 		if instanceType != "" {
-			architecture, err = p.detectArchitectureFromInstanceProfile(instanceType)
+			architecture, err = p.detectArchitectureFromInstanceProfile(ctx, instanceType)
 			if err != nil {
 				logger.Error(err, "Failed to detect architecture from NodeClaim labels", "instanceType", instanceType)
 			} else {
@@ -163,7 +163,7 @@ func (p *VPCBootstrapProvider) GetUserDataWithInstanceIDAndType(ctx context.Cont
 
 	// Third: Fallback to NodeClass instanceProfile if set (backward compatibility)
 	if architecture == "" && nodeClass.Spec.InstanceProfile != "" {
-		architecture, err = p.detectArchitectureFromInstanceProfile(nodeClass.Spec.InstanceProfile)
+		architecture, err = p.detectArchitectureFromInstanceProfile(ctx, nodeClass.Spec.InstanceProfile)
 		if err != nil {
 			logger.Error(err, "Failed to detect architecture from NodeClass instance profile", "instanceProfile", nodeClass.Spec.InstanceProfile)
 		} else {
@@ -587,7 +587,7 @@ func (p *VPCBootstrapProvider) getNodeClaim(ctx context.Context, nodeClaimName t
 }
 
 // detectArchitectureFromInstanceProfile detects the architecture from instance profile using IBM Cloud API
-func (p *VPCBootstrapProvider) detectArchitectureFromInstanceProfile(instanceProfile string) (string, error) {
+func (p *VPCBootstrapProvider) detectArchitectureFromInstanceProfile(ctx context.Context, instanceProfile string) (string, error) {
 	if instanceProfile == "" {
 		return "", fmt.Errorf("instance profile is empty")
 	}
@@ -596,13 +596,12 @@ func (p *VPCBootstrapProvider) detectArchitectureFromInstanceProfile(instancePro
 		return "", fmt.Errorf("IBM Cloud client is not initialized")
 	}
 
-	ctx := context.Background()
 	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	profileCollection, _, err := vpcClient.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
+	profileCollection, _, err := vpcClient.ListInstanceProfiles(ctx, &vpcv1.ListInstanceProfilesOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to list instance profiles: %w", err)
 	}

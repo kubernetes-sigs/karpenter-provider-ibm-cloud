@@ -674,7 +674,7 @@ func NewEnhancedMockVPCClient() *EnhancedMockVPCClient {
 	}
 }
 
-func (m *EnhancedMockVPCClient) ListInstanceProfiles(options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+func (m *EnhancedMockVPCClient) ListInstanceProfiles(_ context.Context, options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
 	if err, exists := m.errors["ListInstanceProfiles"]; exists {
 		return nil, &core.DetailedResponse{}, err
 	}

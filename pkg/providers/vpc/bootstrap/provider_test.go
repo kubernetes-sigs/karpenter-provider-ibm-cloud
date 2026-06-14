@@ -904,7 +904,7 @@ func TestVPCBootstrapProvider_detectArchitectureFromInstanceProfile(t *testing.T
 			provider := NewVPCBootstrapProvider(nil, nil, nil)
 
 			// Test detectArchitectureFromInstanceProfile method
-			result, err := provider.detectArchitectureFromInstanceProfile(tt.instanceProfile)
+			result, err := provider.detectArchitectureFromInstanceProfile(t.Context(), tt.instanceProfile)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -1462,13 +1462,13 @@ func TestArchitectureDetectionPriorityOrder(t *testing.T) {
 		}
 
 		// Test that empty instance profile returns appropriate error
-		arch, err := provider.detectArchitectureFromInstanceProfile("")
+		arch, err := provider.detectArchitectureFromInstanceProfile(t.Context(), "")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "instance profile is empty")
 		assert.Empty(t, arch)
 
 		// Test that nil client returns appropriate error (not nil pointer panic)
-		arch, err = provider.detectArchitectureFromInstanceProfile("bx2-4x16")
+		arch, err = provider.detectArchitectureFromInstanceProfile(t.Context(), "bx2-4x16")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "IBM Cloud client is not initialized")
 		assert.Empty(t, arch)

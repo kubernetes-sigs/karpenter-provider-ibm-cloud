@@ -57,8 +57,7 @@ func (s *E2ETestSuite) discoverInstanceProfiles(t *testing.T) []string {
 		baseURL := "https://" + s.testRegion + ".iaas.cloud.ibm.com/v1"
 		client, err := ibm.NewVPCClient(baseURL, "iam", s.apiKey, s.testRegion, s.testResourceGroup)
 		require.NoError(t, err, "create VPC client for instance profile discovery")
-		// VPCClient.ListInstanceProfiles uses context.Background internally; no ctx wiring.
-		coll, _, err := client.ListInstanceProfiles(&vpcv1.ListInstanceProfilesOptions{})
+		coll, _, err := client.ListInstanceProfiles(t.Context(), &vpcv1.ListInstanceProfilesOptions{})
 		require.NoError(t, err, "list VPC instance profiles")
 		s.profiles = filterSmallProfiles(coll.Profiles)
 		require.NotEmpty(t, s.profiles, "VPC returned no profiles matching 2-4 vCPU / 4-16 GB in %s", s.testRegion)
