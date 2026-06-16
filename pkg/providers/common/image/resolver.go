@@ -389,6 +389,13 @@ func (r *Resolver) sortImagesByVersion(images []ImageInfo, selector *v1alpha1.Im
 			}
 		}
 
+		// For newer IBM image names, prefer higher patch versions before build numbers.
+		patch1, _ := strconv.Atoi(img1Components["patchVersion"])
+		patch2, _ := strconv.Atoi(img2Components["patchVersion"])
+		if patch1 != patch2 {
+			return patch1 > patch2
+		}
+
 		// Prefer higher build numbers
 		build1, _ := strconv.Atoi(img1Components["build"])
 		build2, _ := strconv.Atoi(img2Components["build"])
