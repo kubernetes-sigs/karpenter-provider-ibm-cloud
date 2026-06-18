@@ -726,8 +726,8 @@ type IBMNodeClassStatus struct {
 }
 
 // StatusConditions returns the condition set for the status.Object interface
-func (in *IBMNodeClass) StatusConditions() status.ConditionSet {
-	return status.NewReadyConditions().For(in)
+func (in *IBMNodeClass) StatusConditions(opts ...status.ForOption) status.ConditionSet {
+	return status.NewReadyConditions().For(in, opts...)
 }
 
 // GetConditions returns the conditions as status.Conditions for the status.Object interface
