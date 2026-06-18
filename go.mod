@@ -1,12 +1,12 @@
 module github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.3
 	github.com/IBM/platform-services-go-sdk v0.98.0
 	github.com/IBM/vpc-go-sdk v0.84.0
-	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737
+	github.com/awslabs/operatorpkg v0.0.0-20260501204335-c49b4ca8d58d
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-openapi/strfmt v0.26.3
@@ -29,7 +29,7 @@ require (
 	k8s.io/utils v0.0.0-20260319190234-28399d86e0b5
 	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/controller-tools v0.21.0
-	sigs.k8s.io/karpenter v1.12.0
+	sigs.k8s.io/karpenter v1.13.0
 )
 
 require (
