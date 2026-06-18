@@ -725,6 +725,45 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 		assert.Equal(t, "r006-ubuntu-20-10-1", result) // Should select the latest minor version
 	})
 
+	t.Run("image selection prefers latest patch version for newer IBM image format", func(t *testing.T) {
+		now := time.Now()
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-ubuntu-22-04-4"),
+							Name:      stringPtr("ibm-ubuntu-22-04-4-minimal-amd64-9"),
+							CreatedAt: createStrfmtDateTime(now),
+							Status:    stringPtr("available"),
+						},
+						{
+							ID:        stringPtr("r006-ubuntu-22-04-5"),
+							Name:      stringPtr("ibm-ubuntu-22-04-5-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now.Add(-time.Hour)),
+							Status:    stringPtr("available"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
+		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
+
+		selector := &v1alpha1.ImageSelector{
+			OS:           "ubuntu",
+			MajorVersion: "22",
+			MinorVersion: "04",
+			Architecture: "amd64",
+			Variant:      "minimal",
+		}
+
+		result, err := resolver.ResolveImageBySelector(context.Background(), selector)
+		assert.NoError(t, err)
+		assert.Equal(t, "r006-ubuntu-22-04-5", result) // Should prefer the newer patch version.
+	})
+
 	t.Run("no matching images", func(t *testing.T) {
 		mockSDKClient := &MockVPCSDKClient{
 			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
