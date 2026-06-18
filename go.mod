@@ -3,7 +3,7 @@ module github.com/kubernetes-sigs/karpenter-provider-ibm-cloud
 go 1.26.4
 
 require (
-	github.com/IBM/go-sdk-core/v5 v5.21.3
+	github.com/IBM/go-sdk-core/v5 v5.21.4
 	github.com/IBM/platform-services-go-sdk v0.98.0
 	github.com/IBM/vpc-go-sdk v0.84.0
 	github.com/awslabs/operatorpkg v0.0.0-20260501204335-c49b4ca8d58d
