@@ -21,8 +21,11 @@ import (
 	"net"
 	"testing"
 
+	"github.com/IBM/go-sdk-core/v5/core"
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,6 +33,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
 func TestApplyClusterAwareness(t *testing.T) {
@@ -168,6 +172,35 @@ func TestGetExistingClusterSubnets(t *testing.T) {
 		// Should return empty map when API fails, not panic
 		assert.Empty(t, result)
 	})
+
+	t.Run("Preserve canceled caller context when resolving node subnet", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		p, _ := newTestProvider(ctrl)
+		defer p.subnetCache.Stop()
+
+		nodes := &corev1.NodeList{
+			Items: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-with-provider-id"},
+					Spec: corev1.NodeSpec{
+						ProviderID: "ibm:///us-south/instance-123",
+					},
+				},
+			},
+		}
+
+		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
+		fakeClient := fake.NewSimpleClientset(nodes)
+		p.SetKubernetesClient(fakeClient)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		result := p.getExistingClusterSubnets(ctx)
+		assert.Empty(t, result)
+	})
 }
 
 func TestExtractSubnetFromNode(t *testing.T) {
@@ -181,7 +214,7 @@ func TestExtractSubnetFromNode(t *testing.T) {
 			},
 		}
 
-		result := p.extractSubnetFromNode(node)
+		result := p.extractSubnetFromNode(context.Background(), node)
 		assert.Equal(t, "", result)
 	})
 
@@ -194,7 +227,7 @@ func TestExtractSubnetFromNode(t *testing.T) {
 			},
 		}
 
-		result := p.extractSubnetFromNode(node)
+		result := p.extractSubnetFromNode(context.Background(), node)
 		// Should return empty since no internal IP or provider ID
 		assert.Equal(t, "", result)
 	})
@@ -233,7 +266,7 @@ func TestParseSubnetFromProviderID(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := p.parseSubnetFromProviderID(tc.providerID)
+			result := p.parseSubnetFromProviderID(context.Background(), tc.providerID)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
@@ -286,14 +319,83 @@ func TestFindSubnetByIP(t *testing.T) {
 func TestGetSubnetForInstance(t *testing.T) {
 	t.Run("nil client returns empty", func(t *testing.T) {
 		providerWithNilClient := &provider{client: nil}
-		result := providerWithNilClient.getSubnetForInstance("instance-123")
+		result := providerWithNilClient.getSubnetForInstance(context.Background(), "instance-123")
 		assert.Equal(t, "", result)
 	})
 
 	t.Run("empty instance ID", func(t *testing.T) {
 		providerWithNilClient := &provider{client: nil}
-		result := providerWithNilClient.getSubnetForInstance("")
+		result := providerWithNilClient.getSubnetForInstance(context.Background(), "")
 		assert.Equal(t, "", result)
+	})
+
+	t.Run("canceled context returns empty", func(t *testing.T) {
+		providerWithNilClient := &provider{client: &ibm.Client{}}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		result := providerWithNilClient.getSubnetForInstance(ctx, "instance-123")
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("vpc client manager error returns empty", func(t *testing.T) {
+		providerWithManagerError := &provider{
+			client:           &ibm.Client{},
+			vpcClientManager: vpcclient.NewManager(nil, 0),
+		}
+		result := providerWithManagerError.getSubnetForInstance(context.Background(), "instance-123")
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("instance lookup error returns empty", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		p, mockVPC := newTestProvider(ctrl)
+		defer p.subnetCache.Stop()
+
+		mockVPC.EXPECT().
+			GetInstanceWithContext(gomock.Any(), gomock.Any()).
+			Return(nil, &core.DetailedResponse{StatusCode: 500}, fmt.Errorf("lookup failed"))
+
+		result := p.getSubnetForInstance(context.Background(), "instance-123")
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("instance without primary network interface returns empty", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		p, mockVPC := newTestProvider(ctrl)
+		defer p.subnetCache.Stop()
+
+		mockVPC.EXPECT().
+			GetInstanceWithContext(gomock.Any(), gomock.Any()).
+			Return(&vpcv1.Instance{}, &core.DetailedResponse{StatusCode: 200}, nil)
+
+		result := p.getSubnetForInstance(context.Background(), "instance-123")
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("instance with primary network interface subnet returns subnet id", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		p, mockVPC := newTestProvider(ctrl)
+		defer p.subnetCache.Stop()
+
+		subnetID := "subnet-123"
+		mockVPC.EXPECT().
+			GetInstanceWithContext(gomock.Any(), gomock.Any()).
+			Return(&vpcv1.Instance{
+				PrimaryNetworkInterface: &vpcv1.NetworkInterfaceInstanceContextReference{
+					Subnet: &vpcv1.SubnetReference{
+						ID: &subnetID,
+					},
+				},
+			}, &core.DetailedResponse{StatusCode: 200}, nil)
+
+		result := p.getSubnetForInstance(context.Background(), "instance-123")
+		assert.Equal(t, subnetID, result)
 	})
 }
 
