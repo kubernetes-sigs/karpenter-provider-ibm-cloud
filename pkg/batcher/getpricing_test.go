@@ -28,8 +28,7 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/fake"
 )
 
-// newPricingBatcherWithOptions builds the batcher with tight timeouts for testing
-func newPricingBatcherWithOptions(ctx context.Context, client pricingClient) *PricingBatcher {
+func newPricingBatcherWithOptions(ctx context.Context, client pricingClient, overrides ...func(*Options[string, globalcatalogv1.PricingGet])) *PricingBatcher {
 	p := &PricingBatcher{client: client}
 
 	opts := Options[string, globalcatalogv1.PricingGet]{
@@ -41,6 +40,9 @@ func newPricingBatcherWithOptions(ctx context.Context, client pricingClient) *Pr
 		RequestHasher: pricingHasher,
 		BatchExecutor: p.execPricingBatch(),
 	}
+	for _, override := range overrides {
+		override(&opts)
+	}
 
 	p.batcher = NewBatcher(ctx, opts)
 	return p
@@ -51,22 +53,34 @@ func TestPricingBatcher_BatchesSameID(t *testing.T) {
 	defer cancel()
 
 	fakePricing := fake.NewPricingAPI()
-	pb := newPricingBatcherWithOptions(ctx, fakePricing)
 
 	const id = "catalog-entry-1"
 	const n = 50
 
+	pb := newPricingBatcherWithOptions(ctx, fakePricing, func(opts *Options[string, globalcatalogv1.PricingGet]) {
+		opts.IdleTimeout = time.Second
+		opts.MaxTimeout = 5 * time.Second
+		opts.MaxItems = n
+	})
+
 	var wg sync.WaitGroup
+	var ready sync.WaitGroup
+	start := make(chan struct{})
 	wg.Add(n)
+	ready.Add(n)
 
 	errs := make(chan error, n)
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
+			ready.Done()
+			<-start
 			_, err := pb.GetPricing(ctx, id)
 			errs <- err
 		}()
 	}
+	ready.Wait()
+	close(start)
 	wg.Wait()
 	close(errs)
 
@@ -86,19 +100,30 @@ func TestPricingBatcher_SeparatesDifferentIDs(t *testing.T) {
 	defer cancel()
 
 	fakePricing := fake.NewPricingAPI()
-	pb := newPricingBatcherWithOptions(ctx, fakePricing)
 
 	ids := []string{"a", "b", "c"}
 	const perID = 20
+	totalRequests := len(ids) * perID
+
+	pb := newPricingBatcherWithOptions(ctx, fakePricing, func(opts *Options[string, globalcatalogv1.PricingGet]) {
+		opts.IdleTimeout = time.Second
+		opts.MaxTimeout = 5 * time.Second
+		opts.MaxItems = totalRequests
+	})
 
 	var wg sync.WaitGroup
-	wg.Add(len(ids) * perID)
+	var ready sync.WaitGroup
+	start := make(chan struct{})
+	wg.Add(totalRequests)
+	ready.Add(totalRequests)
 
 	for _, id := range ids {
 		id := id
 		for i := 0; i < perID; i++ {
 			go func() {
 				defer wg.Done()
+				ready.Done()
+				<-start
 				_, err := pb.GetPricing(ctx, id)
 				if err != nil {
 					t.Errorf("unexpected err for id %q: %v", id, err)
@@ -106,9 +131,12 @@ func TestPricingBatcher_SeparatesDifferentIDs(t *testing.T) {
 			}()
 		}
 	}
+	ready.Wait()
+	close(start)
 	wg.Wait()
 
-	// One upstream call per distinct hash bucket (per ID)
+	// Force all requests into a single batching window, then verify the pricing
+	// batch executor still deduplicates upstream calls per unique catalog ID.
 	if got := fakePricing.GetCallCount(); got != int64(len(ids)) {
 		t.Fatalf("expected %d upstream calls, got %d", len(ids), got)
 	}
