@@ -1,0 +1,41 @@
+# Spot-only NodePool: provisions only spot instances.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: spot
+spec:
+  template:
+    spec:
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+      nodeClassRef:
+        group: karpenter-ibm.sh
+        kind: IBMNodeClass
+        name: default
+      expireAfter: 12h
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 10s
+---
+# Spot preferred with on-demand fallback: Karpenter tries spot first, then on-demand.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: spot-with-fallback
+spec:
+  template:
+    spec:
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+      nodeClassRef:
+        group: karpenter-ibm.sh
+        kind: IBMNodeClass
+        name: default
+      expireAfter: 24h
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
