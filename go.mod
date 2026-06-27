@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.4
-	github.com/IBM/platform-services-go-sdk v0.98.0
+	github.com/IBM/platform-services-go-sdk v0.99.1
 	github.com/IBM/vpc-go-sdk v0.84.0
 	github.com/awslabs/operatorpkg v0.0.0-20260501204335-c49b4ca8d58d
 	github.com/go-logr/logr v1.4.3
@@ -22,7 +22,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.21.0
-	k8s.io/api v0.36.1
+	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.37.0-alpha.0
 	k8s.io/client-go v0.36.1
 	k8s.io/klog/v2 v2.140.0
