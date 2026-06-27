@@ -22,7 +22,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.21.0
-	k8s.io/api v0.36.1
+	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.37.0-alpha.0
 	k8s.io/client-go v0.36.1
 	k8s.io/klog/v2 v2.140.0
