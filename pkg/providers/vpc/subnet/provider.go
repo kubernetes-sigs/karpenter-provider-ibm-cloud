@@ -234,7 +234,7 @@ func (p *provider) getExistingClusterSubnets(ctx context.Context) map[string]int
 
 	// Extract subnet information from each node
 	for _, node := range nodes.Items {
-		subnetID := p.extractSubnetFromNode(node)
+		subnetID := p.extractSubnetFromNode(ctx, node)
 		if subnetID != "" {
 			clusterSubnets[subnetID]++
 		}
@@ -244,10 +244,10 @@ func (p *provider) getExistingClusterSubnets(ctx context.Context) map[string]int
 }
 
 // extractSubnetFromNode attempts to determine the subnet ID for a node
-func (p *provider) extractSubnetFromNode(node v1.Node) string {
+func (p *provider) extractSubnetFromNode(ctx context.Context, node v1.Node) string {
 	// Method 1: Try to extract from provider ID
 	if node.Spec.ProviderID != "" {
-		if subnetID := p.parseSubnetFromProviderID(node.Spec.ProviderID); subnetID != "" {
+		if subnetID := p.parseSubnetFromProviderID(ctx, node.Spec.ProviderID); subnetID != "" {
 			return subnetID
 		}
 	}
@@ -265,35 +265,38 @@ func (p *provider) extractSubnetFromNode(node v1.Node) string {
 }
 
 // parseSubnetFromProviderID extracts subnet ID from IBM Cloud provider ID format
-func (p *provider) parseSubnetFromProviderID(providerID string) string {
+func (p *provider) parseSubnetFromProviderID(ctx context.Context, providerID string) string {
 	// IBM Cloud provider ID format: "ibm:///region/instance_id"
 	// This doesn't directly contain subnet info, so we'll need to query the instance
 	parts := strings.Split(providerID, "/")
 	if len(parts) >= 4 && parts[0] == "ibm:" {
 		instanceID := parts[len(parts)-1]
-		return p.getSubnetForInstance(instanceID)
+		return p.getSubnetForInstance(ctx, instanceID)
 	}
 	return ""
 }
 
 // getSubnetForInstance queries IBM Cloud API to get subnet for an instance
-func (p *provider) getSubnetForInstance(instanceID string) string {
+func (p *provider) getSubnetForInstance(ctx context.Context, instanceID string) string {
 	if p.client == nil {
 		return ""
 	}
 
+	if err := ctx.Err(); err != nil {
+		return ""
+	}
+
 	// Get VPC client
-	ctx := context.Background()
 	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
 	if err != nil {
 		return ""
 	}
 
 	// Use context with timeout for API call
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	instance, err := vpcClient.GetInstance(ctx, instanceID)
+	instance, err := vpcClient.GetInstance(requestCtx, instanceID)
 	if err != nil {
 		return ""
 	}
