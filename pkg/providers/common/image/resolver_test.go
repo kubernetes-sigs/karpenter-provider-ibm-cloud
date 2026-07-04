@@ -764,6 +764,42 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 		assert.Equal(t, "r006-ubuntu-22-04-5", result) // Should prefer the newer patch version.
 	})
 
+	t.Run("image selection falls back to private images when public images do not match", func(t *testing.T) {
+		now := time.Now()
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				if options.Visibility != nil && *options.Visibility == "private" {
+					return &vpcv1.ImageCollection{
+						Images: []vpcv1.Image{
+							{
+								ID:        stringPtr("r006-private-ubuntu-22-04-1"),
+								Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+								CreatedAt: createStrfmtDateTime(now),
+								Status:    stringPtr("available"),
+							},
+						},
+					}, &core.DetailedResponse{}, nil
+				}
+				return &vpcv1.ImageCollection{Images: []vpcv1.Image{}}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
+		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
+
+		selector := &v1alpha1.ImageSelector{
+			OS:           "ubuntu",
+			MajorVersion: "22",
+			MinorVersion: "04",
+			Architecture: "amd64",
+			Variant:      "minimal",
+		}
+
+		result, err := resolver.ResolveImageBySelector(context.Background(), selector)
+		assert.NoError(t, err)
+		assert.Equal(t, "r006-private-ubuntu-22-04-1", result)
+	})
+
 	t.Run("no matching images", func(t *testing.T) {
 		mockSDKClient := &MockVPCSDKClient{
 			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {

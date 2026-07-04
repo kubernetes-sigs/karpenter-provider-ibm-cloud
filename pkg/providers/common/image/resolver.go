@@ -126,54 +126,7 @@ func (r *Resolver) resolveImageByName(ctx context.Context, imageName string) (st
 
 // ListAvailableImages lists all available images with optional filtering
 func (r *Resolver) ListAvailableImages(ctx context.Context, nameFilter string) ([]ImageInfo, error) {
-	options := &vpcv1.ListImagesOptions{
-		Visibility: stringPtr("public"),
-	}
-
-	images, err := r.vpcClient.ListImages(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing images: %w", err)
-	}
-
-	var result []ImageInfo
-	for _, image := range images.Images {
-		if image.Name == nil || image.ID == nil {
-			continue
-		}
-
-		// Apply name filter if provided
-		if nameFilter != "" && !strings.Contains(strings.ToLower(*image.Name), strings.ToLower(nameFilter)) {
-			continue
-		}
-
-		info := ImageInfo{
-			ID:   *image.ID,
-			Name: *image.Name,
-		}
-
-		if image.CreatedAt != nil {
-			if createdAt, err := time.Parse(time.RFC3339, image.CreatedAt.String()); err == nil {
-				info.CreatedAt = createdAt
-			}
-		}
-
-		if image.OperatingSystem != nil && image.OperatingSystem.Name != nil {
-			info.OperatingSystem = *image.OperatingSystem.Name
-		}
-
-		if image.Status != nil {
-			info.Status = *image.Status
-		}
-
-		result = append(result, info)
-	}
-
-	// Sort by creation date (newest first)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].CreatedAt.After(result[j].CreatedAt)
-	})
-
-	return result, nil
+	return r.listImagesByVisibility(ctx, "public", nameFilter)
 }
 
 // ResolveImageBySelector resolves an image using semantic selection criteria
@@ -190,7 +143,8 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 		"architecture", selector.Architecture,
 		"variant", selector.Variant)
 
-	// List all available images
+	// List public images first to preserve the same public-first behavior as
+	// explicit image-name resolution.
 	images, err := r.ListAvailableImages(ctx, "")
 	if err != nil {
 		r.logger.Error(err, "Failed to list available images")
@@ -214,6 +168,16 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 
 	if len(candidates) > 0 && r.logger.V(1).Enabled() {
 		r.logger.V(1).Info("Logging first candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
+	}
+
+	if len(candidates) == 0 {
+		privateImages, privateErr := r.listImagesByVisibility(ctx, "private", "")
+		if privateErr != nil {
+			r.logger.Error(privateErr, "Failed to list private images")
+			return "", fmt.Errorf("listing private images: %w", privateErr)
+		}
+		candidates = r.filterImagesBySelector(privateImages, selector)
+		r.logger.Info("Filtered private candidate images", "candidateCount", len(candidates))
 	}
 
 	if len(candidates) == 0 {
@@ -242,6 +206,55 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 
 	// Return the most recent matching image
 	return sortedCandidates[0].ID, nil
+}
+
+func (r *Resolver) listImagesByVisibility(ctx context.Context, visibility, nameFilter string) ([]ImageInfo, error) {
+	options := &vpcv1.ListImagesOptions{
+		Visibility: stringPtr(visibility),
+	}
+
+	images, err := r.vpcClient.ListImages(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("listing %s images: %w", visibility, err)
+	}
+
+	var result []ImageInfo
+	for _, image := range images.Images {
+		if image.Name == nil || image.ID == nil {
+			continue
+		}
+
+		if nameFilter != "" && !strings.Contains(strings.ToLower(*image.Name), strings.ToLower(nameFilter)) {
+			continue
+		}
+
+		info := ImageInfo{
+			ID:   *image.ID,
+			Name: *image.Name,
+		}
+
+		if image.CreatedAt != nil {
+			if createdAt, err := time.Parse(time.RFC3339, image.CreatedAt.String()); err == nil {
+				info.CreatedAt = createdAt
+			}
+		}
+
+		if image.OperatingSystem != nil && image.OperatingSystem.Name != nil {
+			info.OperatingSystem = *image.OperatingSystem.Name
+		}
+
+		if image.Status != nil {
+			info.Status = *image.Status
+		}
+
+		result = append(result, info)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+
+	return result, nil
 }
 
 // filterImagesBySelector filters images based on selector criteria
