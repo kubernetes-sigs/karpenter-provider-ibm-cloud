@@ -26,7 +26,7 @@ customResources:
     architecture: "amd64"
 
     disruption:
-      consolidationPolicy: WhenUnderutilized
+      consolidationPolicy: WhenEmptyOrUnderutilized
       consolidateAfter: 30s
       expireAfter: 720h
 
@@ -122,8 +122,8 @@ customResources:
         memory: 200Gi
 
       disruption:
-        consolidationPolicy: WhenUnderutilized
-        consolidateAfter: 10s
+        consolidationPolicy: WhenEmptyOrUnderutilized
+        consolidateAfter: 300s
         expireAfter: 12h
 
       taints:

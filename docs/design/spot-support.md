@@ -504,8 +504,11 @@ spec:
         group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: default
+      expireAfter: 12h
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    consolidateAfter: 10s
-    expireAfter: 12h
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 300s
+  limits:
+    cpu: "1000"
+    memory: 1000Gi
 ```
