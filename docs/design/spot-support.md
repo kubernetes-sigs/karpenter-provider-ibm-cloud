@@ -507,5 +507,8 @@ spec:
       expireAfter: 12h
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
-    consolidateAfter: 10s
+    consolidateAfter: 300s
+  limits:
+    cpu: "1000"
+    memory: 1000Gi
 ```
