@@ -128,7 +128,7 @@ customResources:
 
     # Default disruption settings
     disruption:
-      consolidationPolicy: WhenUnderutilized
+      consolidationPolicy: WhenEmptyOrUnderutilized
       consolidateAfter: 30s
       expireAfter: 720h  # 30 days
 
@@ -305,7 +305,7 @@ customResources:
         memory: 200Gi
 
       disruption:
-        consolidationPolicy: WhenUnderutilized
+        consolidationPolicy: WhenEmptyOrUnderutilized
         consolidateAfter: 10s
         expireAfter: 12h  # Shorter expiry for spot
 

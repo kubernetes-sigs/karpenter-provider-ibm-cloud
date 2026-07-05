@@ -27,7 +27,7 @@ customResources:
     architecture: "amd64"
 
     disruption:
-      consolidationPolicy: WhenUnderutilized
+      consolidationPolicy: WhenEmptyOrUnderutilized
       consolidateAfter: 60s  # Longer for IKS due to worker pool operations
       expireAfter: 720h
 
