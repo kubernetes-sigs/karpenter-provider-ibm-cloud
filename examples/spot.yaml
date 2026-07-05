@@ -1,4 +1,5 @@
-# Spot-only NodePool: provisions only spot instances.
+# Spot-only NodePool. Spot nodes can be reclaimed by IBM Cloud at any time;
+# expireAfter rotates them before they accumulate long-lived state.
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
@@ -17,9 +18,15 @@ spec:
       expireAfter: 12h
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
-    consolidateAfter: 10s
+    # 300s gives CNI (Calico) time to initialize before consolidation may
+    # remove the node; lower values can cause a create/terminate loop.
+    # See docs/vpc-integration.md, "CNI Initialization Timing Issues".
+    consolidateAfter: 300s
+  limits:
+    cpu: "1000"
 ---
-# Spot preferred with on-demand fallback: Karpenter tries spot first, then on-demand.
+# Spot with on-demand fallback. Karpenter picks spot on price; on-demand is
+# used while spot offerings are marked unavailable (e.g. after interruptions).
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
@@ -35,7 +42,8 @@ spec:
         group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: default
-      expireAfter: 24h
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
-    consolidateAfter: 30s
+    consolidateAfter: 300s
+  limits:
+    cpu: "1000"
