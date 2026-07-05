@@ -306,7 +306,7 @@ customResources:
 
       disruption:
         consolidationPolicy: WhenEmptyOrUnderutilized
-        consolidateAfter: 10s
+        consolidateAfter: 300s
         expireAfter: 12h  # Shorter expiry for spot
 
       taints:
