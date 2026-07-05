@@ -101,16 +101,17 @@ spec:
         kind: IBMNodeClass
         name: {{ $pool.nodeClassRef | default $.Values.customResources.nodeClass.name | default "default" }}
 
+      {{- /* values keep expireAfter under the pool's disruption map, but karpenter.sh/v1 expects it under template.spec */}}
+      expireAfter: {{ ($pool.disruption).expireAfter | default $.Values.customResources.global.disruption.expireAfter }}
+
   # Disruption settings
   disruption:
     {{- if $pool.disruption }}
     consolidationPolicy: {{ $pool.disruption.consolidationPolicy | default $.Values.customResources.global.disruption.consolidationPolicy }}
     consolidateAfter: {{ $pool.disruption.consolidateAfter | default $.Values.customResources.global.disruption.consolidateAfter }}
-    expireAfter: {{ $pool.disruption.expireAfter | default $.Values.customResources.global.disruption.expireAfter }}
     {{- else }}
     consolidationPolicy: {{ $.Values.customResources.global.disruption.consolidationPolicy }}
     consolidateAfter: {{ $.Values.customResources.global.disruption.consolidateAfter }}
-    expireAfter: {{ $.Values.customResources.global.disruption.expireAfter }}
     {{- end }}
 
   # Resource limits
