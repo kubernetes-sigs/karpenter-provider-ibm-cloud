@@ -335,18 +335,47 @@ func (c *VPCClient) GetImage(ctx context.Context, imageID string) (*vpcv1.Image,
 	return image, nil
 }
 
-// ListImages lists available images with optional filtering
+// ListImages lists available images with optional filtering, following
+// pagination until the collection is exhausted
 func (c *VPCClient) ListImages(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, error) {
 	if c.client == nil {
 		return nil, fmt.Errorf("VPC client not initialized")
 	}
 
-	images, _, err := c.client.ListImagesWithContext(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing images: %w", err)
+	// Copy so the pagination cursor never leaks into the caller's options.
+	opts := vpcv1.ListImagesOptions{}
+	if options != nil {
+		opts = *options
+	}
+	if opts.Limit == nil {
+		opts.Limit = core.Int64Ptr(100)
 	}
 
-	return images, nil
+	var all vpcv1.ImageCollection
+	seen := map[string]bool{}
+	for {
+		page, _, err := c.client.ListImagesWithContext(ctx, &opts)
+		if err != nil {
+			return nil, err
+		}
+		all.Images = append(all.Images, page.Images...)
+
+		next, err := page.GetNextStart()
+		if err != nil {
+			return nil, fmt.Errorf("parsing next page token: %w", err)
+		}
+		if next == nil {
+			break
+		}
+		// A server bug repeating a token would otherwise loop forever.
+		if seen[*next] {
+			return nil, fmt.Errorf("repeated pagination token %q", *next)
+		}
+		seen[*next] = true
+		opts.Start = next
+	}
+
+	return &all, nil
 }
 
 // ListSecurityGroups lists security groups with optional filtering

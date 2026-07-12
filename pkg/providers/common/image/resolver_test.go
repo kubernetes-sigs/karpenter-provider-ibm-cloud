@@ -422,6 +422,133 @@ func TestListAvailableImages(t *testing.T) {
 	}
 }
 
+func TestListImagesPagination(t *testing.T) {
+	now := time.Now()
+	var starts []string
+	mockSDKClient := &MockVPCSDKClient{
+		listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+			if options.Start == nil {
+				starts = append(starts, "")
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-page1"),
+							Name:      stringPtr("ibm-ubuntu-24-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now),
+							Status:    stringPtr("available"),
+						},
+					},
+					Next: &vpcv1.PageLink{
+						Href: stringPtr("https://us-south.iaas.cloud.ibm.com/v1/images?start=page2"),
+					},
+				}, &core.DetailedResponse{}, nil
+			}
+			starts = append(starts, *options.Start)
+			return &vpcv1.ImageCollection{
+				Images: []vpcv1.Image{
+					{
+						ID:        stringPtr("r006-page2"),
+						Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+						CreatedAt: createStrfmtDateTime(now.Add(-time.Hour)),
+						Status:    stringPtr("available"),
+					},
+				},
+			}, &core.DetailedResponse{}, nil
+		},
+	}
+
+	resolver := NewResolver(ibm.NewVPCClientWithMock(mockSDKClient), "us-south", logr.Discard())
+
+	images, err := resolver.ListAvailableImages(context.Background(), "")
+	assert.NoError(t, err)
+	assert.Len(t, images, 2)
+	assert.Equal(t, []string{"", "page2"}, starts)
+}
+
+func TestResolveImageByNamePrivateFallbackAfterPagination(t *testing.T) {
+	now := time.Now()
+	var privateStart *string
+	privateCalled := false
+	mockSDKClient := &MockVPCSDKClient{
+		listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+			if options.Visibility != nil && *options.Visibility == "private" {
+				privateCalled = true
+				privateStart = options.Start
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-private-custom"),
+							Name:      stringPtr("my-private-image"),
+							CreatedAt: createStrfmtDateTime(now),
+							Status:    stringPtr("available"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			}
+			if options.Start == nil {
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-public-1"),
+							Name:      stringPtr("ibm-ubuntu-24-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now),
+							Status:    stringPtr("available"),
+						},
+					},
+					Next: &vpcv1.PageLink{
+						Href: stringPtr("https://us-south.iaas.cloud.ibm.com/v1/images?start=pub2"),
+					},
+				}, &core.DetailedResponse{}, nil
+			}
+			return &vpcv1.ImageCollection{
+				Images: []vpcv1.Image{
+					{
+						ID:        stringPtr("r006-public-2"),
+						Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+						CreatedAt: createStrfmtDateTime(now),
+						Status:    stringPtr("available"),
+					},
+				},
+			}, &core.DetailedResponse{}, nil
+		},
+	}
+
+	resolver := NewResolver(ibm.NewVPCClientWithMock(mockSDKClient), "us-south", logr.Discard())
+
+	result, err := resolver.ResolveImage(context.Background(), "my-private-image")
+	assert.NoError(t, err)
+	assert.Equal(t, "r006-private-custom", result)
+	assert.True(t, privateCalled)
+	assert.Nil(t, privateStart, "private listing must start from the first page, not the public cursor")
+}
+
+func TestListImagesRepeatedPageToken(t *testing.T) {
+	mockSDKClient := &MockVPCSDKClient{
+		listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+			return &vpcv1.ImageCollection{
+				Images: []vpcv1.Image{},
+				Next: &vpcv1.PageLink{
+					Href: stringPtr("https://us-south.iaas.cloud.ibm.com/v1/images?start=loop"),
+				},
+			}, &core.DetailedResponse{}, nil
+		},
+	}
+	vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
+
+	_, err := vpcClient.ListImages(context.Background(), nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "repeated pagination token")
+}
+
+func TestListImagesNilOptions(t *testing.T) {
+	mockSDKClient := &MockVPCSDKClient{}
+	vpcClient := ibm.NewVPCClientWithMock(mockSDKClient)
+
+	images, err := vpcClient.ListImages(context.Background(), nil)
+	assert.NoError(t, err)
+	assert.Empty(t, images.Images)
+}
+
 func TestIsImageID(t *testing.T) {
 	tests := []struct {
 		name     string
