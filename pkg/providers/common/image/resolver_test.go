@@ -930,6 +930,51 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 		assert.Equal(t, "r006-private-ubuntu-22-04-1", result)
 	})
 
+	t.Run("public match does not query private images", func(t *testing.T) {
+		now := time.Now()
+		var visibilities []string
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				visibilities = append(visibilities, *options.Visibility)
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-public-ubuntu"),
+							Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now),
+							Status:    stringPtr("available"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		resolver := newSelectorTestResolver(mockSDKClient)
+
+		result, err := resolver.ResolveImageBySelector(context.Background(), ubuntu2204Selector)
+		assert.NoError(t, err)
+		assert.Equal(t, "r006-public-ubuntu", result)
+		assert.Equal(t, []string{"public"}, visibilities)
+	})
+
+	t.Run("private listing error surfaces", func(t *testing.T) {
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				if options.Visibility != nil && *options.Visibility == "private" {
+					return nil, &core.DetailedResponse{}, fmt.Errorf("private listing denied")
+				}
+				return &vpcv1.ImageCollection{Images: []vpcv1.Image{}}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		resolver := newSelectorTestResolver(mockSDKClient)
+
+		_, err := resolver.ResolveImageBySelector(context.Background(), ubuntu2204Selector)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "listing private images")
+		assert.Contains(t, err.Error(), "private listing denied")
+	})
+
 	t.Run("image selection skips private images that are not usable", func(t *testing.T) {
 		now := time.Now()
 		mockSDKClient := &MockVPCSDKClient{
