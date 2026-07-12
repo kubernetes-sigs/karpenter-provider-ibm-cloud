@@ -124,7 +124,7 @@ func (r *Resolver) resolveImageByName(ctx context.Context, imageName string) (st
 	return *candidates[0].ID, nil
 }
 
-// ListAvailableImages lists all available images with optional filtering
+// ListAvailableImages lists usable public images with optional name filtering
 func (r *Resolver) ListAvailableImages(ctx context.Context, nameFilter string) ([]ImageInfo, error) {
 	return r.listImagesByVisibility(ctx, "public", nameFilter)
 }
@@ -143,12 +143,12 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 		"architecture", selector.Architecture,
 		"variant", selector.Variant)
 
-	// List public images first to preserve the same public-first behavior as
-	// explicit image-name resolution.
+	// Public images first; private images are consulted only when no public
+	// image matches.
 	images, err := r.ListAvailableImages(ctx, "")
 	if err != nil {
 		r.logger.Error(err, "Failed to list available images")
-		return "", fmt.Errorf("listing images: %w", err)
+		return "", err
 	}
 
 	r.logger.Info("Retrieved images from VPC API", "totalImages", len(images))
@@ -166,16 +166,16 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 	candidates := r.filterImagesBySelector(images, selector)
 	r.logger.Info("Filtered candidate images", "candidateCount", len(candidates))
 
-	if len(candidates) > 0 && r.logger.V(1).Enabled() {
-		r.logger.V(1).Info("Logging first candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
-	}
+	totalSearched := len(images)
+	visibility := "public"
 
 	if len(candidates) == 0 {
 		privateImages, privateErr := r.listImagesByVisibility(ctx, "private", "")
 		if privateErr != nil {
-			r.logger.Error(privateErr, "Failed to list private images")
-			return "", fmt.Errorf("listing private images: %w", privateErr)
+			return "", privateErr
 		}
+		totalSearched += len(privateImages)
+		visibility = "private"
 		candidates = r.filterImagesBySelector(privateImages, selector)
 		r.logger.Info("Filtered private candidate images", "candidateCount", len(candidates))
 	}
@@ -187,7 +187,7 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 			"minorVersion", selector.MinorVersion,
 			"architecture", selector.Architecture,
 			"variant", selector.Variant,
-			"totalImagesSearched", len(images))
+			"totalImagesSearched", totalSearched)
 		return "", fmt.Errorf("no images found matching selector: os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s",
 			selector.OS, selector.MajorVersion, selector.MinorVersion, selector.Architecture, selector.Variant)
 	}
@@ -198,6 +198,7 @@ func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha
 	r.logger.Info("Successfully resolved image using selector",
 		"selectedImageID", sortedCandidates[0].ID,
 		"selectedImageName", sortedCandidates[0].Name,
+		"visibility", visibility,
 		"os", selector.OS,
 		"majorVersion", selector.MajorVersion,
 		"minorVersion", selector.MinorVersion,
