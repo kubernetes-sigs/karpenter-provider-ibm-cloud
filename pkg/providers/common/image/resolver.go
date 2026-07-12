@@ -124,15 +124,99 @@ func (r *Resolver) resolveImageByName(ctx context.Context, imageName string) (st
 	return *candidates[0].ID, nil
 }
 
-// ListAvailableImages lists all available images with optional filtering
+// ListAvailableImages lists usable public images with optional name filtering
 func (r *Resolver) ListAvailableImages(ctx context.Context, nameFilter string) ([]ImageInfo, error) {
+	return r.listImagesByVisibility(ctx, "public", nameFilter)
+}
+
+// ResolveImageBySelector resolves an image using semantic selection criteria
+// Returns the most recent image that matches all specified criteria
+func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha1.ImageSelector) (string, error) {
+	if selector == nil {
+		return "", fmt.Errorf("image selector cannot be nil")
+	}
+
+	r.logger.Info("Started image resolution by selector",
+		"os", selector.OS,
+		"majorVersion", selector.MajorVersion,
+		"minorVersion", selector.MinorVersion,
+		"architecture", selector.Architecture,
+		"variant", selector.Variant)
+
+	// Public images first; private images are consulted only when no public
+	// image matches.
+	images, err := r.ListAvailableImages(ctx, "")
+	if err != nil {
+		r.logger.Error(err, "Failed to list available images")
+		return "", err
+	}
+
+	r.logger.Info("Retrieved images from VPC API", "totalImages", len(images))
+	if len(images) > 0 && r.logger.V(1).Enabled() {
+		// Log first few images for debugging
+		for i, img := range images {
+			if i >= 3 {
+				break
+			}
+			r.logger.V(1).Info("Logging sample image", "index", i, "id", img.ID, "name", img.Name, "os", img.OperatingSystem, "status", img.Status)
+		}
+	}
+
+	// Filter images by selector criteria
+	candidates := r.filterImagesBySelector(images, selector)
+	r.logger.Info("Filtered candidate images", "candidateCount", len(candidates))
+
+	totalSearched := len(images)
+	visibility := "public"
+
+	if len(candidates) == 0 {
+		privateImages, privateErr := r.listImagesByVisibility(ctx, "private", "")
+		if privateErr != nil {
+			return "", privateErr
+		}
+		totalSearched += len(privateImages)
+		visibility = "private"
+		candidates = r.filterImagesBySelector(privateImages, selector)
+		r.logger.Info("Filtered private candidate images", "candidateCount", len(candidates))
+	}
+
+	if len(candidates) == 0 {
+		r.logger.Error(nil, "No images found matching selector criteria",
+			"os", selector.OS,
+			"majorVersion", selector.MajorVersion,
+			"minorVersion", selector.MinorVersion,
+			"architecture", selector.Architecture,
+			"variant", selector.Variant,
+			"totalImagesSearched", totalSearched)
+		return "", fmt.Errorf("no images found matching selector: os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s",
+			selector.OS, selector.MajorVersion, selector.MinorVersion, selector.Architecture, selector.Variant)
+	}
+
+	// Sort by semantic version and creation date (newest first)
+	sortedCandidates := r.sortImagesByVersion(candidates, selector)
+
+	r.logger.Info("Successfully resolved image using selector",
+		"selectedImageID", sortedCandidates[0].ID,
+		"selectedImageName", sortedCandidates[0].Name,
+		"visibility", visibility,
+		"os", selector.OS,
+		"majorVersion", selector.MajorVersion,
+		"minorVersion", selector.MinorVersion,
+		"architecture", selector.Architecture,
+		"variant", selector.Variant)
+
+	// Return the most recent matching image
+	return sortedCandidates[0].ID, nil
+}
+
+func (r *Resolver) listImagesByVisibility(ctx context.Context, visibility, nameFilter string) ([]ImageInfo, error) {
 	options := &vpcv1.ListImagesOptions{
-		Visibility: stringPtr("public"),
+		Visibility: stringPtr(visibility),
 	}
 
 	images, err := r.vpcClient.ListImages(ctx, options)
 	if err != nil {
-		return nil, fmt.Errorf("listing images: %w", err)
+		return nil, fmt.Errorf("listing %s images: %w", visibility, err)
 	}
 
 	var result []ImageInfo
@@ -141,7 +225,12 @@ func (r *Resolver) ListAvailableImages(ctx context.Context, nameFilter string) (
 			continue
 		}
 
-		// Apply name filter if provided
+		// IBM VPC still provisions from deprecated images; every other
+		// non-available status is not usable for instance creation.
+		if image.Status == nil || (*image.Status != vpcv1.ImageStatusAvailableConst && *image.Status != vpcv1.ImageStatusDeprecatedConst) {
+			continue
+		}
+
 		if nameFilter != "" && !strings.Contains(strings.ToLower(*image.Name), strings.ToLower(nameFilter)) {
 			continue
 		}
@@ -168,80 +257,11 @@ func (r *Resolver) ListAvailableImages(ctx context.Context, nameFilter string) (
 		result = append(result, info)
 	}
 
-	// Sort by creation date (newest first)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
 
 	return result, nil
-}
-
-// ResolveImageBySelector resolves an image using semantic selection criteria
-// Returns the most recent image that matches all specified criteria
-func (r *Resolver) ResolveImageBySelector(ctx context.Context, selector *v1alpha1.ImageSelector) (string, error) {
-	if selector == nil {
-		return "", fmt.Errorf("image selector cannot be nil")
-	}
-
-	r.logger.Info("Started image resolution by selector",
-		"os", selector.OS,
-		"majorVersion", selector.MajorVersion,
-		"minorVersion", selector.MinorVersion,
-		"architecture", selector.Architecture,
-		"variant", selector.Variant)
-
-	// List all available images
-	images, err := r.ListAvailableImages(ctx, "")
-	if err != nil {
-		r.logger.Error(err, "Failed to list available images")
-		return "", fmt.Errorf("listing images: %w", err)
-	}
-
-	r.logger.Info("Retrieved images from VPC API", "totalImages", len(images))
-	if len(images) > 0 && r.logger.V(1).Enabled() {
-		// Log first few images for debugging
-		for i, img := range images {
-			if i >= 3 {
-				break
-			}
-			r.logger.V(1).Info("Logging sample image", "index", i, "id", img.ID, "name", img.Name, "os", img.OperatingSystem, "status", img.Status)
-		}
-	}
-
-	// Filter images by selector criteria
-	candidates := r.filterImagesBySelector(images, selector)
-	r.logger.Info("Filtered candidate images", "candidateCount", len(candidates))
-
-	if len(candidates) > 0 && r.logger.V(1).Enabled() {
-		r.logger.V(1).Info("Logging first candidate image", "id", candidates[0].ID, "name", candidates[0].Name)
-	}
-
-	if len(candidates) == 0 {
-		r.logger.Error(nil, "No images found matching selector criteria",
-			"os", selector.OS,
-			"majorVersion", selector.MajorVersion,
-			"minorVersion", selector.MinorVersion,
-			"architecture", selector.Architecture,
-			"variant", selector.Variant,
-			"totalImagesSearched", len(images))
-		return "", fmt.Errorf("no images found matching selector: os=%s, majorVersion=%s, minorVersion=%s, architecture=%s, variant=%s",
-			selector.OS, selector.MajorVersion, selector.MinorVersion, selector.Architecture, selector.Variant)
-	}
-
-	// Sort by semantic version and creation date (newest first)
-	sortedCandidates := r.sortImagesByVersion(candidates, selector)
-
-	r.logger.Info("Successfully resolved image using selector",
-		"selectedImageID", sortedCandidates[0].ID,
-		"selectedImageName", sortedCandidates[0].Name,
-		"os", selector.OS,
-		"majorVersion", selector.MajorVersion,
-		"minorVersion", selector.MinorVersion,
-		"architecture", selector.Architecture,
-		"variant", selector.Variant)
-
-	// Return the most recent matching image
-	return sortedCandidates[0].ID, nil
 }
 
 // filterImagesBySelector filters images based on selector criteria
