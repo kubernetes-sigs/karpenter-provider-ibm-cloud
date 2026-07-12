@@ -109,3 +109,19 @@ When using `imageSelector`, the system:
    - Build number (highest first)
    - Creation date (newest first)
 3. **Selects** the first (most recent) image from the sorted list
+
+Public images are searched first; the account's private images are only
+considered when no public image matches. Only images in `available` or
+`deprecated` status are considered; referencing an image by `image` skips
+this check.
+
+Selector matching parses the image name, so images (including private custom
+images) must follow one of the IBM naming formats to be selectable:
+
+- `ibm-{os}-{major}-{minor}-{patch}-{variant}-{arch}-{build}`
+- `ibm-{os}-{major}-{minor}-{variant}-{arch}-{build}`
+- `ibm-{os}-{major}-{minor}-{arch}-{build}`
+- `{os}-{major}-{minor}`
+
+A private image with a free-form name is not matched by `imageSelector`;
+reference it via `image` instead.
