@@ -224,6 +224,12 @@ func (r *Resolver) listImagesByVisibility(ctx context.Context, visibility, nameF
 			continue
 		}
 
+		// IBM VPC still provisions from deprecated images; every other
+		// non-available status is not usable for instance creation.
+		if image.Status == nil || (*image.Status != vpcv1.ImageStatusAvailableConst && *image.Status != vpcv1.ImageStatusDeprecatedConst) {
+			continue
+		}
+
 		if nameFilter != "" && !strings.Contains(strings.ToLower(*image.Name), strings.ToLower(nameFilter)) {
 			continue
 		}

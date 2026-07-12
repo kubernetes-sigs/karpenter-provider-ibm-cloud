@@ -765,6 +765,18 @@ func createStrfmtDateTime(t time.Time) *strfmt.DateTime {
 }
 
 // Test ResolveImageBySelector functionality
+func newSelectorTestResolver(mock *MockVPCSDKClient) *Resolver {
+	return NewResolver(ibm.NewVPCClientWithMock(mock), "us-south", logr.Discard())
+}
+
+var ubuntu2204Selector = &v1alpha1.ImageSelector{
+	OS:           "ubuntu",
+	MajorVersion: "22",
+	MinorVersion: "04",
+	Architecture: "amd64",
+	Variant:      "minimal",
+}
+
 func TestResolver_ResolveImageBySelector(t *testing.T) {
 	t.Run("successful image selection by selector", func(t *testing.T) {
 		now := time.Now()
@@ -911,20 +923,68 @@ func TestResolver_ResolveImageBySelector(t *testing.T) {
 			},
 		}
 
-		mockVPCClient := ibm.NewVPCClientWithMock(mockSDKClient)
-		resolver := NewResolver(mockVPCClient, "us-south", logr.Discard())
+		resolver := newSelectorTestResolver(mockSDKClient)
 
-		selector := &v1alpha1.ImageSelector{
-			OS:           "ubuntu",
-			MajorVersion: "22",
-			MinorVersion: "04",
-			Architecture: "amd64",
-			Variant:      "minimal",
-		}
-
-		result, err := resolver.ResolveImageBySelector(context.Background(), selector)
+		result, err := resolver.ResolveImageBySelector(context.Background(), ubuntu2204Selector)
 		assert.NoError(t, err)
 		assert.Equal(t, "r006-private-ubuntu-22-04-1", result)
+	})
+
+	t.Run("image selection skips private images that are not usable", func(t *testing.T) {
+		now := time.Now()
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				if options.Visibility != nil && *options.Visibility == "private" {
+					return &vpcv1.ImageCollection{
+						Images: []vpcv1.Image{
+							{
+								ID:        stringPtr("r006-private-pending"),
+								Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+								CreatedAt: createStrfmtDateTime(now),
+								Status:    stringPtr("pending"),
+							},
+							{
+								ID:        stringPtr("r006-private-failed"),
+								Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-2"),
+								CreatedAt: createStrfmtDateTime(now),
+								Status:    stringPtr("failed"),
+							},
+						},
+					}, &core.DetailedResponse{}, nil
+				}
+				return &vpcv1.ImageCollection{Images: []vpcv1.Image{}}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		resolver := newSelectorTestResolver(mockSDKClient)
+
+		_, err := resolver.ResolveImageBySelector(context.Background(), ubuntu2204Selector)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no images found matching selector")
+	})
+
+	t.Run("deprecated images stay selectable", func(t *testing.T) {
+		now := time.Now()
+		mockSDKClient := &MockVPCSDKClient{
+			listImagesFunc: func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error) {
+				return &vpcv1.ImageCollection{
+					Images: []vpcv1.Image{
+						{
+							ID:        stringPtr("r006-deprecated-ubuntu"),
+							Name:      stringPtr("ibm-ubuntu-22-04-minimal-amd64-1"),
+							CreatedAt: createStrfmtDateTime(now),
+							Status:    stringPtr("deprecated"),
+						},
+					},
+				}, &core.DetailedResponse{}, nil
+			},
+		}
+
+		resolver := newSelectorTestResolver(mockSDKClient)
+
+		result, err := resolver.ResolveImageBySelector(context.Background(), ubuntu2204Selector)
+		assert.NoError(t, err)
+		assert.Equal(t, "r006-deprecated-ubuntu", result)
 	})
 
 	t.Run("no matching images", func(t *testing.T) {
