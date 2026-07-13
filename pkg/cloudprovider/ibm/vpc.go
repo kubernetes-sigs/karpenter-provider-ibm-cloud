@@ -174,35 +174,53 @@ func (c *VPCClient) GetInstance(ctx context.Context, id string) (*vpcv1.Instance
 }
 
 func (c *VPCClient) ListInstances(ctx context.Context) ([]vpcv1.Instance, error) {
+	return c.listInstances(ctx, nil, "instances")
+}
+
+func (c *VPCClient) listInstances(ctx context.Context, options *vpcv1.ListInstancesOptions, resourceType string) ([]vpcv1.Instance, error) {
 	if c.client == nil {
 		return nil, fmt.Errorf("VPC client not initialized")
 	}
 
-	options := &vpcv1.ListInstancesOptions{}
+	// Copy so the pagination cursor never leaks into the caller's options.
+	opts := vpcv1.ListInstancesOptions{}
+	if options != nil {
+		opts = *options
+	}
+	if opts.Limit == nil {
+		opts.Limit = core.Int64Ptr(100)
+	}
+	instances := make([]vpcv1.Instance, 0)
+	seen := map[string]bool{}
 
-	instances, _, err := c.client.ListInstancesWithContext(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing instances: %w", err)
+	for {
+		page, _, err := c.client.ListInstancesWithContext(ctx, &opts)
+		if err != nil {
+			return nil, fmt.Errorf("listing %s: %w", resourceType, err)
+		}
+		instances = append(instances, page.Instances...)
+
+		next, err := page.GetNextStart()
+		if err != nil {
+			return nil, fmt.Errorf("parsing next page token: %w", err)
+		}
+		if next == nil {
+			break
+		}
+		if seen[*next] {
+			return nil, fmt.Errorf("repeated pagination token %q", *next)
+		}
+		seen[*next] = true
+		opts.Start = next
 	}
 
-	return instances.Instances, nil
+	return instances, nil
 }
 
 func (c *VPCClient) ListSpotInstances(ctx context.Context) ([]vpcv1.Instance, error) {
-	if c.client == nil {
-		return nil, fmt.Errorf("VPC client not initialized")
-	}
-
-	options := &vpcv1.ListInstancesOptions{
+	return c.listInstances(ctx, &vpcv1.ListInstancesOptions{
 		AvailabilityClass: core.StringPtr(vpcv1.InstanceAvailabilityPrototypeClassSpotConst),
-	}
-
-	instances, _, err := c.client.ListInstancesWithContext(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing spot instances: %w", err)
-	}
-
-	return instances.Instances, nil
+	}, "spot instances")
 }
 
 func (c *VPCClient) UpdateInstanceTags(ctx context.Context, id string, tags map[string]string) error {

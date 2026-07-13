@@ -18,6 +18,7 @@ package ibm
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,7 @@ import (
 
 type mockVPCClient struct {
 	err                        error
+	listInstancesFunc          func(*vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, error)
 	createInstanceResponse     *vpcv1.Instance
 	getInstanceResponse        *vpcv1.Instance
 	listInstancesResponse      *vpcv1.InstanceCollection
@@ -62,11 +64,58 @@ func (m *mockVPCClient) GetInstanceWithContext(_ context.Context, _ *vpcv1.GetIn
 	return m.getInstanceResponse, &core.DetailedResponse{}, nil
 }
 
-func (m *mockVPCClient) ListInstancesWithContext(_ context.Context, _ *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, *core.DetailedResponse, error) {
+func (m *mockVPCClient) ListInstancesWithContext(_ context.Context, options *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, *core.DetailedResponse, error) {
+	if m.listInstancesFunc != nil {
+		collection, err := m.listInstancesFunc(options)
+		return collection, &core.DetailedResponse{}, err
+	}
 	if m.err != nil {
 		return nil, nil, m.err
 	}
 	return m.listInstancesResponse, &core.DetailedResponse{}, nil
+}
+
+func TestListInstancesPagination(t *testing.T) {
+	starts := []string{}
+	mock := &mockVPCClient{
+		listInstancesFunc: func(options *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, error) {
+			if options.Start == nil {
+				starts = append(starts, "")
+				return &vpcv1.InstanceCollection{
+					Instances: []vpcv1.Instance{{ID: core.StringPtr("page-one")}},
+					Next:      &vpcv1.PageLink{Href: core.StringPtr("https://example.test/v1/instances?start=page-two")},
+				}, nil
+			}
+			starts = append(starts, *options.Start)
+			return &vpcv1.InstanceCollection{Instances: []vpcv1.Instance{{ID: core.StringPtr("page-two")}}}, nil
+		},
+	}
+
+	instances, err := NewVPCClientWithMock(mock).ListInstances(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(instances) != 2 {
+		t.Fatalf("expected two instances, got %d", len(instances))
+	}
+	if !reflect.DeepEqual(starts, []string{"", "page-two"}) {
+		t.Fatalf("expected page starts [\"\" \"page-two\"], got %v", starts)
+	}
+}
+
+func TestListInstancesRepeatedPaginationToken(t *testing.T) {
+	mock := &mockVPCClient{
+		listInstancesFunc: func(_ *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, error) {
+			return &vpcv1.InstanceCollection{
+				Next: &vpcv1.PageLink{Href: core.StringPtr("https://example.test/v1/instances?start=loop")},
+			}, nil
+		},
+	}
+
+	_, err := NewVPCClientWithMock(mock).ListInstances(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "repeated pagination token") {
+		t.Fatalf("expected repeated pagination token error, got %v", err)
+	}
 }
 
 func (m *mockVPCClient) UpdateInstanceWithContext(_ context.Context, _ *vpcv1.UpdateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
