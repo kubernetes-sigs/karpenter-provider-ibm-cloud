@@ -150,7 +150,7 @@ func (c *Controller) isVPCMode(nodeClass *v1alpha1.IBMNodeClass) bool {
 // updateVPCInstanceTags updates tags on a VPC instance
 func (c *Controller) updateVPCInstanceTags(ctx context.Context, providerID string, tags map[string]string) error {
 	// Create VPC provider for this specific operation
-	vpcProvider, err := vpcProvider.NewVPCInstanceProvider(c.ibmClient, c.kubeClient)
+	vpcProvider, err := vpcProvider.NewVPCInstanceProvider(ctx, c.ibmClient, c.kubeClient)
 	if err != nil {
 		return fmt.Errorf("creating VPC provider: %w", err)
 	}

@@ -17,6 +17,7 @@ limitations under the License.
 package instance_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -35,11 +36,13 @@ func TestVPCInstanceProvider(t *testing.T) {
 
 var _ = Describe("VPC Instance Provider", func() {
 	var (
+		ctx        context.Context
 		client     *ibm.Client
 		kubeClient *fake.ClientBuilder
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
 		_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
 		client = &ibm.Client{}
 		kubeClient = fake.NewClientBuilder()
@@ -52,7 +55,7 @@ var _ = Describe("VPC Instance Provider", func() {
 	Describe("Constructor", func() {
 		It("should create a new VPC instance provider with valid inputs", func() {
 			fakeClient := kubeClient.Build()
-			provider, err := instance.NewVPCInstanceProvider(client, fakeClient)
+			provider, err := instance.NewVPCInstanceProvider(ctx, client, fakeClient)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(provider).ToNot(BeNil())
@@ -60,7 +63,7 @@ var _ = Describe("VPC Instance Provider", func() {
 
 		It("should return an error with nil IBM client", func() {
 			fakeClient := kubeClient.Build()
-			provider, err := instance.NewVPCInstanceProvider(nil, fakeClient)
+			provider, err := instance.NewVPCInstanceProvider(ctx, nil, fakeClient)
 
 			Expect(err).To(HaveOccurred())
 			Expect(provider).To(BeNil())
@@ -68,7 +71,7 @@ var _ = Describe("VPC Instance Provider", func() {
 		})
 
 		It("should return an error with nil kube client", func() {
-			provider, err := instance.NewVPCInstanceProvider(client, nil)
+			provider, err := instance.NewVPCInstanceProvider(ctx, client, nil)
 
 			Expect(err).To(HaveOccurred())
 			Expect(provider).To(BeNil())
@@ -79,7 +82,7 @@ var _ = Describe("VPC Instance Provider", func() {
 	Describe("Options Pattern", func() {
 		It("should apply kubernetes client option correctly", func() {
 			fakeClient := kubeClient.Build()
-			provider, err := instance.NewVPCInstanceProvider(client, fakeClient)
+			provider, err := instance.NewVPCInstanceProvider(ctx, client, fakeClient)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(provider).ToNot(BeNil())
