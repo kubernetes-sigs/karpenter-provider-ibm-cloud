@@ -174,35 +174,43 @@ func (c *VPCClient) GetInstance(ctx context.Context, id string) (*vpcv1.Instance
 }
 
 func (c *VPCClient) ListInstances(ctx context.Context) ([]vpcv1.Instance, error) {
+	return c.listInstances(ctx, nil, "instances")
+}
+
+func (c *VPCClient) listInstances(ctx context.Context, options *vpcv1.ListInstancesOptions, resourceType string) ([]vpcv1.Instance, error) {
 	if c.client == nil {
 		return nil, fmt.Errorf("VPC client not initialized")
 	}
 
-	options := &vpcv1.ListInstancesOptions{}
-
-	instances, _, err := c.client.ListInstancesWithContext(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing instances: %w", err)
+	// Copy so the pagination cursor never leaks into the caller's options.
+	opts := vpcv1.ListInstancesOptions{}
+	if options != nil {
+		opts = *options
 	}
+	if opts.Limit == nil {
+		opts.Limit = core.Int64Ptr(100)
+	}
+	return paginate(
+		func() ([]vpcv1.Instance, *string, error) {
+			page, _, err := c.client.ListInstancesWithContext(ctx, &opts)
+			if err != nil {
+				return nil, nil, fmt.Errorf("listing %s: %w", resourceType, err)
+			}
 
-	return instances.Instances, nil
+			next, err := page.GetNextStart()
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing next page token: %w", err)
+			}
+			return page.Instances, next, nil
+		},
+		func(start *string) { opts.Start = start },
+	)
 }
 
 func (c *VPCClient) ListSpotInstances(ctx context.Context) ([]vpcv1.Instance, error) {
-	if c.client == nil {
-		return nil, fmt.Errorf("VPC client not initialized")
-	}
-
-	options := &vpcv1.ListInstancesOptions{
+	return c.listInstances(ctx, &vpcv1.ListInstancesOptions{
 		AvailabilityClass: core.StringPtr(vpcv1.InstanceAvailabilityPrototypeClassSpotConst),
-	}
-
-	instances, _, err := c.client.ListInstancesWithContext(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("listing spot instances: %w", err)
-	}
-
-	return instances.Instances, nil
+	}, "spot instances")
 }
 
 func (c *VPCClient) UpdateInstanceTags(ctx context.Context, id string, tags map[string]string) error {
@@ -351,31 +359,48 @@ func (c *VPCClient) ListImages(ctx context.Context, options *vpcv1.ListImagesOpt
 		opts.Limit = core.Int64Ptr(100)
 	}
 
-	var all vpcv1.ImageCollection
+	images, err := paginate(
+		func() ([]vpcv1.Image, *string, error) {
+			page, _, err := c.client.ListImagesWithContext(ctx, &opts)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			next, err := page.GetNextStart()
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing next page token: %w", err)
+			}
+			return page.Images, next, nil
+		},
+		func(start *string) { opts.Start = start },
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &vpcv1.ImageCollection{Images: images}, nil
+}
+
+// paginate follows opaque start cursors until no subsequent page is available.
+func paginate[T any](fetchPage func() ([]T, *string, error), setStart func(*string)) ([]T, error) {
+	all := make([]T, 0)
 	seen := map[string]bool{}
 	for {
-		page, _, err := c.client.ListImagesWithContext(ctx, &opts)
+		items, next, err := fetchPage()
 		if err != nil {
 			return nil, err
 		}
-		all.Images = append(all.Images, page.Images...)
-
-		next, err := page.GetNextStart()
-		if err != nil {
-			return nil, fmt.Errorf("parsing next page token: %w", err)
-		}
+		all = append(all, items...)
 		if next == nil {
-			break
+			return all, nil
 		}
 		// A server bug repeating a token would otherwise loop forever.
 		if seen[*next] {
 			return nil, fmt.Errorf("repeated pagination token %q", *next)
 		}
 		seen[*next] = true
-		opts.Start = next
+		setStart(next)
 	}
-
-	return &all, nil
 }
 
 // ListSecurityGroups lists security groups with optional filtering
