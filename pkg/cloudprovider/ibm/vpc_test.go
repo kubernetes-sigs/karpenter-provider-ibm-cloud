@@ -17,6 +17,7 @@ package ibm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -34,6 +35,7 @@ import (
 type mockVPCClient struct {
 	err                        error
 	listInstancesFunc          func(*vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, error)
+	listInstanceProfilesFunc   func(*vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error)
 	createInstanceResponse     *vpcv1.Instance
 	getInstanceResponse        *vpcv1.Instance
 	listInstancesResponse      *vpcv1.InstanceCollection
@@ -197,7 +199,10 @@ func (m *mockVPCClient) GetImageWithContext(_ context.Context, _ *vpcv1.GetImage
 	}, &core.DetailedResponse{}, nil
 }
 
-func (m *mockVPCClient) ListInstanceProfilesWithContext(_ context.Context, _ *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+func (m *mockVPCClient) ListInstanceProfilesWithContext(_ context.Context, options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+	if m.listInstanceProfilesFunc != nil {
+		return m.listInstanceProfilesFunc(options)
+	}
 	if m.err != nil {
 		return nil, nil, m.err
 	}
@@ -1172,6 +1177,74 @@ func TestListInstanceProfiles(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestListInstanceProfilesPagination(t *testing.T) {
+	starts := []string{}
+	totalCount := int64(2)
+	callerOptions := &vpcv1.ListInstanceProfilesOptions{}
+	mock := &mockVPCClient{
+		listInstanceProfilesFunc: func(options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+			if options.Limit == nil || *options.Limit != 100 {
+				t.Fatalf("expected page limit 100, got %v", options.Limit)
+			}
+			if options.Start == nil {
+				starts = append(starts, "")
+				return &vpcv1.InstanceProfileCollection{
+					Profiles:   []vpcv1.InstanceProfile{{Name: core.StringPtr("bx2-2x8")}},
+					Next:       &vpcv1.PageLink{Href: core.StringPtr("https://example.test/v1/instance/profiles?start=page-two")},
+					TotalCount: &totalCount,
+				}, &core.DetailedResponse{}, nil
+			}
+			starts = append(starts, *options.Start)
+			return &vpcv1.InstanceProfileCollection{
+				Profiles: []vpcv1.InstanceProfile{{Name: core.StringPtr("gx2-8x64x1v100")}},
+			}, &core.DetailedResponse{}, nil
+		},
+	}
+
+	profiles, _, err := NewVPCClientWithMock(mock).ListInstanceProfiles(t.Context(), callerOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles.Profiles) != 2 {
+		t.Fatalf("expected two profiles, got %d", len(profiles.Profiles))
+	}
+	if !reflect.DeepEqual(starts, []string{"", "page-two"}) {
+		t.Fatalf("expected page starts [\"\" \"page-two\"], got %v", starts)
+	}
+	if callerOptions.Start != nil {
+		t.Fatalf("expected caller options to remain unchanged, got start %q", *callerOptions.Start)
+	}
+	if profiles.Next != nil || profiles.TotalCount == nil || *profiles.TotalCount != totalCount {
+		t.Fatalf("expected aggregated collection metadata, got next=%v totalCount=%v", profiles.Next, profiles.TotalCount)
+	}
+}
+
+func TestListInstanceProfilesPaginationError(t *testing.T) {
+	wantErr := errors.New("page two failed")
+	wantResponse := &core.DetailedResponse{StatusCode: 429}
+	mock := &mockVPCClient{
+		listInstanceProfilesFunc: func(options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
+			if options.Start == nil {
+				return &vpcv1.InstanceProfileCollection{
+					Next: &vpcv1.PageLink{Href: core.StringPtr("https://example.test/v1/instance/profiles?start=page-two")},
+				}, &core.DetailedResponse{}, nil
+			}
+			return nil, wantResponse, wantErr
+		},
+	}
+
+	profiles, response, err := NewVPCClientWithMock(mock).ListInstanceProfiles(t.Context(), nil)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected page two error, got %v", err)
+	}
+	if profiles != nil {
+		t.Fatalf("expected no partial profile collection, got %v", profiles)
+	}
+	if response != wantResponse {
+		t.Fatalf("expected page two response, got %v", response)
 	}
 }
 
