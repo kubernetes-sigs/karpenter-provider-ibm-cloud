@@ -510,13 +510,51 @@ func (c *VPCClient) ListSubnetsWithContext(ctx context.Context, options *vpcv1.L
 	return c.client.ListSubnetsWithContext(ctx, options)
 }
 
-// ListInstanceProfiles lists available instance profiles
+// ListInstanceProfiles lists all available instance profiles
 func (c *VPCClient) ListInstanceProfiles(ctx context.Context, options *vpcv1.ListInstanceProfilesOptions) (*vpcv1.InstanceProfileCollection, *core.DetailedResponse, error) {
 	if c.client == nil {
 		return nil, nil, fmt.Errorf("VPC client not initialized")
 	}
 
-	return c.client.ListInstanceProfilesWithContext(ctx, options)
+	// Copy so the pagination cursor never leaks into the caller's options.
+	opts := vpcv1.ListInstanceProfilesOptions{}
+	if options != nil {
+		opts = *options
+	}
+	if opts.Limit == nil {
+		opts.Limit = core.Int64Ptr(100)
+	}
+
+	var collection vpcv1.InstanceProfileCollection
+	var response *core.DetailedResponse
+	firstPage := true
+	profiles, err := paginate(
+		func() ([]vpcv1.InstanceProfile, *string, error) {
+			page, detailedResponse, err := c.client.ListInstanceProfilesWithContext(ctx, &opts)
+			response = detailedResponse
+			if err != nil {
+				return nil, nil, err
+			}
+			if firstPage {
+				collection = *page
+				firstPage = false
+			}
+
+			next, err := page.GetNextStart()
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing next page token: %w", err)
+			}
+			return page.Profiles, next, nil
+		},
+		func(start *string) { opts.Start = start },
+	)
+	if err != nil {
+		return nil, response, err
+	}
+
+	collection.Profiles = profiles
+	collection.Next = nil
+	return &collection, response, nil
 }
 
 // GetInstanceProfile retrieves a specific instance profile by name
