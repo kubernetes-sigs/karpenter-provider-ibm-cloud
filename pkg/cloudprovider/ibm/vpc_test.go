@@ -45,6 +45,14 @@ type mockVPCClient struct {
 	getVPCResponse             *vpcv1.VPC
 }
 
+func (m *mockVPCClient) GetInstanceNetworkInterfaceWithContext(_ context.Context, _ *vpcv1.GetInstanceNetworkInterfaceOptions) (*vpcv1.NetworkInterface, *core.DetailedResponse, error) {
+	return nil, nil, fmt.Errorf("unexpected network interface read")
+}
+
+func (m *mockVPCClient) ListInstanceNetworkInterfaceFloatingIpsWithContext(_ context.Context, _ *vpcv1.ListInstanceNetworkInterfaceFloatingIpsOptions) (*vpcv1.FloatingIPUnpaginatedCollection, *core.DetailedResponse, error) {
+	return nil, nil, fmt.Errorf("unexpected floating IP inventory read")
+}
+
 func (m *mockVPCClient) CreateInstanceWithContext(_ context.Context, _ *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error) {
 	if m.err != nil {
 		return nil, nil, m.err

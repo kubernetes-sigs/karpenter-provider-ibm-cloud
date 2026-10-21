@@ -85,6 +85,20 @@ func (mr *MockIKSClientInterfaceMockRecorder) DeleteWorkerPool(ctx, clusterID, p
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteWorkerPool", reflect.TypeOf((*MockIKSClientInterface)(nil).DeleteWorkerPool), ctx, clusterID, poolID)
 }
 
+// GetAccountID mocks base method.
+func (m *MockIKSClientInterface) GetAccountID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetAccountID indicates an expected call of GetAccountID.
+func (mr *MockIKSClientInterfaceMockRecorder) GetAccountID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountID", reflect.TypeOf((*MockIKSClientInterface)(nil).GetAccountID))
+}
+
 // GetClusterConfig mocks base method.
 func (m *MockIKSClientInterface) GetClusterConfig(ctx context.Context, clusterID string) (string, error) {
 	m.ctrl.T.Helper()
@@ -98,6 +112,20 @@ func (m *MockIKSClientInterface) GetClusterConfig(ctx context.Context, clusterID
 func (mr *MockIKSClientInterfaceMockRecorder) GetClusterConfig(ctx, clusterID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClusterConfig", reflect.TypeOf((*MockIKSClientInterface)(nil).GetClusterConfig), ctx, clusterID)
+}
+
+// GetRegion mocks base method.
+func (m *MockIKSClientInterface) GetRegion() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRegion")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetRegion indicates an expected call of GetRegion.
+func (mr *MockIKSClientInterfaceMockRecorder) GetRegion() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegion", reflect.TypeOf((*MockIKSClientInterface)(nil).GetRegion))
 }
 
 // GetVPCInstanceIDFromWorker mocks base method.
@@ -173,6 +201,20 @@ func (m *MockIKSClientInterface) ListWorkers(ctx context.Context, clusterID stri
 func (mr *MockIKSClientInterfaceMockRecorder) ListWorkers(ctx, clusterID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListWorkers", reflect.TypeOf((*MockIKSClientInterface)(nil).ListWorkers), ctx, clusterID)
+}
+
+// RemoveWorker mocks base method.
+func (m *MockIKSClientInterface) RemoveWorker(arg0 context.Context, arg1, arg2 string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveWorker", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveWorker indicates an expected call of RemoveWorker.
+func (mr *MockIKSClientInterfaceMockRecorder) RemoveWorker(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveWorker", reflect.TypeOf((*MockIKSClientInterface)(nil).RemoveWorker), arg0, arg1, arg2)
 }
 
 // ResizeWorkerPool mocks base method.

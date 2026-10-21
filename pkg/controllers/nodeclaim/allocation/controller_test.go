@@ -47,6 +47,8 @@ func (p *fakePending) GetFresh(context.Context, string) (*corev1.Node, error) {
 	return &corev1.Node{}, p.getError
 }
 
+func (p *fakePending) ValidateLaunchTarget(context.Context, *karpv1.NodeClaim) error { return nil }
+
 func TestAllocatedClaimWaitsForCoreDeletion(t *testing.T) {
 	for _, scenario := range []struct {
 		name    string

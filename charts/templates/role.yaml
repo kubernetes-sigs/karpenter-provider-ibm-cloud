@@ -9,7 +9,6 @@ rules:
   resources:
   - configmaps
   - nodes
-  - secrets
   verbs:
   - create
   - delete
@@ -18,13 +17,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
 - apiGroups:
   - ""
   resources:
@@ -44,6 +36,14 @@ rules:
   verbs:
   - create
 - apiGroups:
+  - ""
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
   - apps
   resources:
   - daemonsets
@@ -51,6 +51,12 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
 - apiGroups:
   - certificates.k8s.io
   resources:
@@ -65,6 +71,7 @@ rules:
   resources:
   - certificatesigningrequests/approval
   verbs:
+  - patch
   - update
 - apiGroups:
   - certificates.k8s.io
@@ -76,6 +83,7 @@ rules:
 - apiGroups:
   - certificates.k8s.io
   resourceNames:
+  - kubernetes.io/kube-apiserver-client-kubelet
   - kubernetes.io/kubelet-serving
   resources:
   - signers
@@ -156,11 +164,20 @@ rules:
   - clusterrolebindings
   verbs:
   - create
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resourceNames:
+  - karpenter-ibm-auto-approve-csrs
+  - karpenter-ibm-auto-approve-kubelet-serving-csrs
+  - karpenter-ibm-auto-approve-renewals
+  - karpenter-ibm-bootstrap-nodes
+  resources:
+  - clusterrolebindings
+  verbs:
+  - delete
   - get
-  - list
   - patch
   - update
-  - watch
 - apiGroups:
   - storage.k8s.io
   resources:
@@ -231,3 +248,23 @@ rules:
   - pods/eviction
   verbs:
   - create
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update

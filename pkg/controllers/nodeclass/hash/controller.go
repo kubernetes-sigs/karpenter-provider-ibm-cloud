@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/nodeclass"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/ownership"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -62,12 +63,18 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	if nc.DeletionTimestamp != nil && !nc.DeletionTimestamp.IsZero() {
 		return reconcile.Result{}, nil
 	}
+	if _, err := nodeclass.ReadHashMigration(nc); err != nil {
+		return reconcile.Result{}, err
+	}
 
 	hashString, err := nodeclass.ProvisioningHash(nc)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("computing provisioning hash: %w", err)
 	}
 	currentHash, currentVersion := nc.Annotations[v1alpha1.AnnotationIBMNodeClassHash], nc.Annotations[v1alpha1.AnnotationIBMNodeClassHashVersion]
+	if currentVersion != "" && currentVersion != "1" && currentVersion != v1alpha1.IBMNodeClassHashVersion {
+		return reconcile.Result{}, fmt.Errorf("unsupported NodeClass hash version %s; retaining state", currentVersion)
+	}
 	if currentVersion != v1alpha1.IBMNodeClassHashVersion {
 		if err := c.migrateClaims(ctx, nc, hashString); err != nil {
 			return reconcile.Result{}, err
@@ -101,7 +108,7 @@ func (c *Controller) migrateClaims(ctx context.Context, nc *v1alpha1.IBMNodeClas
 		return err
 	}
 	if migration == nil {
-		migration = &nodeclass.HashMigration{LegacyHash: legacyHash, ProvisioningHash: hashString}
+		migration = &nodeclass.HashMigration{Version: ownership.StateFormatVersion, MinimumWriterVersion: ownership.StateFormatVersion, LegacyHash: legacyHash, ProvisioningHash: hashString}
 		value, err := json.Marshal(migration)
 		if err != nil {
 			return err

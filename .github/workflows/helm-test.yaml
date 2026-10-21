@@ -5,6 +5,7 @@ on:
     paths:
       - 'charts/**'
       - 'hack/test-helm-rbac.py'
+      - 'hack/test-helm-contracts.py'
       - 'hack/test-prometheus-rules.sh'
       - 'test/metrics/**'
       - 'Makefile'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'charts/**'
       - 'hack/test-helm-rbac.py'
+      - 'hack/test-helm-contracts.py'
       - 'hack/test-prometheus-rules.sh'
       - 'test/metrics/**'
       - 'Makefile'
@@ -29,11 +31,9 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Helm
-      id: install-helm
-      run: |
-        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-        chmod +x get_helm.sh
-        ./get_helm.sh
+      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310
+      with:
+        version: '4.3.0'
 
     - name: Create test values
       id: create-test-values
@@ -60,8 +60,9 @@ jobs:
 
     - name: Verify RBAC references
       run: |
-        python3 -m pip install PyYAML==6.0.2
+        python3 -m pip install PyYAML==6.0.2 jsonschema==4.26.0
         make test-rbac
+        python3 hack/test-helm-contracts.py
 
     - name: Test Prometheus alerts
       env:

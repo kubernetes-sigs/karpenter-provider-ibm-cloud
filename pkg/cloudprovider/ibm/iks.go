@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/time/rate"
 	"net/http"
 	"net/url"
 	"os"
@@ -41,6 +42,8 @@ const (
 )
 
 // IBM account ID validation pattern (32-character hex string)
+var iksRequestBudget = rate.NewLimiter(rate.Every(100*time.Millisecond), 1)
+
 var ibmAccountIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 // IKSClient handles IBM Kubernetes Service API operations.
@@ -136,6 +139,8 @@ func NewIKSClient(client *Client) (*IKSClient, error) {
 
 	iksClient.httpClient = httpclient.NewIBMCloudHTTPClient(iksV2BaseURL, iksClient.setIKSHeaders)
 	iksClient.httpClientV1 = httpclient.NewIBMCloudHTTPClient(iksV1BaseURL, iksClient.setIKSHeaders)
+	iksClient.httpClient.SetRequestGate(iksRequestBudget.Wait)
+	iksClient.httpClientV1.SetRequestGate(iksRequestBudget.Wait)
 
 	return iksClient, nil
 }

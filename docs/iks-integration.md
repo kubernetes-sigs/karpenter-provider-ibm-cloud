@@ -60,6 +60,7 @@ metadata:
   annotations:
     karpenter-ibm.sh/description: "IKS integration NodeClass"
 spec:
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   # REQUIRED: Replace with your actual values
   region: us-south                      # Your IBM Cloud region
   vpc: vpc-iks-12345678                 # Your IKS cluster VPC
@@ -100,7 +101,7 @@ spec:
         cluster-type: iks
     spec:
       nodeClassRef:
-        apiVersion: karpenter-ibm.sh/v1alpha1
+        group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: iks-nodeclass
 
@@ -132,6 +133,8 @@ Launch completes once the worker exists and reports the flavor's catalog capacit
 A lost cloud response can leave an allocation uncertain. Its finalizer and reservation remain in place until the controller can prove ownership and absence; investigate the reported cloud error rather than removing the finalizer.
 
 See [IKS Mode Instance Type Constraints](limitations.md#iks-mode-instance-type-constraints) for more details.
+
+The IKS clients share a per-process limit of 10 HTTP requests/second with burst 1. Replicas and other processes sharing a public IP need an aggregate limit outside the controller. Legacy shared-pool workers require the [retirement identity checks](troubleshooting.md#upgrade-and-cleanup-recovery); retiring one worker never resizes or deletes its shared pool.
 
 ## IKS-Specific Troubleshooting
 

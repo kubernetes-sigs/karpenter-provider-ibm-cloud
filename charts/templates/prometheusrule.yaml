@@ -20,7 +20,7 @@ spec:
       rules:
         # High-level operational alerts
         - alert: KarpenterIBMControllerDown
-          expr: up{job="{{ include "karpenter.fullname" . }}"} == 0
+          expr: up{job="{{ include "karpenter.fullname" . }}"} == 0 or absent(up{job="{{ include "karpenter.fullname" . }}"})
           for: {{ .Values.metrics.prometheusRule.alerts.controllerDown.for | default "5m" }}
           labels:
             severity: {{ .Values.metrics.prometheusRule.alerts.controllerDown.severity | default "critical" }}

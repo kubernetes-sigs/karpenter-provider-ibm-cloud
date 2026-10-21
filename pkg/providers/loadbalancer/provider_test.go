@@ -141,6 +141,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 				member := &vpcv1.LoadBalancerPoolMember{
 					ID: &memberID,
 				}
+				m.On("ListLoadBalancerPoolMembers", mock.Anything, mock.Anything, mock.Anything).Return(&vpcv1.LoadBalancerPoolMemberCollection{}, nil).Maybe()
 				m.On("CreateLoadBalancerPoolMember", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678", poolID, mock.Anything, int64(80), int64(50)).Return(member, nil)
 			},
 			expectError: false,
@@ -241,6 +242,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 				member1 := &vpcv1.LoadBalancerPoolMember{
 					ID: &memberID1,
 				}
+				m.On("ListLoadBalancerPoolMembers", mock.Anything, mock.Anything, mock.Anything).Return(&vpcv1.LoadBalancerPoolMemberCollection{}, nil).Maybe()
 				m.On("CreateLoadBalancerPoolMember", mock.Anything, "r010-12345678-1234-5678-9abc-def012345678", poolID1, mock.Anything, int64(80), int64(50)).Return(member1, nil)
 
 				// Mock second load balancer
@@ -257,6 +259,7 @@ func TestLoadBalancerProvider_RegisterInstance(t *testing.T) {
 				member2 := &vpcv1.LoadBalancerPoolMember{
 					ID: &memberID2,
 				}
+				m.On("ListLoadBalancerPoolMembers", mock.Anything, mock.Anything, mock.Anything).Return(&vpcv1.LoadBalancerPoolMemberCollection{}, nil).Maybe()
 				m.On("CreateLoadBalancerPoolMember", mock.Anything, "r010-87654321-4321-8765-cba9-fed210987654", poolID2, mock.Anything, int64(443), int64(50)).Return(member2, nil)
 			},
 			expectError: false,

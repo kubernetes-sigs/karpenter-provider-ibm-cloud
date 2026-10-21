@@ -28,7 +28,6 @@ package controllers
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=csinodes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
@@ -136,6 +135,12 @@ func NewControllers(
 	logger := log.FromContext(ctx).WithName("controllers")
 
 	controllers := []controller.Controller{}
+	var providerFactory *providers.ProviderFactory
+	if len(factories) != 0 && factories[0] != nil {
+		providerFactory = factories[0]
+	} else if ibmClient != nil {
+		providerFactory = providers.NewProviderFactory(ctx, ibmClient, kubeClient, kubernetesClient, unavailableOfferings, providers.WithAPIReader(mgr.GetAPIReader()))
+	}
 
 	// Add IBM-specific controllers
 	if hashCtrl, err := nodeclasshash.NewController(kubeClient, mgr.GetAPIReader()); err != nil {
@@ -169,7 +174,7 @@ func NewControllers(
 	controllers = append(controllers, garbageCollectionCtrl)
 
 	// Migrates nodes registered by the removed provider registration controller onto core lifecycle ownership
-	if registrationCtrl, err := nodeclaimregistration.NewController(kubeClient, mgr.GetAPIReader()); err != nil {
+	if registrationCtrl, err := nodeclaimregistration.NewControllerWithLifecycle(kubeClient, mgr.GetAPIReader(), cloudProvider, providerFactory); err != nil {
 		logger.Error(err, "failed to create registration controller")
 	} else {
 		controllers = append(controllers, registrationCtrl)
@@ -196,7 +201,7 @@ func NewControllers(
 		if err != nil {
 			logger.Error(err, "failed to get VPC client for load balancer controller")
 		} else {
-			loadBalancerCtrl := nodeclaimloadbalancer.NewController(kubeClient, vpcClient)
+			loadBalancerCtrl := nodeclaimloadbalancer.NewController(kubeClient, vpcClient, mgr.GetAPIReader())
 			if err := loadBalancerCtrl.Register(ctx, mgr); err != nil {
 				logger.Error(err, "failed to register load balancer controller")
 			} else {
@@ -206,24 +211,16 @@ func NewControllers(
 	}
 
 	// Add instance type controller
-	if instanceTypeCtrl, err := providersinstancetype.NewController(ctx, unavailableOfferings); err != nil {
+	if instanceTypeCtrl, err := providersinstancetype.NewController(instanceTypeProvider); err != nil {
 		logger.Error(err, "failed to create instance type controller")
 	} else {
 		controllers = append(controllers, instanceTypeCtrl)
 	}
 
-	var providerFactory *providers.ProviderFactory
-	if ibmClient != nil {
-		if len(factories) != 0 && factories[0] != nil {
-			providerFactory = factories[0]
-		} else {
-			providerFactory = providers.NewProviderFactory(ctx, ibmClient, kubeClient, kubernetesClient, unavailableOfferings, providers.WithAPIReader(mgr.GetAPIReader()))
-		}
-	}
 	if providerFactory != nil {
 		controllers = append(controllers, vpcallocation.NewController(kubeClient, mgr.GetAPIReader(), providerFactory))
 	}
-	interruptionCtrl := interruption.NewController(kubeClient, recorderAdapter, unavailableOfferings)
+	interruptionCtrl := interruption.NewController(kubeClient, recorderAdapter, unavailableOfferings, mgr.GetAPIReader())
 	controllers = append(controllers, interruptionCtrl)
 
 	if ibmClient != nil {
@@ -273,10 +270,16 @@ func isOrphanCleanupEnabled() bool {
 }
 
 // RegisterBootstrapController adds the bootstrap token controller to the manager
-func RegisterBootstrapController(mgr manager.Manager) error {
+func RegisterBootstrapController(mgr manager.Manager, factory *providers.ProviderFactory) error {
+	if factory == nil {
+		return fmt.Errorf("bootstrap controllers require a provider factory")
+	}
 	bootstrapCtrl := bootstrap.NewTokenController(mgr)
 	if err := bootstrapCtrl.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up bootstrap token controller: %w", err)
+	}
+	if err := bootstrap.NewCSRController(mgr, factory).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up verified CSR controller: %w", err)
 	}
 	return nil
 }

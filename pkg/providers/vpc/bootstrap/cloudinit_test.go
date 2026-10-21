@@ -140,7 +140,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("Basic cloud-init generation", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -161,12 +161,12 @@ func TestGenerateCloudInitScript(t *testing.T) {
 
 		// Verify key components are present
 		assert.Contains(t, script, "#!/bin/bash")
-		assert.Contains(t, script, "CLUSTER_ENDPOINT=\"https://api.cluster.example.com\"")
-		assert.Contains(t, script, "BOOTSTRAP_TOKEN=\"test-token-123\"")
-		assert.Contains(t, script, "CLUSTER_DNS=\"10.96.0.10\"")
-		assert.Contains(t, script, "REGION=\"us-south\"")
-		assert.Contains(t, script, "ZONE=\"us-south-1\"")
-		assert.Contains(t, script, "NODE_NAME=\"test-node-001\"")
+		assert.Contains(t, script, "CLUSTER_ENDPOINT='https://api.cluster.example.com'")
+		assert.Contains(t, script, "BOOTSTRAP_TOKEN='abcdef.0123456789abcdef'")
+		assert.Contains(t, script, "CLUSTER_DNS='10.96.0.10'")
+		assert.Contains(t, script, "REGION='us-south'")
+		assert.Contains(t, script, "ZONE='us-south-1'")
+		assert.Contains(t, script, "NODE_NAME='test-node-001'")
 		assert.Contains(t, script, "containerd")
 		assert.Contains(t, script, "calico")
 
@@ -195,7 +195,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("CRI-O container runtime", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -220,7 +220,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("Cilium CNI plugin", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -247,7 +247,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("Flannel CNI plugin", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -272,7 +272,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("With taints", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -302,7 +302,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("With labels", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -324,7 +324,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify labels are included
-		assert.Contains(t, script, "nodeLabels:")
+		assert.Contains(t, script, "--node-labels=${NODE_LABELS}")
 		assert.Contains(t, script, "node.kubernetes.io/instance-type")
 		assert.Contains(t, script, "bx2-4x16")
 		assert.Contains(t, script, "topology.kubernetes.io/zone")
@@ -336,7 +336,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("With custom user data", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -367,7 +367,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -391,7 +391,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 	t.Run("With KubeletConfig", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -483,7 +483,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -501,12 +501,10 @@ func TestGenerateCloudInitScript(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, script)
 
-		// clusterDNS should fall back to ${CLUSTER_DNS}
 		assert.Contains(t, script, "clusterDNS:")
-		assert.Contains(t, script, "  - ${CLUSTER_DNS}")
+		assert.Contains(t, script, `  - "10.96.0.10"`)
 
-		// None of the optional KubeletConfig fields should appear
-		assert.NotContains(t, script, "maxPods:")
+		assert.Contains(t, script, "maxPods: 110")
 		assert.NotContains(t, script, "podsPerCore:")
 		assert.NotContains(t, script, "kubeReserved:")
 		assert.NotContains(t, script, "systemReserved:")
@@ -525,7 +523,7 @@ func TestGenerateCloudInitScript(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -583,7 +581,7 @@ func TestCloudInitTemplate_EdgeCases(t *testing.T) {
 	t.Run("Unsupported container runtime", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -597,35 +595,29 @@ func TestCloudInitTemplate_EdgeCases(t *testing.T) {
 		}
 
 		script, err := provider.generateCloudInitScript(context.Background(), options)
-		require.NoError(t, err)
-
-		// Verify error handling for unsupported runtime
-		assert.Contains(t, script, "podman")
-		assert.Contains(t, script, "containerd")
+		require.Error(t, err)
+		require.Empty(t, script)
 	})
 
 	t.Run("Unknown CNI plugin", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
 			NodeName:          "test-node-001",
 			KubernetesVersion: "v1.28.0",
 			ContainerRuntime:  "containerd",
-			CNIPlugin:         "weave", // Unknown
+			CNIPlugin:         "unknown-cni", // Unknown
 			CNIVersion:        "v2.8.1",
 			Architecture:      "amd64",
 			CABundle:          "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
 		}
 
 		script, err := provider.generateCloudInitScript(context.Background(), options)
-		require.NoError(t, err)
-
-		// Verify handling of unknown CNI plugin
-		assert.Contains(t, script, "weave")
-		assert.Contains(t, script, "DaemonSet")
+		require.Error(t, err)
+		require.Empty(t, script)
 	})
 
 	t.Run("Empty values", func(t *testing.T) {
@@ -649,9 +641,9 @@ func TestCloudInitTemplate_EdgeCases(t *testing.T) {
 
 		// Should still generate a script but with empty values
 		assert.Contains(t, script, "#!/bin/bash")
-		assert.Contains(t, script, "CLUSTER_ENDPOINT=\"\"")
-		assert.Contains(t, script, "BOOTSTRAP_TOKEN=\"\"")
-		assert.Contains(t, script, "NODE_NAME=\"\"")
+		assert.Contains(t, script, "CLUSTER_ENDPOINT=''")
+		assert.Contains(t, script, "BOOTSTRAP_TOKEN=''")
+		assert.Contains(t, script, "NODE_NAME=''")
 	})
 
 	t.Run("Architecture handling", func(t *testing.T) {
@@ -669,7 +661,7 @@ func TestCloudInitTemplate_EdgeCases(t *testing.T) {
 			t.Run(tc.arch, func(t *testing.T) {
 				options := commonTypes.Options{
 					ClusterEndpoint:   "https://api.cluster.example.com",
-					BootstrapToken:    "test-token-123",
+					BootstrapToken:    "abcdef.0123456789abcdef",
 					DNSClusterIP:      "10.96.0.10",
 					Region:            "us-south",
 					Zone:              "us-south-1",
@@ -683,6 +675,11 @@ func TestCloudInitTemplate_EdgeCases(t *testing.T) {
 				}
 
 				script, err := provider.generateCloudInitScript(context.Background(), options)
+				if tc.arch == "s390x" {
+					require.Error(t, err)
+					require.Empty(t, script)
+					return
+				}
 				require.NoError(t, err)
 
 				if tc.expected != "" {
@@ -700,7 +697,7 @@ func TestCloudInitTemplate_SecurityFeatures(t *testing.T) {
 	t.Run("Status reporting security", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -727,7 +724,7 @@ func TestCloudInitTemplate_SecurityFeatures(t *testing.T) {
 	t.Run("Error handling and diagnostics", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -746,15 +743,15 @@ func TestCloudInitTemplate_SecurityFeatures(t *testing.T) {
 		// Verify comprehensive error handling
 		assert.Contains(t, script, "instance-identity-token-failed")
 		assert.Contains(t, script, "instance-id-metadata-failed")
-		assert.Contains(t, script, "Could not get instance identity token")
-		assert.Contains(t, script, "Could not retrieve instance ID")
+		assert.Contains(t, script, "metadata_value PUT")
+		assert.Contains(t, script, "metadata_value GET")
 		assert.Contains(t, script, "BOOTSTRAP FAILURE DIAGNOSTICS")
 	})
 
 	t.Run("CA bundle handling", func(t *testing.T) {
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token-123",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -802,7 +799,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -819,7 +816,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify variable is injected near the top of the script
-		assert.Contains(t, script, `export BOOTSTRAP_TEST_VAR="test-value-123"`)
+		assert.Contains(t, script, `export BOOTSTRAP_TEST_VAR='test-value-123'`)
 
 		// Verify it comes after shebang but before main script logic
 		lines := strings.Split(script, "\n")
@@ -857,7 +854,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -874,9 +871,9 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify all variables are injected
-		assert.Contains(t, script, `export BOOTSTRAP_SERVER="https://server:9345"`)
-		assert.Contains(t, script, `export BOOTSTRAP_TOKEN="secret-token-abc123"`)
-		assert.Contains(t, script, `export BOOTSTRAP_VERSION="v1.30.2"`)
+		assert.Contains(t, script, `export BOOTSTRAP_SERVER='https://server:9345'`)
+		assert.Contains(t, script, `export BOOTSTRAP_TOKEN='secret-token-abc123'`)
+		assert.Contains(t, script, `export BOOTSTRAP_VERSION='v1.30.2'`)
 	})
 
 	t.Run("ignore non-BOOTSTRAP_ variables", func(t *testing.T) {
@@ -890,7 +887,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -922,7 +919,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -939,7 +936,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify variable is properly quoted
-		assert.Contains(t, script, `export BOOTSTRAP_SPECIAL="value with spaces and $pecial chars!"`)
+		assert.Contains(t, script, `export BOOTSTRAP_SPECIAL='value with spaces and $pecial chars!'`)
 	})
 
 	t.Run("no BOOTSTRAP_ variables set", func(t *testing.T) {
@@ -953,7 +950,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -988,7 +985,7 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 
 		options := commonTypes.Options{
 			ClusterEndpoint:   "https://api.cluster.example.com",
-			BootstrapToken:    "test-token",
+			BootstrapToken:    "abcdef.0123456789abcdef",
 			DNSClusterIP:      "10.96.0.10",
 			Region:            "us-south",
 			Zone:              "us-south-1",
@@ -1005,9 +1002,9 @@ func TestBootstrapEnvironmentVariableInjection(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify RKE2 variables are injected
-		assert.Contains(t, script, `export BOOTSTRAP_RKE2_SERVER="https://10.20.5.71:9345"`)
-		assert.Contains(t, script, `export BOOTSTRAP_RKE2_TOKEN="K1060b31293d57afc0eda682e6d097d21f7f21ad383318a3a49e1dacb9f635bfe93::server:6bd454f63cb03f1cdacc18b7a245bec3"`)
-		assert.Contains(t, script, `export BOOTSTRAP_RKE2_VERSION="v1.30.2+rke2r1"`)
+		assert.Contains(t, script, `export BOOTSTRAP_RKE2_SERVER='https://10.20.5.71:9345'`)
+		assert.Contains(t, script, `export BOOTSTRAP_RKE2_TOKEN='K1060b31293d57afc0eda682e6d097d21f7f21ad383318a3a49e1dacb9f635bfe93::server:6bd454f63cb03f1cdacc18b7a245bec3'`)
+		assert.Contains(t, script, `export BOOTSTRAP_RKE2_VERSION='v1.30.2+rke2r1'`)
 
 		// Verify they appear early in the script
 		shebangIndex := strings.Index(script, "#!/bin/bash")

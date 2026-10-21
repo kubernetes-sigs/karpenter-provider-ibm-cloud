@@ -85,34 +85,28 @@ jobs:
 
       - name: Build and push image
         id: build
+        env:
+          IMAGE_TAG: ${{ inputs.tag }}
+          ADDITIONAL_TAGS: ${{ inputs.additional_tags }}
+          IMAGE_VERSION: ${{ inputs.version }}
+          IMAGE_PLATFORMS: ${{ inputs.platforms }}
         run: |
-          # Build all tags in single ko build call
-          ALL_TAGS="${{ inputs.tag }}"
-          if [ -n "${{ inputs.additional_tags }}" ]; then
-            ALL_TAGS="${ALL_TAGS},${{ inputs.additional_tags }}"
+          ALL_TAGS="$IMAGE_TAG"
+          if [ -n "$ADDITIONAL_TAGS" ]; then
+            ALL_TAGS="${ALL_TAGS},${ADDITIONAL_TAGS}"
           fi
-
-          echo "Building with tags: $ALL_TAGS"
-
-          # Build with or without version ldflags
-          if [ -n "${{ inputs.version }}" ]; then
-            GOFLAGS="-ldflags=-X=github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/version.Version=${{ inputs.version }}" \
-            ko build \
-              --platform=${{ inputs.platforms }} \
-              --bare \
-              --tags=$ALL_TAGS \
-              ./cmd/controller
-          else
-            ko build \
-              --platform=${{ inputs.platforms }} \
-              --bare \
-              --tags=$ALL_TAGS \
-              ./cmd/controller
+          if [ -n "$IMAGE_VERSION" ]; then
+            export GOFLAGS="-ldflags=-X=github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/version.Version=${IMAGE_VERSION}"
           fi
-
-          echo "image_ref=$KO_DOCKER_REPO:${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          ko build --platform="$IMAGE_PLATFORMS" --bare --tags="$ALL_TAGS" ./cmd/controller > image-ref.txt
+          IMAGE_REF=$(cat image-ref.txt)
+          if ! [[ "$IMAGE_REF" =~ ^quay\.io/karpenter-provider-ibm-cloud/controller@sha256:[0-9a-f]{64}$ ]]; then
+            echo "ko did not produce an immutable controller image reference" >&2
+            exit 1
+          fi
+          echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
 
       - name: Verify manifest
-        run: |
-          echo "Verifying manifest for $KO_DOCKER_REPO:${{ inputs.tag }}..."
-          docker buildx imagetools inspect $KO_DOCKER_REPO:${{ inputs.tag }}
+        env:
+          IMAGE_REF: ${{ steps.build.outputs.image_ref }}
+        run: docker buildx imagetools inspect "$IMAGE_REF"

@@ -95,10 +95,7 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 				zone := *instance.Zone.Name
 				key := instanceType + ":" + zone + ":" + karpv1.CapacityTypeSpot
 				c.unavailableOfferings.Add(key, time.Now().Add(time.Hour))
-				if err := vpcClient.DeleteInstance(ctx, *instance.ID); err != nil {
-					log.FromContext(ctx).Error(err, "failed deleting preempted instance", "instanceID", *instance.ID, "instanceType", instanceType, "zone", zone)
-				}
-				if err := c.kubeClient.Delete(ctx, nodeClaim); err != nil {
+				if err := c.kubeClient.Delete(ctx, nodeClaim, client.Preconditions{UID: &nodeClaim.UID, ResourceVersion: &nodeClaim.ResourceVersion}); err != nil {
 					log.FromContext(ctx).Error(err, "failed deleting nodeclaim", "nodeClaim", nodeClaim.Name, "instanceID", *instance.ID)
 				}
 				c.recorder.Event(nodeClaim, corev1.EventTypeWarning, "SpotPreemption", fmt.Sprintf("Spot instance %s preempted in zone %s", instanceType, zone))

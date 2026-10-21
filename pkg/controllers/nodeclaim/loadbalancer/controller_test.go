@@ -34,8 +34,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"encoding/json"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/loadbalancer"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/ownership"
 )
 
 func TestController(t *testing.T) {
@@ -80,7 +83,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		nodeClass = &v1alpha1.IBMNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-nodeclass",
+				Name: "test-nodeclass", UID: "class-uid",
 			},
 			Spec: v1alpha1.IBMNodeClassSpec{
 				LoadBalancerIntegration: &v1alpha1.LoadBalancerIntegration{
@@ -98,11 +101,11 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		nodeClaim = &karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-nodeclaim",
+				Name: "test-nodeclaim", UID: "claim-uid",
 			},
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{
-					Kind: "IBMNodeClass",
+					Kind: "IBMNodeClass", Group: v1alpha1.Group,
 					Name: "test-nodeclass",
 				},
 			},
@@ -112,10 +115,15 @@ var _ = Describe("LoadBalancer Controller", func() {
 			},
 		}
 
+		encoded, err := json.Marshal(map[string]interface{}{"Name": ownership.InstanceName("cluster-uid", "claim-uid"), "ClaimUID": "claim-uid", "ClassUID": "class-uid", "ClusterUID": "cluster-uid", "AccountID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Region": "us-south-1"})
+		Expect(err).NotTo(HaveOccurred())
+		nodeClaim.Annotations = map[string]string{"karpenter-ibm.sh/vpc-launch": string(encoded)}
+		Expect(client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system", UID: "cluster-uid"}})).To(Succeed())
 		node = &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-node",
 			},
+			Spec: corev1.NodeSpec{ProviderID: nodeClaim.Status.ProviderID},
 			Status: corev1.NodeStatus{
 				Addresses: []corev1.NodeAddress{
 					{
@@ -160,7 +168,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 				Expect(client.Get(ctx, req.NamespacedName, &updatedNodeClaim)).To(Succeed())
 				Expect(updatedNodeClaim.Finalizers).To(ContainElement(LoadBalancerFinalizer))
 
-				// Second reconcile - performs registration
+				_, err = controller.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
 				result, err = controller.Reconcile(ctx, req)
 				Expect(err).NotTo(HaveOccurred())
 				// Should not requeue
@@ -187,9 +196,10 @@ var _ = Describe("LoadBalancer Controller", func() {
 					},
 				}
 
-				result, err := controller.Reconcile(ctx, req)
+				_, err := controller.Reconcile(ctx, req)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(30 * time.Second))
+				_, err = controller.Reconcile(ctx, req)
+				Expect(err).To(HaveOccurred())
 
 				// Verify no registration annotation was added
 				var updatedNodeClaim karpv1.NodeClaim
@@ -387,3 +397,18 @@ func (m *MockLoadBalancerProvider) ValidateLoadBalancerConfiguration(ctx context
 
 // MockVPCClient for testing
 type MockVPCClient struct{}
+
+func (m *MockLoadBalancerProvider) VerifyAccount(context.Context, string) error { return nil }
+func (m *MockLoadBalancerProvider) ResolveTargets(_ context.Context, c *v1alpha1.IBMNodeClass, _ string) ([]loadbalancer.ResolvedTarget, error) {
+	var result []loadbalancer.ResolvedTarget
+	for _, target := range c.Spec.LoadBalancerIntegration.TargetGroups {
+		result = append(result, loadbalancer.ResolvedTarget{Target: target, PoolID: "pool-id"})
+	}
+	return result, nil
+}
+func (m *MockLoadBalancerProvider) RegisterTargets(ctx context.Context, s *loadbalancer.Snapshot) error {
+	return m.RegisterInstance(ctx, nil, s.InstanceID, "10.0.0.1")
+}
+func (m *MockLoadBalancerProvider) DeregisterTargets(ctx context.Context, s *loadbalancer.Snapshot) error {
+	return m.DeregisterInstance(ctx, nil, s.InstanceID)
+}

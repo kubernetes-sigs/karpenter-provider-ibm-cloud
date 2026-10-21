@@ -28,14 +28,14 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	mock_ibm "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm/mock"
-	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -525,56 +525,6 @@ func TestErrorClassification(t *testing.T) {
 	}
 }
 
-func TestSelectSubnetFromStatusList(t *testing.T) {
-	provider := &VPCInstanceProvider{}
-
-	tests := []struct {
-		name      string
-		subnetIDs []string
-		expectLen int
-	}{
-		{
-			name:      "empty list",
-			subnetIDs: []string{},
-			expectLen: 0,
-		},
-		{
-			name:      "single subnet",
-			subnetIDs: []string{"subnet-1"},
-			expectLen: 8, // "subnet-1" length
-		},
-		{
-			name:      "multiple subnets",
-			subnetIDs: []string{"subnet-1", "subnet-2", "subnet-3"},
-			expectLen: 8, // Should return one of them
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := provider.selectSubnetFromStatusList(tt.subnetIDs)
-			if tt.expectLen == 0 {
-				assert.Empty(t, result)
-			} else {
-				assert.NotEmpty(t, result)
-				if len(tt.subnetIDs) == 1 {
-					assert.Equal(t, tt.subnetIDs[0], result)
-				} else if len(tt.subnetIDs) > 1 {
-					// Should be one of the subnets in the list
-					found := false
-					for _, subnet := range tt.subnetIDs {
-						if subnet == result {
-							found = true
-							break
-						}
-					}
-					assert.True(t, found, "selected subnet should be from the input list")
-				}
-			}
-		})
-	}
-}
-
 func TestGetDefaultSecurityGroup(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -635,74 +585,6 @@ func TestGetDefaultSecurityGroup_VPCHasNoDefaultSG(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, sg)
 	assert.Contains(t, err.Error(), "has no default security group")
-}
-
-func TestSelectSubnetFromMultiZoneList(t *testing.T) {
-	provider := &VPCInstanceProvider{}
-
-	tests := []struct {
-		name    string
-		subnets []subnet.SubnetInfo
-		want    string // zone of selected subnet
-	}{
-		{
-			name:    "empty list",
-			subnets: []subnet.SubnetInfo{},
-			want:    "",
-		},
-		{
-			name: "single subnet",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-1", Zone: "us-south-1", AvailableIPs: 100},
-			},
-			want: "us-south-1",
-		},
-		{
-			name: "multiple zones - selects from round-robin",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-1", Zone: "us-south-1", AvailableIPs: 50},
-				{ID: "subnet-2", Zone: "us-south-2", AvailableIPs: 100},
-				{ID: "subnet-3", Zone: "us-south-3", AvailableIPs: 75},
-			},
-			want: "", // Can be any zone due to round-robin
-		},
-		{
-			name: "multiple subnets same zone - picks highest IPs",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-1", Zone: "us-south-1", AvailableIPs: 50},
-				{ID: "subnet-2", Zone: "us-south-1", AvailableIPs: 100},
-				{ID: "subnet-3", Zone: "us-south-1", AvailableIPs: 75},
-			},
-			want: "us-south-1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := provider.selectSubnetFromMultiZoneList(tt.subnets)
-			if len(tt.subnets) == 0 {
-				assert.Empty(t, result.ID)
-			} else if len(tt.subnets) == 1 {
-				assert.Equal(t, tt.subnets[0].ID, result.ID)
-				assert.Equal(t, tt.want, result.Zone)
-			} else if tt.want != "" {
-				// For single-zone tests, verify zone matches
-				assert.Equal(t, tt.want, result.Zone)
-				// Should pick the one with highest IPs
-				assert.Equal(t, "subnet-2", result.ID)
-			} else {
-				// For multi-zone, just verify it's one of the input subnets
-				found := false
-				for _, subnet := range tt.subnets {
-					if subnet.ID == result.ID {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found)
-			}
-		})
-	}
 }
 
 func TestIsIBMInstanceNotFoundError(t *testing.T) {
@@ -1292,148 +1174,6 @@ func TestExtractInstanceIDFromProviderID_Comprehensive(t *testing.T) {
 	}
 }
 
-func TestSelectSubnetFromStatusList_EdgeCases(t *testing.T) {
-	provider := &VPCInstanceProvider{}
-
-	tests := []struct {
-		name      string
-		subnetIDs []string
-		validate  func(t *testing.T, result string)
-	}{
-		{
-			name:      "nil slice",
-			subnetIDs: nil,
-			validate: func(t *testing.T, result string) {
-				assert.Empty(t, result)
-			},
-		},
-		{
-			name:      "empty slice",
-			subnetIDs: []string{},
-			validate: func(t *testing.T, result string) {
-				assert.Empty(t, result)
-			},
-		},
-		{
-			name:      "single subnet",
-			subnetIDs: []string{"subnet-abc"},
-			validate: func(t *testing.T, result string) {
-				assert.Equal(t, "subnet-abc", result)
-			},
-		},
-		{
-			name:      "multiple subnets - round robin",
-			subnetIDs: []string{"subnet-1", "subnet-2", "subnet-3", "subnet-4", "subnet-5"},
-			validate: func(t *testing.T, result string) {
-				assert.NotEmpty(t, result)
-				// Should be one of the input subnets
-				found := false
-				for _, subnet := range []string{"subnet-1", "subnet-2", "subnet-3", "subnet-4", "subnet-5"} {
-					if subnet == result {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "selected subnet should be from input list")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := provider.selectSubnetFromStatusList(tt.subnetIDs)
-			tt.validate(t, result)
-		})
-	}
-}
-
-func TestSelectSubnetFromMultiZoneList_DetailedCases(t *testing.T) {
-	provider := &VPCInstanceProvider{}
-
-	tests := []struct {
-		name     string
-		subnets  []subnet.SubnetInfo
-		validate func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo)
-	}{
-		{
-			name:    "nil slice",
-			subnets: nil,
-			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
-				assert.Empty(t, result.ID)
-				assert.Empty(t, result.Zone)
-			},
-		},
-		{
-			name:    "empty slice",
-			subnets: []subnet.SubnetInfo{},
-			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
-				assert.Empty(t, result.ID)
-			},
-		},
-		{
-			name: "single subnet",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-only", Zone: "zone-1", AvailableIPs: 100},
-			},
-			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
-				assert.Equal(t, "subnet-only", result.ID)
-				assert.Equal(t, "zone-1", result.Zone)
-			},
-		},
-		{
-			name: "multiple zones - balanced selection",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-z1", Zone: "zone-1", AvailableIPs: 100},
-				{ID: "subnet-z2", Zone: "zone-2", AvailableIPs: 200},
-				{ID: "subnet-z3", Zone: "zone-3", AvailableIPs: 150},
-			},
-			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
-				assert.NotEmpty(t, result.ID)
-				// Should be one of the zones
-				validZones := []string{"zone-1", "zone-2", "zone-3"}
-				found := false
-				for _, zone := range validZones {
-					if zone == result.Zone {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found)
-			},
-		},
-		{
-			name: "same zone multiple subnets - picks highest available IPs",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-small", Zone: "zone-1", AvailableIPs: 50},
-				{ID: "subnet-medium", Zone: "zone-1", AvailableIPs: 100},
-				{ID: "subnet-large", Zone: "zone-1", AvailableIPs: 200},
-			},
-			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
-				assert.Equal(t, "subnet-large", result.ID)
-				assert.Equal(t, int32(200), result.AvailableIPs)
-			},
-		},
-		{
-			name: "zero available IPs",
-			subnets: []subnet.SubnetInfo{
-				{ID: "subnet-full", Zone: "zone-1", AvailableIPs: 0},
-				{ID: "subnet-available", Zone: "zone-2", AvailableIPs: 50},
-			},
-			validate: func(t *testing.T, result subnet.SubnetInfo, subnets []subnet.SubnetInfo) {
-				// Should still select one - provider may attempt to use full subnet
-				assert.NotEmpty(t, result.ID)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := provider.selectSubnetFromMultiZoneList(tt.subnets)
-			tt.validate(t, result, tt.subnets)
-		})
-	}
-}
-
 func TestBuildVolumeAttachments_VariousConfigurations(t *testing.T) {
 	provider := &VPCInstanceProvider{}
 
@@ -1471,7 +1211,7 @@ func TestBuildVolumeAttachments_VariousConfigurations(t *testing.T) {
 				Spec: v1alpha1.IBMNodeClassSpec{
 					BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
 						{
-							DeviceName: ptrString("/dev/vda"),
+							DeviceName: ptrString("boot-disk"),
 							VolumeSpec: &v1alpha1.VolumeSpec{
 								Capacity: ptrInt64(250),
 								Profile:  ptrString("general-purpose"),
@@ -1800,71 +1540,21 @@ func TestProviderGet_SetsLabels(t *testing.T) {
 }
 
 func TestProviderDelete_InvalidatesCache(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	_ = os.Setenv("IBMCLOUD_API_KEY", "test-api-key")
-	defer func() { _ = os.Unsetenv("IBMCLOUD_API_KEY") }()
-
-	ctx := context.Background()
-	mockVPC := mock_ibm.NewMockvpcClientInterface(ctrl)
-	deleteResponse := &core.DetailedResponse{StatusCode: 204}
-
-	// Delete call
-	mockVPC.EXPECT().
-		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
-		Return(deleteResponse, nil).
-		Times(1)
-
-	// Delete's internal verification call
-	mockVPC.EXPECT().
-		GetInstanceWithContext(gomock.Any(), gomock.Any()).
-		Return(nil, nil, fmt.Errorf("instance not found: 404")).
-		Times(1)
-
-	vpcClient := ibm.NewVPCClientWithMock(mockVPC)
-	manager := vpcclient.NewManagerWithMockClient(vpcClient)
-	instanceCache := cache.New(5 * time.Minute)
-	defer instanceCache.Stop()
-
-	// Pre-populate cache
-	instanceID := "test-instance-id"
-	cachedNode := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "cached-node"},
-	}
-	instanceCache.Set(instanceID, cachedNode)
-
-	provider, err := NewVPCInstanceProvider(
-		&ibm.Client{},
-		&mockKubeClient{},
-		WithVPCClientManager(manager),
-		WithAccountResolver(testAccountResolver),
-		WithInstanceCache(instanceCache),
-	)
-	assert.NoError(t, err)
-
-	// Verify cache has entry before delete
-	_, exists := instanceCache.Get(instanceID)
-	assert.True(t, exists, "cache should have entry before delete")
-
-	node := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-node",
-			Labels: map[string]string{
-				"topology.kubernetes.io/region":    "us-south",
-				"node.kubernetes.io/instance-type": "bx2-4x16",
-			},
-		},
-		Spec: corev1.NodeSpec{
-			ProviderID: "ibm:///us-south/" + instanceID,
-		},
-	}
-	node.Annotations = map[string]string{"karpenter-ibm.sh/account-id": testAccountID}
-	_ = provider.Delete(ctx, node)
-
-	// Verify cache entry is gone
-	_, exists = instanceCache.Get(instanceID)
-	assert.False(t, exists, "cache should be empty after delete")
+	provider, claim, config, mock, _ := launchFixture(t)
+	claim.Status.ProviderID = "ibm:///us-south/instance"
+	require.NoError(t, provider.kubeClient.Update(context.Background(), claim))
+	vm := matchingInstance(config)
+	mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*vm}}, nil, nil)
+	mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(vm, nil, nil).Times(2)
+	mock.EXPECT().DeleteInstanceWithContext(gomock.Any(), gomock.Any()).Return(&core.DetailedResponse{StatusCode: 204}, nil)
+	mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(nil, nil, fmt.Errorf("instance not found: 404"))
+	provider.instanceCache.Set("instance", &corev1.Node{})
+	node := config.node(claim, "instance")
+	node.UID = claim.UID
+	err := provider.Delete(context.Background(), node)
+	require.True(t, cloudprovider.IsNodeClaimNotFoundError(err))
+	_, exists := provider.instanceCache.Get("instance")
+	require.False(t, exists)
 }
 
 func TestProviderGet_DeletingInstanceNotCached(t *testing.T) {

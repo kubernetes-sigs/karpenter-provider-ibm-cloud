@@ -45,6 +45,7 @@ type ProviderFactory struct {
 	subnetProvider       subnet.Provider
 	instanceTypeProvider instancetype.Provider
 	apiReader            client.Reader
+	ctx                  context.Context
 	mu                   sync.Mutex
 	vpc                  commonTypes.VPCInstanceProvider
 	iks                  commonTypes.IKSWorkerPoolProvider
@@ -59,9 +60,10 @@ func NewProviderFactory(ctx context.Context, client *ibm.Client, kubeClient clie
 	}
 	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, region)
 	subnetProvider := subnet.NewProvider(client)
-	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider, unavailableOfferings)
+	instanceTypeProvider := instancetype.NewProvider(client, pricingProvider, unavailableOfferings, ctx)
 
 	factory := &ProviderFactory{
+		ctx:                  ctx,
 		client:               client,
 		kubeClient:           kubeClient,
 		kubernetesClient:     kubernetesClient,
@@ -91,7 +93,11 @@ func (f *ProviderFactory) GetInstanceProvider(nodeClass *v1alpha1.IBMNodeClass) 
 	if nodeClass == nil {
 		return nil, fmt.Errorf("nodeClass cannot be nil")
 	}
-	return f.GetInstanceProviderForMode(f.determineProviderMode(nodeClass))
+	mode, err := ResolveProviderMode(nodeClass)
+	if err != nil {
+		return nil, err
+	}
+	return f.GetInstanceProviderForMode(mode)
 }
 
 func (f *ProviderFactory) GetInstanceProviderForMode(mode commonTypes.ProviderMode) (commonTypes.InstanceProvider, error) {
@@ -112,7 +118,7 @@ func (f *ProviderFactory) GetInstanceProviderForMode(mode commonTypes.ProviderMo
 		return f.iks, nil
 	case commonTypes.VPCMode:
 		if f.vpc == nil {
-			options := []vpcProvider.Option{vpcProvider.WithAPIReader(f.apiReader)}
+			options := []vpcProvider.Option{vpcProvider.WithAPIReader(f.apiReader), vpcProvider.WithMetricsContext(f.ctx)}
 			if f.kubernetesClient != nil {
 				options = append(options, vpcProvider.WithKubernetesClient(f.kubernetesClient))
 			}
@@ -132,7 +138,10 @@ func (f *ProviderFactory) GetVPCProvider(nodeClass *v1alpha1.IBMNodeClass) (comm
 	if nodeClass == nil {
 		return nil, fmt.Errorf("nodeClass cannot be nil")
 	}
-	mode := f.determineProviderMode(nodeClass)
+	mode, err := ResolveProviderMode(nodeClass)
+	if err != nil {
+		return nil, err
+	}
 	if mode != commonTypes.VPCMode {
 		return nil, fmt.Errorf("VPC provider requested but NodeClass is configured for %s mode", mode)
 	}
@@ -147,7 +156,10 @@ func (f *ProviderFactory) GetIKSProvider(nodeClass *v1alpha1.IBMNodeClass) (comm
 	if nodeClass == nil {
 		return nil, fmt.Errorf("nodeClass cannot be nil")
 	}
-	mode := f.determineProviderMode(nodeClass)
+	mode, err := ResolveProviderMode(nodeClass)
+	if err != nil {
+		return nil, err
+	}
 	if mode != commonTypes.IKSMode {
 		return nil, fmt.Errorf("IKS provider requested but NodeClass is configured for %s mode", mode)
 	}
@@ -158,46 +170,43 @@ func (f *ProviderFactory) GetIKSProvider(nodeClass *v1alpha1.IBMNodeClass) (comm
 	return provider.(commonTypes.IKSWorkerPoolProvider), nil
 }
 
-// determineProviderMode determines which provider mode to use based on NodeClass configuration
-func (f *ProviderFactory) determineProviderMode(nodeClass *v1alpha1.IBMNodeClass) commonTypes.ProviderMode {
-	// Handle nil nodeClass - default to VPC mode
-	if nodeClass == nil {
-		// Check environment variable for IKS mode
-		if os.Getenv("IKS_CLUSTER_ID") != "" {
-			return commonTypes.IKSMode
-		}
-		return commonTypes.VPCMode
-	}
-
-	// Check if bootstrap mode is explicitly set
-	if nodeClass.Spec.BootstrapMode != nil {
-		switch *nodeClass.Spec.BootstrapMode {
-		case "iks-api":
-			return commonTypes.IKSMode
-		case "cloud-init":
-			return commonTypes.VPCMode
-		case "auto":
-			// Continue with automatic detection based on other indicators
-		}
-	}
-
-	// Check if IKS cluster ID is provided (implies IKS mode)
-	if nodeClass.Spec.IKSClusterID != "" {
-		return commonTypes.IKSMode
-	}
-
-	// Check environment variable
-	if os.Getenv("IKS_CLUSTER_ID") != "" {
-		return commonTypes.IKSMode
-	}
-
-	// Default to VPC mode
-	return commonTypes.VPCMode
+// GetProviderMode returns the provider mode for a given NodeClass
+func (f *ProviderFactory) GetProviderMode(nodeClass *v1alpha1.IBMNodeClass) (commonTypes.ProviderMode, error) {
+	return ResolveProviderMode(nodeClass)
 }
 
-// GetProviderMode returns the provider mode for a given NodeClass
-func (f *ProviderFactory) GetProviderMode(nodeClass *v1alpha1.IBMNodeClass) commonTypes.ProviderMode {
-	return f.determineProviderMode(nodeClass)
+// ResolveProviderMode applies explicit class settings before the controller default.
+func ResolveProviderMode(nodeClass *v1alpha1.IBMNodeClass) (commonTypes.ProviderMode, error) {
+	global := os.Getenv("BOOTSTRAP_MODE")
+	if global != "" && global != "auto" && global != "cloud-init" && global != "iks-api" {
+		return "", fmt.Errorf("invalid BOOTSTRAP_MODE %q: expected auto, cloud-init or iks-api", global)
+	}
+	if nodeClass != nil {
+		if nodeClass.Spec.BootstrapMode != nil {
+			switch mode := *nodeClass.Spec.BootstrapMode; mode {
+			case "cloud-init":
+				return commonTypes.VPCMode, nil
+			case "iks-api":
+				return commonTypes.IKSMode, nil
+			case "auto":
+			default:
+				return "", fmt.Errorf("invalid NodeClass bootstrapMode %q", mode)
+			}
+		}
+		if nodeClass.Spec.IKSClusterID != "" {
+			return commonTypes.IKSMode, nil
+		}
+	}
+	switch global {
+	case "cloud-init":
+		return commonTypes.VPCMode, nil
+	case "iks-api":
+		return commonTypes.IKSMode, nil
+	}
+	if os.Getenv("IKS_CLUSTER_ID") != "" {
+		return commonTypes.IKSMode, nil
+	}
+	return commonTypes.VPCMode, nil
 }
 
 // GetPricingProvider returns the shared pricing provider

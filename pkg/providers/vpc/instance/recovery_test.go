@@ -49,17 +49,31 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
-type recordingTagger struct{ names []string }
+type recordingTagger struct {
+	names  []string
+	onList func()
+}
 
 const testAccountID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func testAccountResolver(context.Context) (string, error) { return testAccountID, nil }
 
-const testInstanceCRN = "crn:v1:bluemix:public:is:us-south:a/" + testAccountID + "::instance:test"
+const testInstanceCRN = "crn:v1:bluemix:public:is:us-south-1:a/" + testAccountID + "::instance:test"
 
 func (t *recordingTagger) AttachTagWithContext(_ context.Context, options *globaltaggingv1.AttachTagOptions) (*globaltaggingv1.TagResults, *core.DetailedResponse, error) {
 	t.names = append(t.names, options.TagNames...)
 	return &globaltaggingv1.TagResults{Results: []globaltaggingv1.TagResultsItem{{ResourceID: options.Resources[0].ResourceID}}}, &core.DetailedResponse{StatusCode: 200}, nil
+}
+
+func (t *recordingTagger) ListTagsWithContext(_ context.Context, _ *globaltaggingv1.ListTagsOptions) (*globaltaggingv1.TagList, *core.DetailedResponse, error) {
+	if t.onList != nil {
+		t.onList()
+	}
+	page := &globaltaggingv1.TagList{TotalCount: core.Int64Ptr(int64(len(t.names)))}
+	for _, name := range t.names {
+		page.Items = append(page.Items, globaltaggingv1.Tag{Name: core.StringPtr(name)})
+	}
+	return page, nil, nil
 }
 
 func launchFixture(t *testing.T) (*VPCInstanceProvider, *karpv1.NodeClaim, *launchConfig, *mockibm.MockvpcClientInterface, *recordingTagger) {
@@ -68,7 +82,7 @@ func launchFixture(t *testing.T) (*VPCInstanceProvider, *karpv1.NodeClaim, *laun
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	scheme.AddKnownTypes(schema.GroupVersion{Group: "karpenter.sh", Version: "v1"}, &karpv1.NodeClaim{}, &karpv1.NodeClaimList{})
-	claim := &karpv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: "claim", UID: types.UID("claim-uid")}, Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: "removed-class"}}}
+	claim := &karpv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: "claim", UID: types.UID("claim-uid")}, Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Group: v1alpha1.Group, Kind: "IBMNodeClass", Name: "removed-class"}}}
 	config := &launchConfig{Name: ownership.InstanceName("cluster-uid", string(claim.UID)), ClusterUID: "cluster-uid", ClaimUID: string(claim.UID), ClassUID: "class-uid", AccountID: testAccountID, Region: "us-south", ResourceGroup: "resource-group", VPC: "vpc", Profile: "bx2-2x8", Zone: "us-south-1", Subnet: "subnet", Image: "image", Submitted: true, SubmittedAt: time.Now().UTC()}
 	value, err := json.Marshal(config)
 	require.NoError(t, err)
@@ -83,7 +97,7 @@ func launchFixture(t *testing.T) (*VPCInstanceProvider, *karpv1.NodeClaim, *laun
 }
 
 func matchingInstance(config *launchConfig) *vpcv1.Instance {
-	return &vpcv1.Instance{ID: core.StringPtr("instance"), CRN: core.StringPtr("crn:v1:bluemix:public:is:" + config.Region + ":a/" + config.AccountID + "::instance:instance"), Name: &config.Name, ResourceGroup: &vpcv1.ResourceGroupReference{ID: &config.ResourceGroup}, Profile: &vpcv1.InstanceProfileReference{Name: &config.Profile}, Zone: &vpcv1.ZoneReference{Name: &config.Zone}, VPC: &vpcv1.VPCReference{ID: &config.VPC}, Image: &vpcv1.ImageReference{ID: &config.Image}, PrimaryNetworkAttachment: &vpcv1.InstanceNetworkAttachmentReference{Subnet: &vpcv1.SubnetReference{ID: &config.Subnet}}}
+	return &vpcv1.Instance{ID: core.StringPtr("instance"), CRN: core.StringPtr("crn:v1:bluemix:public:is:" + config.Zone + ":a/" + config.AccountID + "::instance:instance"), Name: &config.Name, ResourceGroup: &vpcv1.ResourceGroupReference{ID: &config.ResourceGroup}, Profile: &vpcv1.InstanceProfileReference{Name: &config.Profile}, Zone: &vpcv1.ZoneReference{Name: &config.Zone}, VPC: &vpcv1.VPCReference{ID: &config.VPC}, Image: &vpcv1.ImageReference{ID: &config.Image}, PrimaryNetworkAttachment: &vpcv1.InstanceNetworkAttachmentReference{Subnet: &vpcv1.SubnetReference{ID: &config.Subnet}}}
 }
 
 func TestCreateRecoversSubmittedInstanceWithoutNodeClass(t *testing.T) {
@@ -234,7 +248,7 @@ func TestDeleteWithoutAccountProofDoesNotReachCloud(t *testing.T) {
 func TestFreshInstanceProofRejectsForeignAccountCRN(t *testing.T) {
 	provider, _, config, mock, _ := launchFixture(t)
 	instance := matchingInstance(config)
-	instance.CRN = core.StringPtr("crn:v1:bluemix:public:is:us-south:a/" + strings.Repeat("b", 32) + "::instance:instance")
+	instance.CRN = core.StringPtr("crn:v1:bluemix:public:is:us-south-1:a/" + strings.Repeat("b", 32) + "::instance:instance")
 	mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(instance, nil, nil)
 	_, err := provider.GetFresh(context.Background(), "ibm:///us-south/instance")
 	require.ErrorContains(t, err, "instance CRN")
@@ -245,19 +259,21 @@ func TestPendingCleanupWaitsForGracefulNodeTermination(t *testing.T) {
 		t.Run(fmt.Sprint(finalizer), func(t *testing.T) {
 			provider, claim, config, mock, _ := launchFixture(t)
 			instance := matchingInstance(config)
-			mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*instance}}, nil, nil)
-			mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(instance, nil, nil)
+			mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*instance}}, nil, nil).Times(2)
+			mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(instance, nil, nil).Times(3)
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "registered", UID: "node-uid"}, Spec: corev1.NodeSpec{ProviderID: "ibm:///us-south/instance"}}
 			if finalizer {
 				node.Finalizers = []string{karpv1.TerminationFinalizer}
 			}
 			require.NoError(t, provider.kubeClient.Create(context.Background(), node))
 			complete, err := provider.CleanupPending(context.Background(), claim)
-			require.Equal(t, !finalizer, err != nil)
+			require.NoError(t, err)
 			require.False(t, complete)
 			fresh := &corev1.Node{}
 			require.NoError(t, provider.kubeClient.Get(context.Background(), client.ObjectKeyFromObject(node), fresh))
-			require.Equal(t, !finalizer, fresh.DeletionTimestamp.IsZero())
+			require.False(t, fresh.DeletionTimestamp.IsZero())
+			require.Contains(t, fresh.Finalizers, karpv1.TerminationFinalizer)
+			require.Equal(t, claim.UID, fresh.OwnerReferences[0].UID)
 		})
 	}
 }
@@ -352,7 +368,10 @@ func TestCreateRecoversLostResponseAndPreservesRetainedVolumes(t *testing.T) {
 	})})
 	vpc := ibm.NewVPCClientWithMock(sdk, &recordingTagger{})
 	provider := &VPCInstanceProvider{kubeClient: kube, apiReader: kube, vpcClientManager: vpcclient.NewManagerWithMockClient(vpc), instanceCache: cache.New(time.Hour), accountResolver: testAccountResolver}
-	node, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{{Name: "bx2-2x8", Overhead: &cloudprovider.InstanceTypeOverhead{}}})
+	provider.subnetProvider = placementSubnets{{ID: "subnet", Zone: "us-south-1", State: "available", AvailableIPs: 20}}
+	profile := placementProfile("bx2-2x8", "us-south-1")
+	profile.Overhead = &cloudprovider.InstanceTypeOverhead{}
+	node, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{profile})
 	require.NoError(t, err)
 	require.Equal(t, "ibm:///us-south/instance", node.Spec.ProviderID)
 	_, err = provider.Create(ctx, claim, nil)
@@ -406,7 +425,10 @@ func TestCreateValidatesCloudTagsBeforeCheckpointAndPersistsRemoteRejection(t *t
 			})})
 			vpc := ibm.NewVPCClientWithMock(sdk, &recordingTagger{})
 			provider := &VPCInstanceProvider{kubeClient: kube, apiReader: kube, vpcClientManager: vpcclient.NewManagerWithMockClient(vpc), instanceCache: cache.New(time.Hour), accountResolver: testAccountResolver}
-			_, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{{Name: "bx2-2x8", Overhead: &cloudprovider.InstanceTypeOverhead{}}})
+			provider.subnetProvider = placementSubnets{{ID: "subnet", Zone: "us-south-1", State: "available", AvailableIPs: 20}}
+			profile := placementProfile("bx2-2x8", "us-south-1")
+			profile.Overhead = &cloudprovider.InstanceTypeOverhead{}
+			_, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{profile})
 			require.Error(t, err)
 			fresh := &karpv1.NodeClaim{}
 			require.NoError(t, kube.Get(ctx, client.ObjectKeyFromObject(claim), fresh))
@@ -485,9 +507,9 @@ func TestPendingCleanupReleasesAbandonedSubmission(t *testing.T) {
 func TestPendingCleanupDeletesUnregisteredInstance(t *testing.T) {
 	provider, claim, config, mock, _ := launchFixture(t)
 	instance := matchingInstance(config)
-	mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*instance}}, nil, nil)
+	mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*instance}}, nil, nil).Times(2)
 	gomock.InOrder(
-		mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(instance, nil, nil),
+		mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(instance, nil, nil).Times(3),
 		mock.EXPECT().DeleteInstanceWithContext(gomock.Any(), gomock.Cond(func(options *vpcv1.DeleteInstanceOptions) bool { return *options.ID == "instance" })).Return(nil, nil),
 		mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(nil, nil, &ibm.IBMError{StatusCode: 404}),
 	)
@@ -511,4 +533,156 @@ func TestMarkLaunchRejectedSurvivesConflict(t *testing.T) {
 
 func TestInstanceWithoutCRNFailsAccountProof(t *testing.T) {
 	require.Error(t, verifyInstanceAccount(&vpcv1.Instance{}, testAccountID))
+}
+
+func TestLaunchOwnershipVerification(t *testing.T) {
+	for _, scenario := range []string{"stopped owned", "missing tags", "foreign tags", "changed claim"} {
+		t.Run(scenario, func(t *testing.T) {
+			provider, claim, config, mock, tagger := launchFixture(t)
+			vm := matchingInstance(config)
+			vm.Status = core.StringPtr("stopped")
+			for key, value := range ownership.VPCTags(config.ClusterUID, config.ClaimUID, config.ClassUID) {
+				tagger.names = append(tagger.names, key+":"+value)
+			}
+			switch scenario {
+			case "missing tags":
+				tagger.names = nil
+			case "foreign tags":
+				tagger.names = append(tagger.names, ownership.ClaimUIDTag+":another-claim")
+			case "changed claim":
+				tagger.onList = func() {
+					fresh := claim.DeepCopy()
+					require.NoError(t, provider.kubeClient.Get(context.Background(), client.ObjectKeyFromObject(claim), fresh))
+					fresh.Annotations[LaunchAnnotation] = "changed"
+					require.NoError(t, provider.kubeClient.Update(context.Background(), fresh))
+				}
+			}
+			mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*vm}}, nil, nil)
+			mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(vm, nil, nil)
+			actual, err := provider.VerifyLaunchInstance(context.Background(), claim)
+			if scenario == "stopped owned" {
+				require.NoError(t, err)
+				require.Equal(t, "instance", *actual.ID)
+			} else {
+				require.Error(t, err)
+				require.Nil(t, actual)
+			}
+		})
+	}
+}
+
+func TestLaunchOwnershipRequiresExactZonalInstanceCRN(t *testing.T) {
+	valid := "crn:v1:bluemix:public:is:us-south-1:a/" + testAccountID + "::instance:instance"
+	cases := []struct {
+		name, crn string
+		valid     bool
+	}{
+		{"owned zonal instance", valid, true},
+		{"regional location", strings.Replace(valid, "us-south-1", "us-south", 1), false},
+		{"other zone", strings.Replace(valid, "us-south-1", "us-south-2", 1), false},
+		{"other region", strings.Replace(valid, "us-south-1", "eu-de-1", 1), false},
+		{"other account", strings.Replace(valid, testAccountID, strings.Repeat("b", 32), 1), false},
+		{"other service", strings.Replace(valid, ":is:", ":foreign:", 1), false},
+		{"other resource type", strings.Replace(valid, "::instance:", "::volume:", 1), false},
+		{"other instance", strings.Replace(valid, "::instance:instance", "::instance:another", 1), false},
+		{"other namespace", strings.Replace(valid, ":bluemix:", ":foreign:", 1), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, claim, config, mock, tagger := launchFixture(t)
+			vm := matchingInstance(config)
+			vm.CRN = core.StringPtr(tc.crn)
+			for key, value := range ownership.VPCTags(config.ClusterUID, config.ClaimUID, config.ClassUID) {
+				tagger.names = append(tagger.names, key+":"+value)
+			}
+			tagReads := 0
+			tagger.onList = func() { tagReads++ }
+			mock.EXPECT().ListInstancesWithContext(gomock.Any(), listByName(config.Name)).Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{*vm}}, nil, nil)
+			mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(vm, nil, nil)
+			actual, err := provider.VerifyLaunchInstance(context.Background(), claim)
+			if tc.valid {
+				require.NoError(t, err)
+				require.Equal(t, vm, actual)
+				require.Equal(t, 1, tagReads)
+			} else {
+				require.ErrorContains(t, err, "CRN")
+				require.Nil(t, actual)
+				require.Zero(t, tagReads)
+			}
+		})
+	}
+}
+
+func TestLaunchRetargetingAndFutureStateNeverReachCloud(t *testing.T) {
+	provider, claim, config, _, _ := launchFixture(t)
+	foreign := claim.DeepCopy()
+	foreign.Status.ProviderID = "ibm:///us-south/foreign"
+	_, err := provider.VerifyLaunchInstance(context.Background(), foreign)
+	require.Error(t, err)
+	config.Version = 2
+	encoded, err := json.Marshal(config)
+	require.NoError(t, err)
+	claim.Annotations[LaunchAnnotation] = string(encoded)
+	_, err = decodeLaunch(string(encoded))
+	require.Error(t, err)
+	require.NoError(t, provider.kubeClient.Update(context.Background(), claim))
+	_, err = provider.VerifyLaunchInstance(context.Background(), claim)
+	require.Error(t, err)
+}
+
+func legacyDeleteFixture(t *testing.T) (*VPCInstanceProvider, *corev1.Node, *vpcv1.Instance, *mockibm.MockvpcClientInterface) {
+	t.Helper()
+	provider, claim, _, mock, _ := launchFixture(t)
+	delete(claim.Annotations, LaunchAnnotation)
+	claim.Annotations[ownership.AccountIDAnnotation] = testAccountID
+	claim.Status.ProviderID = "ibm:///us-south/instance"
+	require.NoError(t, provider.kubeClient.Update(context.Background(), claim))
+	vm := &vpcv1.Instance{ID: core.StringPtr("instance"), Name: core.StringPtr(claim.Name), CRN: core.StringPtr("crn:v1:bluemix:public:is:us-south-1:a/" + testAccountID + "::instance:instance")}
+	node := &corev1.Node{ObjectMeta: *claim.ObjectMeta.DeepCopy(), Spec: corev1.NodeSpec{ProviderID: claim.Status.ProviderID}}
+	return provider, node, vm, mock
+}
+
+func TestDeleteLegacyInstanceWithoutLaunchCheckpoint(t *testing.T) {
+	provider, node, vm, mock := legacyDeleteFixture(t)
+	gomock.InOrder(
+		mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(vm, nil, nil),
+		mock.EXPECT().DeleteInstanceWithContext(gomock.Any(), gomock.Cond(func(options *vpcv1.DeleteInstanceOptions) bool { return *options.ID == "instance" })).Return(nil, nil),
+		mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(nil, nil, &ibm.IBMError{StatusCode: 404}),
+	)
+	err := provider.Delete(context.Background(), node)
+	require.True(t, cloudprovider.IsNodeClaimNotFoundError(err), "got %v", err)
+}
+
+func TestDeleteLegacyInstanceAlreadyGone(t *testing.T) {
+	provider, node, _, mock := legacyDeleteFixture(t)
+	mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(nil, nil, &ibm.IBMError{StatusCode: 404})
+	err := provider.Delete(context.Background(), node)
+	require.True(t, cloudprovider.IsNodeClaimNotFoundError(err), "got %v", err)
+}
+
+func TestDeleteLegacyInstanceRefusesUnprovenTargets(t *testing.T) {
+	for name, mutate := range map[string]func(*vpcv1.Instance){
+		"other name": func(vm *vpcv1.Instance) { vm.Name = core.StringPtr("other-claim") },
+		"foreign account": func(vm *vpcv1.Instance) {
+			vm.CRN = core.StringPtr("crn:v1:bluemix:public:is:us-south-1:a/" + strings.Repeat("b", 32) + "::instance:instance")
+		},
+		"other instance": func(vm *vpcv1.Instance) { vm.ID = core.StringPtr("other") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider, node, vm, mock := legacyDeleteFixture(t)
+			mutate(vm)
+			mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(vm, nil, nil)
+			err := provider.Delete(context.Background(), node)
+			require.Error(t, err)
+			require.False(t, cloudprovider.IsNodeClaimNotFoundError(err))
+		})
+	}
+}
+
+func TestDeleteLegacyInstanceTransientLookupIsNotNotFound(t *testing.T) {
+	provider, node, _, mock := legacyDeleteFixture(t)
+	mock.EXPECT().GetInstanceWithContext(gomock.Any(), getInstance("instance")).Return(nil, nil, &ibm.IBMError{StatusCode: 503})
+	err := provider.Delete(context.Background(), node)
+	require.Error(t, err)
+	require.False(t, cloudprovider.IsNodeClaimNotFoundError(err))
 }

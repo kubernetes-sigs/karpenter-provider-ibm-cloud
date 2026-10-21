@@ -25,7 +25,6 @@ import (
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	ibmclient "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
@@ -47,6 +46,7 @@ type LoadBalancerVPCClient interface {
 type LoadBalancerProvider struct {
 	vpcClient LoadBalancerVPCClient
 	logger    logr.Logger
+	accountID func(context.Context) (string, error)
 }
 
 // NewLoadBalancerProvider creates a new load balancer provider instance
@@ -62,6 +62,7 @@ func NewLoadBalancerProviderWithIBMClient(vpcClient *ibmclient.VPCClient, logger
 	return &LoadBalancerProvider{
 		vpcClient: vpcClient,
 		logger:    logger.WithName("loadbalancer"),
+		accountID: vpcClient.ResolveAccountID,
 	}
 }
 
@@ -79,7 +80,7 @@ func (p *LoadBalancerProvider) RegisterInstance(ctx context.Context, nodeClass *
 	for i, target := range targets {
 		targetLogger := logger.WithValues("loadBalancerID", target.LoadBalancerID, "poolName", target.PoolName, "port", target.Port)
 
-		if err := p.registerInstanceInTarget(ctx, target, instanceID, instanceIP, targetLogger); err != nil {
+		if err := p.registerInstanceInTarget(ctx, target, instanceID, instanceIP, targetLogger, nodeClass.Spec.LoadBalancerIntegration.RegistrationTimeout); err != nil {
 			errs = append(errs, err)
 			targetLogger.Error(err, "Failed to register instance in target group")
 			continue
@@ -134,43 +135,35 @@ func (p *LoadBalancerProvider) DeregisterInstance(ctx context.Context, nodeClass
 }
 
 // registerInstanceInTarget registers an instance in a specific load balancer target group
-func (p *LoadBalancerProvider) registerInstanceInTarget(ctx context.Context, target v1alpha1.LoadBalancerTarget, instanceID string, instanceIP string, logger logr.Logger) error {
+func (p *LoadBalancerProvider) registerInstanceInTarget(ctx context.Context, target v1alpha1.LoadBalancerTarget, instanceID string, instanceIP string, logger logr.Logger, timeout *int32) error {
 	// Find the pool by name
 	poolID, err := p.findPoolByName(ctx, target.LoadBalancerID, target.PoolName)
 	if err != nil {
 		return fmt.Errorf("finding pool by name: %w", err)
 	}
 
-	// Create target prototype
-	targetPrototype := &vpcv1.LoadBalancerPoolMemberTargetPrototypeInstanceIdentity{
-		ID: &instanceID,
-	}
-
-	// Set weight with default value
-	weight := int64(50)
-	if target.Weight != nil {
-		weight = int64(*target.Weight)
-	}
-
-	// Create the pool member
-	member, err := p.vpcClient.CreateLoadBalancerPoolMember(
-		ctx,
-		target.LoadBalancerID,
-		poolID,
-		targetPrototype,
-		int64(target.Port),
-		weight,
-	)
+	member, err := p.findMember(ctx, target.LoadBalancerID, poolID, instanceID, int64(target.Port))
 	if err != nil {
-		return fmt.Errorf("creating load balancer pool member: %w", err)
+		return err
 	}
-
-	logger.Info("Created load balancer pool member", "memberID", *member.ID, "weight", weight)
-
-	// Wait for registration to complete if timeout is specified
-	if nodeClass := getNodeClassFromContext(ctx); nodeClass != nil && nodeClass.Spec.LoadBalancerIntegration.RegistrationTimeout != nil {
-		timeout := time.Duration(*nodeClass.Spec.LoadBalancerIntegration.RegistrationTimeout) * time.Second
-		return p.waitForMemberHealthy(ctx, target.LoadBalancerID, poolID, *member.ID, timeout, logger)
+	if healthErr := NewHealthCheckManager(p.vpcClient, p.logger).ConfigureHealthCheck(ctx, target, poolID); healthErr != nil {
+		return healthErr
+	}
+	if member == nil {
+		weight := int64(50)
+		if target.Weight != nil {
+			weight = int64(*target.Weight)
+		}
+		member, err = p.vpcClient.CreateLoadBalancerPoolMember(ctx, target.LoadBalancerID, poolID, &vpcv1.LoadBalancerPoolMemberTargetPrototypeInstanceIdentity{ID: &instanceID}, int64(target.Port), weight)
+		if err != nil {
+			return fmt.Errorf("creating load balancer pool member: %w", err)
+		}
+	}
+	if member == nil || member.ID == nil {
+		return fmt.Errorf("load balancer member has no identity")
+	}
+	if timeout != nil {
+		return p.waitForMemberHealthy(ctx, target.LoadBalancerID, poolID, *member.ID, time.Duration(*timeout)*time.Second, logger)
 	}
 
 	return nil
@@ -212,10 +205,20 @@ func (p *LoadBalancerProvider) findPoolByName(ctx context.Context, loadBalancerI
 		return "", fmt.Errorf("listing load balancer pools: %w", err)
 	}
 
+	if pools == nil {
+		return "", fmt.Errorf("load balancer pool collection is missing")
+	}
+	found := ""
 	for _, pool := range pools.Pools {
 		if pool.Name != nil && *pool.Name == poolName {
-			return *pool.ID, nil
+			if pool.ID == nil || found != "" {
+				return "", fmt.Errorf("load balancer pool identity is missing or ambiguous")
+			}
+			found = *pool.ID
 		}
+	}
+	if found != "" {
+		return found, nil
 	}
 
 	return "", fmt.Errorf("pool with name %s not found in load balancer %s", poolName, loadBalancerID)
@@ -253,24 +256,17 @@ func (p *LoadBalancerProvider) waitForMemberHealthy(ctx context.Context, loadBal
 	defer ticker.Stop()
 
 	for {
+		member, err := p.vpcClient.GetLoadBalancerPoolMember(timeoutCtx, loadBalancerID, poolID, memberID)
+		if err == nil && member != nil && member.Health != nil && strings.EqualFold(*member.Health, "ok") {
+			return nil
+		}
 		select {
 		case <-timeoutCtx.Done():
-			return fmt.Errorf("timeout waiting for pool member %s to become healthy", memberID)
+			return fmt.Errorf("waiting for pool member %s health: %w", memberID, timeoutCtx.Err())
 		case <-ticker.C:
-			member, err := p.vpcClient.GetLoadBalancerPoolMember(timeoutCtx, loadBalancerID, poolID, memberID)
-			if err != nil {
-				logger.Error(err, "Failed to get pool member status")
-				continue
-			}
-
-			if member.Health != nil && strings.EqualFold(*member.Health, "ok") {
-				logger.Info("Found that pool member is healthy", "memberID", memberID, "health", *member.Health)
-				return nil
-			}
-
-			logger.Info("Found that pool member is not yet healthy", "memberID", memberID, "health", getStringValue(member.Health))
 		}
 	}
+
 }
 
 // ValidateLoadBalancerConfiguration validates the load balancer configuration
@@ -293,22 +289,5 @@ func (p *LoadBalancerProvider) ValidateLoadBalancerConfiguration(ctx context.Con
 		}
 	}
 
-	return nil
-}
-
-// Helper functions
-
-func getStringValue(ptr *string) string {
-	if ptr == nil {
-		return "<nil>"
-	}
-	return *ptr
-}
-
-// getNodeClassFromContext retrieves the node class from context if available
-func getNodeClassFromContext(ctx context.Context) *v1alpha1.IBMNodeClass {
-	if nc, ok := ctx.Value(types.NamespacedName{}).(v1alpha1.IBMNodeClass); ok {
-		return &nc
-	}
 	return nil
 }

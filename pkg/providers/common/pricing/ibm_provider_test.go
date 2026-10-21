@@ -1208,7 +1208,7 @@ func TestFetchPricingFromAPI_WithBatcher(t *testing.T) {
 	t.Run("batcher returns valid pricing data", func(t *testing.T) {
 		// Create a provider with a batcher using the fake pricing API
 		fakePricing := fakedata.NewPricingAPI()
-		fakePricing.PricingByID["test-catalog-id"] = fakedata.NewPricingGet(0.15)
+		fakePricing.PricingByID["test-catalog-id"] = testCompositeQuote(0.15, 0)
 
 		provider := &IBMPricingProvider{
 			pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),
@@ -1247,7 +1247,7 @@ func TestFetchPricingFromAPI_WithBatcher(t *testing.T) {
 
 	t.Run("batcher deduplicates concurrent requests", func(t *testing.T) {
 		fakePricing := fakedata.NewPricingAPI()
-		fakePricing.PricingByID["shared-id"] = fakedata.NewPricingGet(0.25)
+		fakePricing.PricingByID["shared-id"] = testCompositeQuote(0.25, 0)
 
 		provider := &IBMPricingProvider{
 			pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),

@@ -25,6 +25,7 @@ import (
 
 // Provider defines the interface for managing IBM Cloud instance types
 type Provider interface {
+	Refresh(ctx context.Context) error
 	// Get retrieves a specific instance type by name, If nodeClass is nil, default overhead values will be used.
 	Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error)
 

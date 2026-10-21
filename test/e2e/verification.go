@@ -26,20 +26,54 @@ import (
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/ownership"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
+func (s *E2ETestSuite) verifyOwnedTestInstance(t *testing.T, instance *vpcv1.Instance, claim *karpv1.NodeClaim, class *v1alpha1.IBMNodeClass) {
+	t.Helper()
+	ctx := t.Context()
+	clusterUID, err := ownership.ClusterUID(ctx, s.kubeClient)
+	require.NoError(t, err)
+	require.NotNil(t, instance)
+	require.NotNil(t, instance.ID)
+	require.Equal(t, vpcInstanceID(claim.Status.ProviderID), *instance.ID)
+	require.NotNil(t, instance.Name)
+	require.Equal(t, ownership.InstanceName(clusterUID, string(claim.UID)), *instance.Name)
+	require.NotNil(t, instance.CRN)
+	vpc, err := s.vpcClient()
+	require.NoError(t, err)
+	tags, err := vpc.GetInstanceUserTags(ctx, *instance.CRN)
+	require.NoError(t, err, "Independently read actual instance ownership")
+	for key, expected := range ownership.VPCTags(clusterUID, string(claim.UID), string(class.UID)) {
+		require.Equal(t, expected, tags[key], "Actual VM must belong to the test claim, class and cluster")
+	}
+	var fresh karpv1.NodeClaim
+	require.NoError(t, s.kubeClient.Get(ctx, client.ObjectKeyFromObject(claim), &fresh))
+	require.Equal(t, claim.UID, fresh.UID)
+	require.Equal(t, claim.Status.ProviderID, fresh.Status.ProviderID)
+	require.True(t, fresh.DeletionTimestamp.IsZero())
+}
+
 // verifyPodsScheduledOnCorrectNodes verifies that pods are scheduled on nodes from the expected NodePool
 func (s *E2ETestSuite) verifyPodsScheduledOnCorrectNodes(t *testing.T, deploymentName, namespace, expectedNodePool string) {
 	ctx := context.Background()
-	// Get all pods from the deployment
+	var deployment appsv1.Deployment
+	err := s.kubeClient.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: namespace}, &deployment)
+	require.NoError(t, err, "Should be able to get deployment")
+	require.NotNil(t, deployment.Spec.Selector, "Deployment should have a pod selector")
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	require.NoError(t, err, "Deployment should have a valid pod selector")
+
 	var podList corev1.PodList
-	err := s.kubeClient.List(ctx, &podList, client.InNamespace(namespace), client.MatchingLabels{"app": deploymentName})
+	err = s.kubeClient.List(ctx, &podList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector})
 	require.NoError(t, err, "Should be able to list pods")
 	require.Greater(t, len(podList.Items), 0, "Should have at least one pod")
 

@@ -381,95 +381,81 @@ func TestE2ESecurityGroupDrift_DetectedAndReplaced(t *testing.T) {
 	})
 }
 
-// TestE2ESecurityGroupDrift_DefaultSecurityGroup verifies drift detection when using default VPC security group:
-//  1. Create NodeClass WITHOUT explicit security groups (uses VPC default)
-//  2. Create workload => NodeClaim gets created with the default security group
-//  3. Verify the default security group ID is stored in annotation
-//
-// Note: This test validates that the default security group is properly detected and stored.
-// Drift from default SG requires VPC-level changes which are not simulated in this test.
+// The default group can prevent bootstrap, so verify attachment before node registration.
 func TestE2ESecurityGroupDrift_DefaultSecurityGroup(t *testing.T) {
 	suite := SetupE2ETestSuite(t)
 	testName := fmt.Sprintf("sg-drift-default-%d", time.Now().Unix())
-	t.Logf("Starting default security group drift test: %s", testName)
-
 	suite.WithAutoCleanup(t, testName, func() {
 		ctx := t.Context()
 		defaultGroup := suite.readDriftDefaultSecurityGroup(t)
-
-		// Step 1: Create NodeClass WITHOUT explicit security groups
 		nodeClass := suite.createTestNodeClassWithoutSecurityGroups(t, testName)
 		suite.waitForNodeClassResolved(t, nodeClass.Name)
-		require.Empty(t, nodeClass.Spec.SecurityGroups, "NodeClass must NOT have explicit security groups")
-
-		// Verify Status.ResolvedSecurityGroups is populated with default SG
-		var currentNodeClass v1alpha1.IBMNodeClass
-		err := suite.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClass.Name}, &currentNodeClass)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{defaultGroup}, currentNodeClass.Status.ResolvedSecurityGroups)
-		t.Logf("OK: NodeClass %s ready with resolved SGs: %v", nodeClass.Name, currentNodeClass.Status.ResolvedSecurityGroups)
-
-		// Step 2: Create NodePool and workload to trigger provisioning
-		nodePool := suite.createDriftNodePool(t, testName, nodeClass.Name)
-		t.Logf("OK: Created NodePool %s", nodePool.Name)
-
-		deployment := suite.createTestWorkload(t, testName)
-		suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
-		t.Logf("OK: Workload %s/%s scheduled", deployment.Namespace, deployment.Name)
-
-		// Step 3: Capture the initial READY NodeClaim
-		var originalNC karpv1.NodeClaim
-		var originalName string
-		waitErr := wait.PollUntilContextTimeout(ctx, 10*time.Second, testTimeout, true,
-			func(ctx context.Context) (bool, error) {
-				var nodeClaimList karpv1.NodeClaimList
-				listErr := suite.kubeClient.List(ctx, &nodeClaimList, client.MatchingLabels{
-					"test-name": testName,
-				})
-				if listErr != nil {
-					t.Logf("Error: Failed to list NodeClaims: %v", listErr)
-					return false, listErr
-				}
-				if len(nodeClaimList.Items) == 0 {
-					t.Logf("Waiting: No NodeClaims found yet for test %s", testName)
-					return false, nil
-				}
-				for _, nc := range nodeClaimList.Items {
-					if nc.Labels[karpv1.NodePoolLabelKey] == nodePool.Name && suite.isNodeClaimReady(nc) {
-						originalNC = nc
-						originalName = nc.Name
-						t.Logf("OK: Selected READY NodeClaim %s as original", originalName)
-						return true, nil
-					}
-				}
-				t.Logf("Waiting: NodeClaims exist but none are READY yet")
-				return false, nil
-			})
-		require.NoError(t, waitErr, "Should find a READY NodeClaim")
-
-		// Step 4: Verify default security group annotation was set
-		storedSGs := originalNC.Annotations[v1alpha1.AnnotationIBMNodeClaimSecurityGroups]
-		require.NotEmpty(t, storedSGs, "NodeClaim must have security groups annotation even with default SG")
-		storedSGList := strings.Split(storedSGs, ",")
-		require.ElementsMatch(t, []string{defaultGroup}, storedSGList)
-		require.Len(t, storedSGList, 1, "Default security group should be a single SG")
-		t.Logf("OK: NodeClaim %s using default security group: %s", originalName, storedSGs)
-
-		// Step 5: Verify node is stable (no unexpected drift)
-		time.Sleep(30 * time.Second)
-		var currentNC karpv1.NodeClaim
-		err = suite.kubeClient.Get(ctx, types.NamespacedName{Name: originalName}, &currentNC)
-		require.NoError(t, err, "Failed to get NodeClaim after stability wait")
-
-		// Check that the NodeClaim is NOT drifted
-		for _, cond := range currentNC.Status.Conditions {
-			if cond.Type == "Drifted" && cond.Status == metav1.ConditionTrue {
-				t.Fatalf("FAIL: NodeClaim %s unexpectedly drifted (Reason=%s)", originalName, cond.Reason)
+		require.Empty(t, nodeClass.Spec.SecurityGroups)
+		var currentClass v1alpha1.IBMNodeClass
+		require.NoError(t, suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), &currentClass))
+		require.Equal(t, nodeClass.UID, currentClass.UID)
+		require.ElementsMatch(t, []string{defaultGroup}, currentClass.Status.ResolvedSecurityGroups)
+		pool := suite.createDriftNodePool(t, testName, nodeClass.Name)
+		suite.createTestWorkload(t, testName)
+		var original karpv1.NodeClaim
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
+			var claims karpv1.NodeClaimList
+			if err := suite.kubeClient.List(ctx, &claims, client.MatchingLabels{"test-name": testName, karpv1.NodePoolLabelKey: pool.Name}); err != nil {
+				return false, err
 			}
+			for _, claim := range claims.Items {
+				owned := slices.ContainsFunc(claim.OwnerReferences, func(owner metav1.OwnerReference) bool {
+					return owner.Kind == "NodePool" && owner.UID == pool.UID
+				})
+				if owned && claim.Spec.NodeClassRef != nil && claim.Spec.NodeClassRef.Name == nodeClass.Name &&
+					claim.DeletionTimestamp.IsZero() && claim.StatusConditions().Get(karpv1.ConditionTypeLaunched).IsTrue() {
+					original = claim
+					return true, nil
+				}
+			}
+			return false, nil
+		}), "Default-group test must own a Launched allocation")
+		require.NotEmpty(t, original.UID)
+		require.ElementsMatch(t, []string{defaultGroup}, strings.Split(original.Annotations[v1alpha1.AnnotationIBMNodeClaimSecurityGroups], ","))
+		network, err := suite.vpcClient()
+		require.NoError(t, err)
+		instanceID := vpcInstanceID(original.Status.ProviderID)
+		require.NotEmpty(t, instanceID)
+		instance, err := network.GetInstance(ctx, instanceID)
+		require.NoError(t, err)
+		suite.verifyOwnedTestInstance(t, instance, &original, nodeClass)
+		require.NotNil(t, instance.ID)
+		require.Equal(t, instanceID, *instance.ID)
+		require.NotNil(t, instance.PrimaryNetworkInterface)
+		require.NotNil(t, instance.PrimaryNetworkInterface.ID)
+		nic, _, err := network.GetSDKClient().GetInstanceNetworkInterfaceWithContext(ctx, &vpcv1.GetInstanceNetworkInterfaceOptions{
+			InstanceID: &instanceID, ID: instance.PrimaryNetworkInterface.ID,
+		})
+		require.NoError(t, err, "Read the actual owned VM attachment")
+		require.NotNil(t, nic)
+		require.NotNil(t, nic.ID)
+		require.Equal(t, *instance.PrimaryNetworkInterface.ID, *nic.ID)
+		groups := make([]string, 0, len(nic.SecurityGroups))
+		for _, group := range nic.SecurityGroups {
+			require.NotNil(t, group.ID)
+			groups = append(groups, *group.ID)
 		}
-		t.Logf("OK: NodeClaim %s remains stable with default security group", originalName)
-
-		t.Logf("OK: Default security group drift test completed successfully")
+		require.ElementsMatch(t, []string{defaultGroup}, groups, "Actual attachment must contain exactly the resolved default group")
+		until := time.Now().Add(30 * time.Second)
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, pollInterval, time.Minute, true, func(ctx context.Context) (bool, error) {
+			var current karpv1.NodeClaim
+			if err := suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(&original), &current); err != nil {
+				return false, err
+			}
+			if current.UID != original.UID || !current.DeletionTimestamp.IsZero() || current.Status.ProviderID != original.Status.ProviderID {
+				return false, fmt.Errorf("default-group claim identity changed during observation")
+			}
+			if current.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue() {
+				return false, fmt.Errorf("default-group claim unexpectedly drifted")
+			}
+			return !time.Now().Before(until), nil
+		}))
+		t.Logf("Verified default-group selection and actual NIC attachment; no policy change or bootstrap assertion")
 	})
 }
 

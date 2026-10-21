@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,6 +68,21 @@ func TestExtractVersionFromImage(t *testing.T) {
 			image:    "registry.example.com:5000/myimage:2.0.0",
 			expected: "v2.0.0",
 		},
+		{
+			name:     "registry port without tag",
+			image:    "registry.example.com:5000/myimage",
+			expected: "latest",
+		},
+		{
+			name:     "tag with pinned digest",
+			image:    "quay.io/cilium/cilium:v1.18.0@sha256:abcdef",
+			expected: "v1.18.0",
+		},
+		{
+			name:     "digest without tag",
+			image:    "quay.io/cilium/cilium@sha256:abcdef",
+			expected: "latest",
+		},
 	}
 
 	for _, tt := range tests {
@@ -75,6 +91,56 @@ func TestExtractVersionFromImage(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestDetectedCNIImagesRemainCompatibleWithBootstrap(t *testing.T) {
+	cases := []struct {
+		name, namespace, daemonSet, image, plugin, version string
+	}{
+		{"calico classic", "kube-system", "calico-node", "docker.io/calico/node:v3.29.1", "calico", "v3.29.1"},
+		{"calico operator", "calico-system", "calico-node", "docker.io/calico/node:v3.30.2", "calico", "v3.30.2"},
+		{"flannel current", "kube-flannel", "kube-flannel-ds", "docker.io/flannel/flannel:v0.27.0", "flannel", "v0.27.0"},
+		{"flannel legacy", "kube-system", "kube-flannel-ds", "docker.io/flannel/flannel:v0.26.0", "flannel", "v0.26.0"},
+		{"weave", "kube-system", "weave-net", "weaveworks/weave-kube:2.8.1", "weave", "v2.8.1"},
+		{"weave empty containers", "kube-system", "weave-net", "", "weave", "unknown"},
+		{"cilium empty containers", "kube-system", "cilium", "", "cilium", "unknown"},
+		{"cilium latest", "kube-system", "cilium", "quay.io/cilium/cilium:latest", "cilium", "latest"},
+		{"cilium digest", "kube-system", "cilium", "quay.io/cilium/cilium:v1.18.0@sha256:abcdef", "cilium", "v1.18.0"},
+		{"cilium custom tag", "kube-system", "cilium", "quay.io/cilium/cilium:vendor_build-2", "cilium", "vendor_build-2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: tc.daemonSet, Namespace: tc.namespace}}
+			if tc.image != "" {
+				ds.Spec.Template.Spec.Containers = []corev1.Container{{Name: "agent", Image: tc.image}}
+			}
+			provider := NewVPCBootstrapProvider(nil, fake.NewClientset(ds), nil)
+			plugin, version, err := provider.detectCNIPluginAndVersion(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tc.plugin, plugin)
+			require.Equal(t, tc.version, version)
+			options := safeBootstrapOptions()
+			options.CNIPlugin, options.CNIVersion = plugin, version
+			script, err := provider.generateCloudInitScript(context.Background(), options)
+			require.NoError(t, err)
+			require.Contains(t, script, "CNI_PLUGIN='"+plugin+"'")
+			require.Contains(t, script, "CNI_VERSION='"+version+"'")
+			require.Contains(t, script, `CNI_PLUGINS_VERSION="v1.4.0"`)
+			require.NotContains(t, script, "api.github.com")
+		})
+	}
+	t.Run("calico config without image", func(t *testing.T) {
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "calico-config", Namespace: "kube-system"}, Data: map[string]string{"cni_network_config": "{}"}}
+		provider := NewVPCBootstrapProvider(nil, fake.NewClientset(cm), nil)
+		plugin, version, err := provider.detectCNIPluginAndVersion(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, "calico", plugin)
+		require.Equal(t, "unknown", version)
+		options := safeBootstrapOptions()
+		options.CNIPlugin, options.CNIVersion = plugin, version
+		_, err = provider.generateCloudInitScript(context.Background(), options)
+		require.NoError(t, err)
+	})
 }
 
 func TestDetectCNIPluginAndVersion(t *testing.T) {

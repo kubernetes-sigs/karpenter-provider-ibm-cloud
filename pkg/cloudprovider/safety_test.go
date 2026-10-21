@@ -38,7 +38,7 @@ import (
 )
 
 type accountTargetProvider struct {
-	commonTypes.InstanceProvider
+	commonTypes.VPCInstanceProvider
 	node    *corev1.Node
 	err     error
 	account string
@@ -173,4 +173,19 @@ func TestListOmitsClaimlessAbsentNodeInsteadOfFailing(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claims, 1)
 	require.Equal(t, live, claims[0].Status.ProviderID)
+}
+
+func (p *listProvider) ListFresh(ctx context.Context, _ []*karpv1.NodeClaim, nodes []*corev1.Node) ([]*corev1.Node, error) {
+	var live []*corev1.Node
+	for _, node := range nodes {
+		found, err := p.GetFresh(ctx, node.Spec.ProviderID)
+		if karpcloud.IsNodeClaimNotFoundError(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		live = append(live, found)
+	}
+	return live, nil
 }

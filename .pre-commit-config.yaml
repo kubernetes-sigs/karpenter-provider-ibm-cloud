@@ -1,3 +1,8 @@
+# golangci-lint fails on a stdlib newer than the Go it was built with, and
+# pre-commit keeps a system-Go build across Go upgrades. Pinning makes it
+# build and run with this Go instead. Keep it on the go.mod minor version.
+default_language_version:
+  golang: 1.26.10
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -42,12 +47,18 @@ repos:
         pass_filenames: false
         stages: [pre-push]
   - repo: https://github.com/golangci/golangci-lint
-    rev: v2.10.1
+    rev: v2.15.0
     hooks:
       - id: golangci-lint
         entry: golangci-lint run
         args: [--timeout=5m]
         stages: [pre-commit]
+      - id: golangci-lint
+        alias: golangci-lint-e2e
+        name: golangci-lint (e2e)
+        entry: golangci-lint run
+        args: [--timeout=5m, --build-tags=e2e, ./test/e2e/...]
+        stages: [manual]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:

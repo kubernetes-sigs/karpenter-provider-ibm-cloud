@@ -227,3 +227,28 @@ tests:
               summary: High CPU usage detected
               description: Karpenter IBM Cloud Provider CPU usage is 90%
               runbook_url: *runbook
+
+  - name: Controller target disappearance alerts
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KarpenterIBMControllerDown
+        exp_alerts:
+          - exp_labels:
+              job: audit-karpenter-ibm
+              severity: critical
+              service: karpenter-ibm
+            exp_annotations:
+              summary: Karpenter IBM Cloud Provider controller is down
+              description: The Karpenter IBM Cloud Provider controller has been down for more than 5m
+              runbook_url: *runbook
+  - name: Healthy controller target suppresses absence alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="audit-karpenter-ibm"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: KarpenterIBMControllerDown
+        exp_alerts: []

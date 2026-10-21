@@ -36,13 +36,15 @@ import (
 
 const defaultPageLimit = 100
 
-//go:generate go run go.uber.org/mock/mockgen@latest -source=./vpc.go -destination=./mock/vpc_generated.go -package=mock -exclude_interfaces=globalTaggingAPI
+//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -source=./vpc.go -destination=./mock/vpc_generated.go -package=mock -exclude_interfaces=globalTaggingAPI
 
 // vpcClientInterface defines the interface for the VPC client
 type vpcClientInterface interface {
 	CreateInstanceWithContext(context.Context, *vpcv1.CreateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error)
 	DeleteInstanceWithContext(context.Context, *vpcv1.DeleteInstanceOptions) (*core.DetailedResponse, error)
 	GetInstanceWithContext(context.Context, *vpcv1.GetInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error)
+	GetInstanceNetworkInterfaceWithContext(context.Context, *vpcv1.GetInstanceNetworkInterfaceOptions) (*vpcv1.NetworkInterface, *core.DetailedResponse, error)
+	ListInstanceNetworkInterfaceFloatingIpsWithContext(context.Context, *vpcv1.ListInstanceNetworkInterfaceFloatingIpsOptions) (*vpcv1.FloatingIPUnpaginatedCollection, *core.DetailedResponse, error)
 	ListInstancesWithContext(context.Context, *vpcv1.ListInstancesOptions) (*vpcv1.InstanceCollection, *core.DetailedResponse, error)
 	UpdateInstanceWithContext(context.Context, *vpcv1.UpdateInstanceOptions) (*vpcv1.Instance, *core.DetailedResponse, error)
 	ListSubnetsWithContext(context.Context, *vpcv1.ListSubnetsOptions) (*vpcv1.SubnetCollection, *core.DetailedResponse, error)
@@ -78,6 +80,7 @@ type vpcClientInterface interface {
 
 type globalTaggingAPI interface {
 	AttachTagWithContext(context.Context, *globaltaggingv1.AttachTagOptions) (*globaltaggingv1.TagResults, *core.DetailedResponse, error)
+	ListTagsWithContext(context.Context, *globaltaggingv1.ListTagsOptions) (*globaltaggingv1.TagList, *core.DetailedResponse, error)
 }
 
 // VPCClient handles interactions with the IBM Cloud VPC API
@@ -119,12 +122,12 @@ func NewVPCClient(baseURL, authType, apiKey, region, resourceGroupID string) (*V
 		return nil, fmt.Errorf("creating VPC client: %w", err)
 	}
 
-	client.Service.SetHTTPClient(httpclient.InstrumentHTTPClient(client.Service.GetHTTPClient(), region))
+	client.Service.SetHTTPClient(httpclient.BoundedHTTPClient(client.Service.GetHTTPClient(), region))
 	tagging, err := globaltaggingv1.NewGlobalTaggingV1(&globaltaggingv1.GlobalTaggingV1Options{Authenticator: authenticator})
 	if err != nil {
 		return nil, fmt.Errorf("creating tagging client: %w", err)
 	}
-	tagging.Service.SetHTTPClient(httpclient.InstrumentHTTPClient(tagging.Service.GetHTTPClient(), "global"))
+	tagging.Service.SetHTTPClient(httpclient.BoundedHTTPClient(tagging.Service.GetHTTPClient(), "global"))
 
 	return &VPCClient{
 		baseURL:         baseURL,

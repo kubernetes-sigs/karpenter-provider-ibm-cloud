@@ -182,3 +182,137 @@ func TestCleanupPolicyDefaults(t *testing.T) {
 	require.False(t, controller.isCleanupEnabled(nodeClass))
 	require.Equal(t, 7*time.Minute, controller.getEmptyPoolTTL(nodeClass))
 }
+
+func cleanupReservation(t *testing.T, kubeClient client.Client, cloud *cleanupCloud) *corev1.ConfigMap {
+	t.Helper()
+	key := workerpool.ReservationKey("cluster", "owned-pool", "karpenter")
+	reservation := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace, UID: "cleanup-uid",
+		Labels: map[string]string{ownership.ManagedLabel: "true", ownership.ProviderLabel: "iks", ownership.ClusterUIDLabel: "cluster-uid", ownership.NodeClassUIDLabel: "class-uid"}},
+		Data: map[string]string{workerpool.ReservationVersionKey: "1", workerpool.ReservationMinimumWriterVersionKey: "1", "phase": "deleting", "cleanup": "true", "clusterID": "cluster", "poolID": "pool-id", "accountID": cloud.GetAccountID(), "region": cloud.GetRegion()}}
+	require.NoError(t, kubeClient.Create(context.Background(), reservation))
+	return reservation
+}
+
+func TestPoolCleanupCheckpointRetainsUnsupportedAndForeignState(t *testing.T) {
+	for _, scenario := range []string{"future version", "future writer", "unknown field", "bad version", "writer without version", "foreign cluster", "foreign class", "foreign account", "foreign region", "foreign cloud cluster", "foreign pool", "claim-owned", "owner reference"} {
+		t.Run(scenario, func(t *testing.T) {
+			controller, kubeClient, cloud, nodeClass := cleanupFixture(t)
+			reservation := cleanupReservation(t, kubeClient, cloud)
+			switch scenario {
+			case "future version":
+				reservation.Data[workerpool.ReservationVersionKey] = "2"
+			case "future writer":
+				reservation.Data[workerpool.ReservationMinimumWriterVersionKey] = "2"
+			case "unknown field":
+				reservation.Data["futureBehavior"] = "delete-shared-pool"
+			case "bad version":
+				reservation.Data[workerpool.ReservationVersionKey] = "01"
+			case "writer without version":
+				delete(reservation.Data, workerpool.ReservationVersionKey)
+			case "foreign cluster":
+				reservation.Labels[ownership.ClusterUIDLabel] = "another-cluster"
+			case "foreign class":
+				reservation.Labels[ownership.NodeClassUIDLabel] = "another-class"
+			case "foreign account":
+				reservation.Data["accountID"] = "abcdef0123456789abcdef0123456789"
+			case "foreign region":
+				reservation.Data["region"] = "eu-de"
+			case "foreign cloud cluster":
+				reservation.Data["clusterID"] = "another-cloud-cluster"
+			case "foreign pool":
+				reservation.Data["poolID"] = "another-pool"
+			case "claim-owned":
+				reservation.Labels[ownership.ClaimUIDLabel] = "claim-uid"
+			case "owner reference":
+				reservation.OwnerReferences = []metav1.OwnerReference{{APIVersion: "karpenter.sh/v1", Kind: "NodeClaim", Name: "claim", UID: "claim-uid"}}
+			}
+			require.NoError(t, kubeClient.Update(context.Background(), reservation))
+			require.Error(t, controller.cleanupEmptyPools(context.Background(), cloud, "cluster", nodeClass))
+			require.Empty(t, cloud.deleteCalls)
+			require.Zero(t, cloud.getCalls)
+			require.NoError(t, kubeClient.Get(context.Background(), client.ObjectKeyFromObject(reservation), &corev1.ConfigMap{}))
+		})
+	}
+}
+
+func TestPoolCleanupVersionlessCheckpointMigratesOnlyAfterValidation(t *testing.T) {
+	controller, kubeClient, cloud, nodeClass := cleanupFixture(t)
+	reservation := cleanupReservation(t, kubeClient, cloud)
+	delete(reservation.Data, workerpool.ReservationVersionKey)
+	delete(reservation.Data, workerpool.ReservationMinimumWriterVersionKey)
+	require.NoError(t, kubeClient.Update(context.Background(), reservation))
+	require.NoError(t, controller.cleanupEmptyPools(context.Background(), cloud, "cluster", nodeClass))
+	require.Equal(t, []string{"pool-id"}, cloud.deleteCalls)
+	require.NoError(t, kubeClient.Get(context.Background(), client.ObjectKeyFromObject(reservation), reservation))
+	require.Equal(t, "1", reservation.Data[workerpool.ReservationVersionKey])
+	require.Equal(t, "1", reservation.Data[workerpool.ReservationMinimumWriterVersionKey])
+	require.NoError(t, controller.releaseDeletedReservations(context.Background(), cloud))
+	require.True(t, client.IgnoreNotFound(kubeClient.Get(context.Background(), client.ObjectKeyFromObject(reservation), &corev1.ConfigMap{})) == nil)
+}
+
+func TestPoolCleanupChangedCheckpointPreventsCloudDeletion(t *testing.T) {
+	controller, kubeClient, cloud, nodeClass := cleanupFixture(t)
+	cloud.onGet = func(call int) {
+		if call != 2 {
+			return
+		}
+		key := workerpool.ReservationKey("cluster", "owned-pool", "karpenter")
+		reservation := &corev1.ConfigMap{}
+		require.NoError(t, kubeClient.Get(context.Background(), key, reservation))
+		reservation.Data[workerpool.ReservationVersionKey] = "2"
+		require.NoError(t, kubeClient.Update(context.Background(), reservation))
+	}
+	require.Error(t, controller.cleanupEmptyPools(context.Background(), cloud, "cluster", nodeClass))
+	require.Empty(t, cloud.deleteCalls)
+	require.Equal(t, 2, cloud.getCalls)
+}
+
+func TestPoolCleanupReleaseRetainsUnsupportedOrForeignCheckpoint(t *testing.T) {
+	for _, scenario := range []string{"future version", "unknown field", "foreign cluster", "foreign account", "foreign owner"} {
+		t.Run(scenario, func(t *testing.T) {
+			controller, kubeClient, cloud, _ := cleanupFixture(t)
+			reservation := cleanupReservation(t, kubeClient, cloud)
+			switch scenario {
+			case "future version":
+				reservation.Data[workerpool.ReservationVersionKey] = "2"
+			case "unknown field":
+				reservation.Data["unknown"] = "value"
+			case "foreign cluster":
+				reservation.Labels[ownership.ClusterUIDLabel] = "foreign-cluster"
+			case "foreign account":
+				reservation.Data["accountID"] = "abcdef0123456789abcdef0123456789"
+			case "foreign owner":
+				reservation.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "Namespace", Name: "foreign", UID: "foreign"}}
+			}
+			require.NoError(t, kubeClient.Update(context.Background(), reservation))
+			cloud.pool = nil
+			err := controller.releaseDeletedReservations(context.Background(), cloud)
+			if scenario == "foreign cluster" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			require.Zero(t, cloud.getCalls)
+			require.NoError(t, kubeClient.Get(context.Background(), client.ObjectKeyFromObject(reservation), &corev1.ConfigMap{}))
+		})
+	}
+}
+
+func TestPoolCleanupRejectsUnverifiedSDKTarget(t *testing.T) {
+	for _, mismatchedAccount := range []bool{false, true} {
+		_, kubeClient, cloud, nodeClass := cleanupFixture(t)
+		account, region := cloud.GetAccountID(), cloud.GetRegion()
+		if mismatchedAccount {
+			account = "abcdef0123456789abcdef0123456789"
+		} else {
+			region = "eu-de"
+		}
+		_, err := workerpool.TryDeleteEmptyPool(context.Background(), kubeClient, kubeClient, cloud, "cluster", "cluster-uid", string(nodeClass.UID), "karpenter", cloud.pool, account, region)
+		require.Error(t, err)
+		require.Zero(t, cloud.getCalls)
+		require.Empty(t, cloud.deleteCalls)
+		reservations := &corev1.ConfigMapList{}
+		require.NoError(t, kubeClient.List(context.Background(), reservations))
+		require.Empty(t, reservations.Items)
+	}
+}

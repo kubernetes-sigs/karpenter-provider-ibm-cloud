@@ -127,7 +127,7 @@ func TestBlockDeviceMappingValidation(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "No root volume marked",
+			name: "Data volumes retain default root",
 			blockDeviceMappings: []BlockDeviceMapping{
 				{
 					RootVolume: false,
@@ -136,8 +136,7 @@ func TestBlockDeviceMappingValidation(t *testing.T) {
 					},
 				},
 			},
-			expectError:   true,
-			errorContains: "no root volume marked",
+			expectError: false,
 		},
 		{
 			name: "Invalid volume capacity (too large)",

@@ -262,7 +262,11 @@ func (s *E2ETestSuite) CreateNodeClassFromConfig(t *testing.T, config NodeClassC
 	}
 
 	// Build labels
-	labels := make(map[string]string)
+	labels := map[string]string{
+		"test":       "e2e",
+		"test-name":  name,
+		"created-by": "karpenter-e2e",
+	}
 	if config.Labels != nil {
 		for k, v := range config.Labels {
 			labels[k] = v
@@ -364,7 +368,7 @@ func (s *E2ETestSuite) CreateNodePoolFromConfig(t *testing.T, config NodePoolCon
 	if config.ExpireAfter != nil {
 		expireAfter = *config.ExpireAfter
 	} else {
-		expireAfter = karpv1.MustParseNillableDuration("5m")
+		expireAfter = karpv1.MustParseNillableDuration("Never")
 	}
 
 	// Build template
@@ -424,7 +428,7 @@ func (s *E2ETestSuite) CreateNodePoolFromConfig(t *testing.T, config NodePoolCon
 }
 
 // CreateWorkloadFromConfig creates a workload using the provided configuration
-func (s *E2ETestSuite) CreateWorkloadFromConfig(t *testing.T, config WorkloadConfig) {
+func (s *E2ETestSuite) CreateWorkloadFromConfig(t *testing.T, config WorkloadConfig) *appsv1.Deployment {
 	// Defaults
 	if config.Name == "" {
 		config.Name = fmt.Sprintf("e2e-test-%d-workload", time.Now().Unix())
@@ -438,16 +442,15 @@ func (s *E2ETestSuite) CreateWorkloadFromConfig(t *testing.T, config WorkloadCon
 	if config.Replicas == 0 {
 		config.Replicas = 3
 	}
-
-	// Parse resource requirements
-	cpuRequest := resource.MustParse(config.CPURequest)
 	if config.CPURequest == "" {
-		cpuRequest = resource.MustParse("1000m")
+		config.CPURequest = "1000m"
 	}
-	memoryRequest := resource.MustParse(config.MemoryRequest)
 	if config.MemoryRequest == "" {
-		memoryRequest = resource.MustParse("1Gi")
+		config.MemoryRequest = "1Gi"
 	}
+
+	cpuRequest := resource.MustParse(config.CPURequest)
+	memoryRequest := resource.MustParse(config.MemoryRequest)
 
 	cpuLimit := cpuRequest
 	if config.CPULimit != "" {
@@ -491,7 +494,7 @@ func (s *E2ETestSuite) CreateWorkloadFromConfig(t *testing.T, config WorkloadCon
 	}
 
 	// Build deployment
-	s.createDeployment(t, config.Name, config.Namespace, config.Replicas,
+	return s.createDeployment(t, config.Name, config.Namespace, config.Replicas,
 		config.Image, labels, config.NodeSelector, config.Tolerations,
 		cpuRequest, memoryRequest, cpuLimit, memoryLimit,
 		affinity, config.TopologySpread)
@@ -501,7 +504,7 @@ func (s *E2ETestSuite) CreateWorkloadFromConfig(t *testing.T, config WorkloadCon
 func (s *E2ETestSuite) createDeployment(t *testing.T, name, namespace string, replicas int32,
 	image string, labels, nodeSelector map[string]string, tolerations []corev1.Toleration,
 	cpuRequest, memoryRequest, cpuLimit, memoryLimit resource.Quantity,
-	affinity *corev1.Affinity, topologySpread []corev1.TopologySpreadConstraint) {
+	affinity *corev1.Affinity, topologySpread []corev1.TopologySpreadConstraint) *appsv1.Deployment {
 
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -549,4 +552,5 @@ func (s *E2ETestSuite) createDeployment(t *testing.T, name, namespace string, re
 	err := s.kubeClient.Create(context.Background(), deployment)
 	require.NoError(t, err)
 	t.Logf("Created workload deployment: %s/%s", namespace, name)
+	return deployment
 }

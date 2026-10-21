@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -38,14 +39,19 @@ import (
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/loadbalancer"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/instance"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/ownership"
 )
 
 // LoadBalancerProviderInterface defines the interface for load balancer operations
 type LoadBalancerProviderInterface interface {
-	RegisterInstance(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass, instanceID, instanceIP string) error
-	DeregisterInstance(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass, instanceID string) error
-	ValidateLoadBalancerConfiguration(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) error
+	VerifyAccount(context.Context, string) error
+	ResolveTargets(context.Context, *v1alpha1.IBMNodeClass, string) ([]loadbalancer.ResolvedTarget, error)
+	RegisterTargets(context.Context, *loadbalancer.Snapshot) error
+	DeregisterTargets(context.Context, *loadbalancer.Snapshot) error
 }
 
 const (
@@ -63,19 +69,25 @@ const (
 type Controller struct {
 	client.Client
 	vpcClient            *ibm.VPCClient
+	apiReader            client.Reader
 	loadBalancerProvider LoadBalancerProviderInterface
 	logger               logr.Logger
 }
 
 // NewController creates a new load balancer controller
-func NewController(client client.Client, vpcClient *ibm.VPCClient) *Controller {
+func NewController(kubeClient client.Client, vpcClient *ibm.VPCClient, readers ...client.Reader) *Controller {
+	reader := client.Reader(kubeClient)
+	if len(readers) > 0 && readers[0] != nil {
+		reader = readers[0]
+	}
 	logger := log.Log.WithName("loadbalancer-controller")
 
 	return &Controller{
-		Client:               client,
-		vpcClient:            vpcClient,
-		loadBalancerProvider: loadbalancer.NewLoadBalancerProviderWithIBMClient(vpcClient, logger),
-		logger:               logger,
+		Client:    kubeClient,
+		apiReader: reader,
+		vpcClient: vpcClient,
+
+		logger: logger,
 	}
 }
 
@@ -93,141 +105,239 @@ func (c *Controller) Register(ctx context.Context, mgr manager.Manager) error {
 
 // Reconcile handles NodeClaim load balancer registration and deregistration
 func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	logger := c.logger.WithValues("nodeclaim", req.NamespacedName)
-	ctx = log.IntoContext(ctx, logger)
-
-	// Get the NodeClaim
-	var nodeClaim karpv1.NodeClaim
-	if err := c.Get(ctx, req.NamespacedName, &nodeClaim); err != nil {
-		if errors.IsNotFound(err) {
+	claim := &karpv1.NodeClaim{}
+	if err := c.apiReader.Get(ctx, req.NamespacedName, claim); err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+	if claim.Spec.NodeClassRef == nil || claim.Spec.NodeClassRef.Kind != "IBMNodeClass" || claim.Spec.NodeClassRef.Group != v1alpha1.Group {
+		return reconcile.Result{}, nil
+	}
+	snapshot, err := loadbalancer.DecodeSnapshot(claim.Annotations[loadbalancer.SnapshotAnnotation])
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if snapshot != nil {
+		if validationErr := c.validateSnapshot(ctx, claim, snapshot); validationErr != nil {
+			return reconcile.Result{}, validationErr
+		}
+		if !claim.DeletionTimestamp.IsZero() {
+			return c.handleDeletion(ctx, claim, nil, c.logger)
+		}
+		return c.registerSnapshot(ctx, claim, snapshot)
+	}
+	if !claim.DeletionTimestamp.IsZero() {
+		// Every release registers only a joined Node's internal IP, so a claim that never
+		// registered cannot own a pool member.
+		if controllerutil.ContainsFinalizer(claim, LoadBalancerFinalizer) && claim.Status.ProviderID != "" && claim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue() {
+			return reconcile.Result{}, fmt.Errorf("legacy load balancer finalizer has no immutable targets; restore verified original target snapshot before retirement")
+		}
+		return c.removeFinalizer(ctx, claim)
+	}
+	class, err := c.getNodeClass(ctx, claim)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if claim.Status.ProviderID == "" && claim.Annotations[instance.LaunchAnnotation] == "" && class != nil {
+		mode, err := providers.ResolveProviderMode(class)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if mode == commonTypes.IKSMode {
 			return reconcile.Result{}, nil
 		}
-		return reconcile.Result{}, fmt.Errorf("getting nodeclaim: %w", err)
 	}
-
-	// Get the associated NodeClass
-	nodeClass, err := c.getNodeClass(ctx, &nodeClaim)
-	if err != nil {
-		logger.Error(err, "Failed to get NodeClass")
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	if nodeClass == nil || nodeClass.Spec.LoadBalancerIntegration == nil || !nodeClass.Spec.LoadBalancerIntegration.Enabled {
-		// Remove finalizer if load balancer integration is disabled
-		if controllerutil.ContainsFinalizer(&nodeClaim, LoadBalancerFinalizer) {
-			controllerutil.RemoveFinalizer(&nodeClaim, LoadBalancerFinalizer)
-			return reconcile.Result{}, c.Update(ctx, &nodeClaim)
+	if claim.Annotations[ownership.BackendAnnotation] == "iks" || (strings.HasPrefix(claim.Status.ProviderID, "ibm://") && !strings.HasPrefix(claim.Status.ProviderID, "ibm:///")) {
+		if controllerutil.ContainsFinalizer(claim, LoadBalancerFinalizer) {
+			return reconcile.Result{}, fmt.Errorf("legacy IKS load balancer finalizer requires verified original membership cleanup")
 		}
 		return reconcile.Result{}, nil
 	}
-
-	// Handle deletion
-	if !nodeClaim.DeletionTimestamp.IsZero() {
-		return c.handleDeletion(ctx, &nodeClaim, nodeClass, logger)
-	}
-
-	// Add finalizer if not present
-	if !controllerutil.ContainsFinalizer(&nodeClaim, LoadBalancerFinalizer) {
-		controllerutil.AddFinalizer(&nodeClaim, LoadBalancerFinalizer)
-		if err := c.Update(ctx, &nodeClaim); err != nil {
-			return reconcile.Result{}, fmt.Errorf("adding finalizer: %w", err)
+	if class == nil || class.Spec.LoadBalancerIntegration == nil || !class.Spec.LoadBalancerIntegration.Enabled {
+		if controllerutil.ContainsFinalizer(claim, LoadBalancerFinalizer) && claim.Annotations[LoadBalancerRegisteredAnnotation] == "true" {
+			return reconcile.Result{}, fmt.Errorf("legacy registered load balancer claim requires its original target snapshot")
 		}
-		return reconcile.Result{RequeueAfter: 1 * time.Second}, nil
+		return c.removeFinalizer(ctx, claim)
 	}
-
-	// Handle registration
-	return c.handleRegistration(ctx, &nodeClaim, nodeClass, logger)
+	if !controllerutil.ContainsFinalizer(claim, LoadBalancerFinalizer) {
+		before := claim.DeepCopy()
+		controllerutil.AddFinalizer(claim, LoadBalancerFinalizer)
+		if err := c.Patch(ctx, claim, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{RequeueAfter: time.Second}, nil
+	}
+	return c.handleRegistration(ctx, claim, class, c.logger)
 }
 
-// handleRegistration manages load balancer registration for the NodeClaim
-func (c *Controller) handleRegistration(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass, logger logr.Logger) (reconcile.Result, error) {
-	// Check if NodeClaim has an associated instance
-	if nodeClaim.Status.ProviderID == "" {
-		logger.Info("NodeClaim did not have provider ID yet, waiting")
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+func (c *Controller) provider(region string) (LoadBalancerProviderInterface, error) {
+	if c.loadBalancerProvider != nil {
+		return c.loadBalancerProvider, nil
 	}
-
-	// Extract instance ID from provider ID
-	instanceID, err := c.extractInstanceID(nodeClaim.Status.ProviderID)
+	if c.vpcClient == nil {
+		return nil, fmt.Errorf("regional load balancer client is unavailable")
+	}
+	regional, err := c.vpcClient.ForRegion(region)
 	if err != nil {
-		logger.Error(err, "Failed to extract instance ID from provider ID", "providerID", nodeClaim.Status.ProviderID)
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		return nil, err
 	}
+	return loadbalancer.NewLoadBalancerProviderWithIBMClient(regional, c.logger), nil
+}
 
-	// Get the associated Node to extract IP address
-	node, err := c.getNode(ctx, nodeClaim)
+func (c *Controller) validateSnapshot(ctx context.Context, claim *karpv1.NodeClaim, snapshot *loadbalancer.Snapshot) error {
+	instanceID, parseErr := c.extractInstanceID(snapshot.ProviderID)
+	if parseErr != nil || instanceID != snapshot.InstanceID {
+		return fmt.Errorf("load balancer instance differs from provider identity")
+	}
+	if snapshot.ClaimUID != string(claim.UID) || snapshot.ProviderID != claim.Status.ProviderID {
+		return fmt.Errorf("load balancer snapshot claim or provider identity changed")
+	}
+	cluster, err := ownership.ClusterUID(ctx, c.apiReader)
 	if err != nil {
-		logger.Error(err, "Failed to get associated Node")
+		return err
+	}
+	if cluster != snapshot.ClusterUID {
+		return fmt.Errorf("load balancer snapshot belongs to another cluster")
+	}
+	identity, err := instance.ReadLaunchIdentity(claim)
+	if err != nil {
+		return err
+	}
+	if identity.AccountID != snapshot.AccountID || identity.ClassUID != snapshot.ClassUID || identity.Region != snapshot.Region || identity.ClusterUID != snapshot.ClusterUID {
+		return fmt.Errorf("load balancer snapshot differs from immutable launch")
+	}
+	provider, err := c.provider(snapshot.Region)
+	if err != nil {
+		return err
+	}
+	return provider.VerifyAccount(ctx, snapshot.AccountID)
+}
+
+func (c *Controller) handleRegistration(ctx context.Context, claim *karpv1.NodeClaim, class *v1alpha1.IBMNodeClass, _ logr.Logger) (reconcile.Result, error) {
+	if claim.Status.ProviderID == "" {
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	if node == nil {
-		logger.Info("Associated Node not found yet, waiting")
+	instanceID, err := c.extractInstanceID(claim.Status.ProviderID)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	node, err := c.getNode(ctx, claim)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if node == nil || c.getNodeInternalIP(node) == "" {
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	// Get node internal IP
-	instanceIP := c.getNodeInternalIP(node)
-	if instanceIP == "" {
-		logger.Info("Node internal IP not available yet, waiting")
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+	if node.Spec.ProviderID != claim.Status.ProviderID {
+		return reconcile.Result{}, fmt.Errorf("load balancer Node identity differs from claim")
 	}
+	identity, err := instance.ReadLaunchIdentity(claim)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if identity.ClassUID != string(class.UID) {
+		return reconcile.Result{}, fmt.Errorf("load balancer NodeClass was recreated")
+	}
+	provider, err := c.provider(identity.Region)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if verificationErr := provider.VerifyAccount(ctx, identity.AccountID); verificationErr != nil {
+		return reconcile.Result{}, verificationErr
+	}
+	targets, err := provider.ResolveTargets(ctx, class, identity.AccountID)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	config := class.Spec.LoadBalancerIntegration
+	auto := true
+	if config.AutoDeregister != nil {
+		auto = *config.AutoDeregister
+	}
+	timeout := int32(300)
+	if config.RegistrationTimeout != nil {
+		timeout = *config.RegistrationTimeout
+	}
+	snapshot := &loadbalancer.Snapshot{Version: 1, MinimumWriterVersion: 1, ClaimUID: string(claim.UID), ClassUID: identity.ClassUID, ClusterUID: identity.ClusterUID, AccountID: identity.AccountID, Region: identity.Region, ProviderID: claim.Status.ProviderID, InstanceID: instanceID, AutoDeregister: auto, RegistrationTimeout: timeout, Targets: targets}
+	if validationErr := c.validateSnapshot(ctx, claim, snapshot); validationErr != nil {
+		return reconcile.Result{}, validationErr
+	}
+	before := claim.DeepCopy()
+	if claim.Annotations == nil {
+		claim.Annotations = map[string]string{}
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	claim.Annotations[loadbalancer.SnapshotAnnotation] = string(encoded)
+	if err := c.Patch(ctx, claim, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
+		return reconcile.Result{}, err
+	}
+	return reconcile.Result{RequeueAfter: time.Second}, nil
+}
 
-	// Check if already registered
-	if isRegistered := c.isAlreadyRegistered(nodeClaim); isRegistered {
-		logger.Info("NodeClaim already registered with load balancers")
+func (c *Controller) registerSnapshot(ctx context.Context, claim *karpv1.NodeClaim, snapshot *loadbalancer.Snapshot) (reconcile.Result, error) {
+	if c.isAlreadyRegistered(claim) {
 		return reconcile.Result{}, nil
 	}
-
-	// Register with load balancers
-	logger.Info("Registered NodeClaim with load balancers", "instanceID", instanceID, "instanceIP", instanceIP)
-
-	if err := c.loadBalancerProvider.RegisterInstance(ctx, nodeClass, instanceID, instanceIP); err != nil {
-		logger.Error(err, "Failed to register with load balancers")
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+	fresh := &karpv1.NodeClaim{}
+	if readErr := c.apiReader.Get(ctx, client.ObjectKeyFromObject(claim), fresh); readErr != nil {
+		return reconcile.Result{}, readErr
 	}
-
-	// Mark as registered
-	if err := c.markAsRegistered(ctx, nodeClaim); err != nil {
-		logger.Error(err, "Failed to mark NodeClaim as registered")
-		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+	if fresh.UID != claim.UID || fresh.ResourceVersion != claim.ResourceVersion || !fresh.DeletionTimestamp.IsZero() {
+		return reconcile.Result{}, fmt.Errorf("claim changed before load balancer registration")
 	}
-
-	logger.Info("Successfully registered NodeClaim with load balancers")
+	provider, err := c.provider(snapshot.Region)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if err := provider.RegisterTargets(ctx, snapshot); err != nil {
+		return reconcile.Result{}, err
+	}
+	if err := c.markAsRegistered(ctx, claim); err != nil {
+		return reconcile.Result{}, err
+	}
 	return reconcile.Result{}, nil
 }
 
-// handleDeletion manages load balancer deregistration during NodeClaim deletion
-func (c *Controller) handleDeletion(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.IBMNodeClass, logger logr.Logger) (reconcile.Result, error) {
-	if !controllerutil.ContainsFinalizer(nodeClaim, LoadBalancerFinalizer) {
+func (c *Controller) handleDeletion(ctx context.Context, claim *karpv1.NodeClaim, _ *v1alpha1.IBMNodeClass, _ logr.Logger) (reconcile.Result, error) {
+	if !controllerutil.ContainsFinalizer(claim, LoadBalancerFinalizer) {
 		return reconcile.Result{}, nil
 	}
-
-	// Extract instance ID from provider ID
-	if nodeClaim.Status.ProviderID != "" {
-		instanceID, err := c.extractInstanceID(nodeClaim.Status.ProviderID)
-		if err != nil {
-			logger.Error(err, "Failed to extract instance ID, removing finalizer anyway", "providerID", nodeClaim.Status.ProviderID)
-		} else {
-			// Deregister from load balancers
-			logger.Info("Deregistered NodeClaim from load balancers", "instanceID", instanceID)
-
-			if err := c.loadBalancerProvider.DeregisterInstance(ctx, nodeClass, instanceID); err != nil {
-				logger.Error(err, "Failed to deregister from load balancers, continuing with cleanup")
-				// Don't return error to avoid blocking deletion
-			} else {
-				logger.Info("Successfully deregistered NodeClaim from load balancers")
-			}
-		}
+	snapshot, err := loadbalancer.DecodeSnapshot(claim.Annotations[loadbalancer.SnapshotAnnotation])
+	if err != nil {
+		return reconcile.Result{}, err
 	}
-
-	// Remove finalizer
-	controllerutil.RemoveFinalizer(nodeClaim, LoadBalancerFinalizer)
-	if err := c.Update(ctx, nodeClaim); err != nil {
-		return reconcile.Result{}, fmt.Errorf("removing finalizer: %w", err)
+	if snapshot == nil {
+		return reconcile.Result{}, fmt.Errorf("load balancer cleanup requires immutable target snapshot")
 	}
+	if validationErr := c.validateSnapshot(ctx, claim, snapshot); validationErr != nil {
+		return reconcile.Result{}, validationErr
+	}
+	fresh := &karpv1.NodeClaim{}
+	if readErr := c.apiReader.Get(ctx, client.ObjectKeyFromObject(claim), fresh); readErr != nil {
+		return reconcile.Result{}, readErr
+	}
+	if fresh.UID != claim.UID || fresh.ResourceVersion != claim.ResourceVersion || fresh.DeletionTimestamp.IsZero() {
+		return reconcile.Result{}, fmt.Errorf("claim changed before load balancer cleanup")
+	}
+	provider, err := c.provider(snapshot.Region)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if err := provider.DeregisterTargets(ctx, snapshot); err != nil {
+		return reconcile.Result{}, err
+	}
+	return c.removeFinalizer(ctx, claim)
+}
 
-	return reconcile.Result{}, nil
+func (c *Controller) removeFinalizer(ctx context.Context, claim *karpv1.NodeClaim) (reconcile.Result, error) {
+	if !controllerutil.ContainsFinalizer(claim, LoadBalancerFinalizer) {
+		return reconcile.Result{}, nil
+	}
+	before := claim.DeepCopy()
+	controllerutil.RemoveFinalizer(claim, LoadBalancerFinalizer)
+	return reconcile.Result{}, c.Patch(ctx, claim, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
 }
 
 // Helper methods
@@ -244,7 +354,7 @@ func (c *Controller) getNodeClass(ctx context.Context, nodeClaim *karpv1.NodeCla
 	var nodeClass v1alpha1.IBMNodeClass
 	key := types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}
 
-	if err := c.Get(ctx, key, &nodeClass); err != nil {
+	if err := c.apiReader.Get(ctx, key, &nodeClass); err != nil {
 		return nil, fmt.Errorf("getting nodeclass %s: %w", key.Name, err)
 	}
 
@@ -259,7 +369,7 @@ func (c *Controller) getNode(ctx context.Context, nodeClaim *karpv1.NodeClaim) (
 	var node corev1.Node
 	key := types.NamespacedName{Name: nodeClaim.Status.NodeName}
 
-	if err := c.Get(ctx, key, &node); err != nil {
+	if err := c.apiReader.Get(ctx, key, &node); err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
@@ -279,13 +389,11 @@ func (c *Controller) getNodeInternalIP(node *corev1.Node) string {
 }
 
 func (c *Controller) extractInstanceID(providerID string) (string, error) {
-	// IBM Cloud provider ID format: ibm:///us-south-1/instance-id
-	// Extract the instance ID part
 	parts := strings.Split(providerID, "/")
-	if len(parts) < 3 {
-		return "", fmt.Errorf("invalid provider ID format: %s", providerID)
+	if len(parts) != 5 || parts[0] != "ibm:" || parts[1] != "" || parts[2] != "" || parts[3] == "" || parts[4] == "" {
+		return "", fmt.Errorf("invalid VPC provider ID: %s", providerID)
 	}
-	return parts[len(parts)-1], nil
+	return parts[4], nil
 }
 
 func (c *Controller) isAlreadyRegistered(nodeClaim *karpv1.NodeClaim) bool {
@@ -297,6 +405,7 @@ func (c *Controller) isAlreadyRegistered(nodeClaim *karpv1.NodeClaim) bool {
 }
 
 func (c *Controller) markAsRegistered(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
+	stored := nodeClaim.DeepCopy()
 	if nodeClaim.Annotations == nil {
 		nodeClaim.Annotations = make(map[string]string)
 	}
@@ -304,7 +413,7 @@ func (c *Controller) markAsRegistered(ctx context.Context, nodeClaim *karpv1.Nod
 	nodeClaim.Annotations[LoadBalancerRegisteredAnnotation] = "true"
 	nodeClaim.Annotations[LoadBalancerLastRegistrationTimeAnnotation] = time.Now().Format(time.RFC3339)
 
-	return c.Update(ctx, nodeClaim)
+	return c.Patch(ctx, nodeClaim, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
 }
 
 func (c *Controller) nodeToNodeClaim(ctx context.Context, obj client.Object) []reconcile.Request {

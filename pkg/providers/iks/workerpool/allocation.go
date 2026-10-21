@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -97,23 +98,25 @@ func (p *IKSWorkerPoolProvider) SetAPIReader(reader client.Reader) {
 }
 
 type Allocation struct {
-	ClaimName    string                      `json:"claimName"`
-	ClaimUID     string                      `json:"claimUID"`
-	NodeClassUID string                      `json:"nodeClassUID"`
-	ClusterUID   string                      `json:"clusterUID"`
-	ClusterID    string                      `json:"clusterID"`
-	AccountID    string                      `json:"accountID"`
-	Region       string                      `json:"region"`
-	Namespace    string                      `json:"namespace"`
-	PoolName     string                      `json:"poolName"`
-	PoolID       string                      `json:"poolID,omitempty"`
-	WorkerID     string                      `json:"workerID,omitempty"`
-	NodePool     string                      `json:"nodePool,omitempty"`
-	Hash         string                      `json:"hash"`
-	Labels       map[string]string           `json:"labels,omitempty"`
-	Capacity     corev1.ResourceList         `json:"capacity,omitempty"`
-	Allocatable  corev1.ResourceList         `json:"allocatable,omitempty"`
-	Request      ibm.WorkerPoolCreateRequest `json:"request"`
+	Version              int                         `json:"version,omitempty"`
+	MinimumWriterVersion int                         `json:"minimumWriterVersion,omitempty"`
+	ClaimName            string                      `json:"claimName"`
+	ClaimUID             string                      `json:"claimUID"`
+	NodeClassUID         string                      `json:"nodeClassUID"`
+	ClusterUID           string                      `json:"clusterUID"`
+	ClusterID            string                      `json:"clusterID"`
+	AccountID            string                      `json:"accountID"`
+	Region               string                      `json:"region"`
+	Namespace            string                      `json:"namespace"`
+	PoolName             string                      `json:"poolName"`
+	PoolID               string                      `json:"poolID,omitempty"`
+	WorkerID             string                      `json:"workerID,omitempty"`
+	NodePool             string                      `json:"nodePool,omitempty"`
+	Hash                 string                      `json:"hash"`
+	Labels               map[string]string           `json:"labels,omitempty"`
+	Capacity             corev1.ResourceList         `json:"capacity,omitempty"`
+	Allocatable          corev1.ResourceList         `json:"allocatable,omitempty"`
+	Request              ibm.WorkerPoolCreateRequest `json:"request"`
 }
 
 func DecodeAllocation(annotations map[string]string) (*Allocation, error) {
@@ -122,8 +125,16 @@ func DecodeAllocation(annotations map[string]string) (*Allocation, error) {
 		return nil, nil
 	}
 	allocation := &Allocation{}
-	if operationErr := json.Unmarshal([]byte(data), allocation); operationErr != nil {
+	decoder := json.NewDecoder(strings.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if operationErr := decoder.Decode(allocation); operationErr != nil {
 		return nil, fmt.Errorf("decoding IKS allocation: %w", operationErr)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("invalid trailing IKS allocation")
+	}
+	if err := ownership.ValidateStateVersion(allocation.Version, allocation.MinimumWriterVersion); err != nil {
+		return nil, err
 	}
 	if allocation.ClaimUID == "" || allocation.ClusterUID == "" || allocation.NodeClassUID == "" || allocation.ClusterID == "" || allocation.AccountID == "" || allocation.PoolName == "" || allocation.Namespace == "" {
 		return nil, fmt.Errorf("IKS allocation is missing immutable identity")
@@ -355,17 +366,8 @@ func pending(message string) error {
 }
 
 func (p *IKSWorkerPoolProvider) validateTarget(iksClient ibm.IKSClientInterface, accountID, region string) error {
-	configuredAccount := os.Getenv("IBM_ACCOUNT_ID")
-	configuredRegion := ""
-	if target, ok := iksClient.(interface {
-		GetAccountID() string
-		GetRegion() string
-	}); ok {
-		configuredAccount, configuredRegion = target.GetAccountID(), target.GetRegion()
-	} else if p.client != nil {
-		configuredRegion = p.client.GetRegion()
-	}
-	if configuredAccount != accountID || (region != "" && configuredRegion != "" && configuredRegion != region) {
+	configuredAccount, configuredRegion := iksClient.GetAccountID(), iksClient.GetRegion()
+	if configuredAccount != accountID || (region != "" && configuredRegion != region) {
 		return fmt.Errorf("IKS client account or region differs from the immutable allocation; retaining ownership")
 	}
 	return nil
@@ -540,12 +542,20 @@ func (p *IKSWorkerPoolProvider) newAllocation(ctx context.Context, claim *v1.Nod
 		return nil, err
 	}
 	sum := sha256.Sum256([]byte(clusterUID + "/" + string(claim.UID)))
-	name := fmt.Sprintf("karp-%x", sum[:24])
+	prefix := nodeClass.Spec.IKSDynamicPools.NamePrefix
+	if prefix == "" {
+		prefix = "karp"
+	}
+	if len(prefix) > 20 || !regexp.MustCompile(`^[a-z][a-z0-9-]*$`).MatchString(prefix) {
+		return nil, fmt.Errorf("invalid IKS pool name prefix")
+	}
+	name := fmt.Sprintf("%s-%x", prefix, sum[:20])
 	encrypted := true
 	if nodeClass.Spec.IKSDynamicPools.DiskEncryption != nil {
 		encrypted = *nodeClass.Spec.IKSDynamicPools.DiskEncryption
 	}
 	return &Allocation{
+		Version: ownership.StateFormatVersion, MinimumWriterVersion: ownership.StateFormatVersion,
 		ClaimName: claim.Name, ClaimUID: string(claim.UID), NodeClassUID: string(nodeClass.UID),
 		ClusterUID: clusterUID, ClusterID: clusterID, AccountID: accountID, Region: nodeClass.Spec.Region,
 		Namespace: p.allocationNamespaceName(), PoolName: name, NodePool: claim.Labels[v1.NodePoolLabelKey], Hash: hash, Labels: resolvedLabels,
@@ -557,6 +567,10 @@ func (p *IKSWorkerPoolProvider) newAllocation(ctx context.Context, claim *v1.Nod
 }
 
 func (p *IKSWorkerPoolProvider) checkpoint(ctx context.Context, claim *v1.NodeClaim, allocation *Allocation) error {
+	if err := ownership.ValidateStateVersion(allocation.Version, allocation.MinimumWriterVersion); err != nil {
+		return err
+	}
+	allocation.Version, allocation.MinimumWriterVersion = ownership.StateFormatVersion, ownership.StateFormatVersion
 	fresh := &v1.NodeClaim{}
 	if operationErr := p.reader().Get(ctx, types.NamespacedName{Name: allocation.ClaimName}, fresh); operationErr != nil {
 		return fmt.Errorf("reading allocation owner: %w", operationErr)
@@ -588,6 +602,10 @@ func (p *IKSWorkerPoolProvider) checkpoint(ctx context.Context, claim *v1.NodeCl
 }
 
 func (p *IKSWorkerPoolProvider) reserve(ctx context.Context, allocation *Allocation) (*corev1.ConfigMap, error) {
+	if err := ownership.ValidateStateVersion(allocation.Version, allocation.MinimumWriterVersion); err != nil {
+		return nil, err
+	}
+	allocation.Version, allocation.MinimumWriterVersion = ownership.StateFormatVersion, ownership.StateFormatVersion
 	key := ReservationKey(allocation.ClusterID, allocation.PoolName, allocation.Namespace)
 	reservation := &corev1.ConfigMap{}
 	err := p.reader().Get(ctx, key, reservation)
@@ -613,6 +631,10 @@ func (p *IKSWorkerPoolProvider) reserve(ctx context.Context, allocation *Allocat
 }
 
 func (p *IKSWorkerPoolProvider) updateReservation(ctx context.Context, reservation *corev1.ConfigMap, allocation *Allocation, phase string) error {
+	if err := ownership.ValidateStateVersion(allocation.Version, allocation.MinimumWriterVersion); err != nil {
+		return err
+	}
+	allocation.Version, allocation.MinimumWriterVersion = ownership.StateFormatVersion, ownership.StateFormatVersion
 	stored := reservation.DeepCopy()
 	data, err := json.Marshal(allocation)
 	if err != nil {
@@ -661,6 +683,8 @@ func restoreReservation(allocation *Allocation, reservation *corev1.ConfigMap) e
 		return fmt.Errorf("worker pool reservation has no allocation snapshot")
 	}
 	currentSnapshot, recordedSnapshot := *allocation, *recorded
+	currentSnapshot.Version, currentSnapshot.MinimumWriterVersion = 0, 0
+	recordedSnapshot.Version, recordedSnapshot.MinimumWriterVersion = 0, 0
 	currentSnapshot.PoolID, currentSnapshot.WorkerID = "", ""
 	recordedSnapshot.PoolID, recordedSnapshot.WorkerID = "", ""
 	currentData, err := json.Marshal(currentSnapshot)
@@ -872,25 +896,7 @@ func (p *IKSWorkerPoolProvider) listAllocations(ctx context.Context) ([]*corev1.
 	if p.reader() == nil {
 		return nil, fmt.Errorf("kubernetes client not set")
 	}
-	current, err := p.readInventory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var nodes []*corev1.Node
-	for _, claim := range current.claims {
-		if claim.Annotations[ownership.BackendAnnotation] != "iks" || claim.Status.ProviderID == "" {
-			continue
-		}
-		node, err := p.getWorkerFrom(ctx, claim.Status.ProviderID, current)
-		if cloudprovider.IsNodeClaimNotFoundError(err) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, node)
-	}
-	return nodes, nil
+	return p.listIndexedAllocations(ctx)
 }
 
 func (p *IKSWorkerPoolProvider) deleteAllocation(ctx context.Context, node *corev1.Node) error {
@@ -902,7 +908,10 @@ func (p *IKSWorkerPoolProvider) deleteAllocation(ctx context.Context, node *core
 		return err
 	}
 	if allocation == nil {
-		return fmt.Errorf("cluster ID or pool ID not found in durable IKS allocation; refusing shared-pool deletion")
+		if node.UID == "" {
+			return fmt.Errorf("cluster ID or pool ID not found in durable IKS allocation; refusing shared-pool deletion")
+		}
+		return p.retireLegacy(ctx, &v1.NodeClaim{ObjectMeta: *node.ObjectMeta.DeepCopy(), Status: v1.NodeClaimStatus{ProviderID: node.Spec.ProviderID}}, false)
 	}
 	if allocation.ClaimUID != string(node.UID) {
 		return fmt.Errorf("allocation owner identity mismatch")
@@ -942,14 +951,14 @@ func (p *IKSWorkerPoolProvider) Cleanup(ctx context.Context, claim *v1.NodeClaim
 			continue
 		}
 		found = true
-		classLabel := v1.NodeClassLabelKey(v1alpha1.GroupVersion.WithKind("IBMNodeClass").GroupKind())
-		if !controllerutil.ContainsFinalizer(node, v1.TerminationFinalizer) || node.Labels[classLabel] == "" || node.Labels[v1.NodePoolLabelKey] != allocation.NodePool {
-			return fmt.Errorf("pending IKS worker has a Node without established graceful termination ownership; retaining allocation")
+		current, handoffErr := ownership.EstablishTermination(ctx, p.kubeClient, p.reader(), node, claim)
+		if handoffErr != nil {
+			return handoffErr
 		}
 		if !node.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if operationErr := p.kubeClient.Delete(ctx, node, client.Preconditions{UID: &node.UID}); client.IgnoreNotFound(operationErr) != nil {
+		if operationErr := p.kubeClient.Delete(ctx, current, client.Preconditions{UID: &current.UID, ResourceVersion: &current.ResourceVersion}); client.IgnoreNotFound(operationErr) != nil {
 			return operationErr
 		}
 	}
@@ -964,7 +973,10 @@ func (p *IKSWorkerPoolProvider) ConfirmGone(ctx context.Context, claim *v1.NodeC
 	if err != nil {
 		return err
 	}
-	if allocation == nil || allocation.ClaimUID != string(claim.UID) {
+	if allocation == nil {
+		return p.retireLegacy(ctx, claim, true)
+	}
+	if allocation.ClaimUID != string(claim.UID) {
 		return fmt.Errorf("IKS allocation identity is missing or changed")
 	}
 	if claim.Status.ProviderID != fmt.Sprintf("ibm://%s///%s/%s", allocation.AccountID, allocation.ClusterID, allocation.WorkerID) {
@@ -1017,6 +1029,9 @@ func (p *IKSWorkerPoolProvider) ConfirmGone(ctx context.Context, claim *v1.NodeC
 	if reservation.Labels[ownership.ClaimUIDLabel] != allocation.ClaimUID || reservation.Labels[ownership.ClusterUIDLabel] != allocation.ClusterUID || reservation.Labels[ownership.NodeClassUIDLabel] != allocation.NodeClassUID {
 		return fmt.Errorf("reservation ownership changed")
 	}
+	if err := restoreReservation(allocation, reservation); err != nil {
+		return err
+	}
 	if operationErr := p.kubeClient.Delete(ctx, reservation, client.Preconditions{UID: &reservation.UID, ResourceVersion: &reservation.ResourceVersion}); client.IgnoreNotFound(operationErr) != nil {
 		return operationErr
 	}
@@ -1026,6 +1041,9 @@ func (p *IKSWorkerPoolProvider) ConfirmGone(ctx context.Context, claim *v1.NodeC
 func (p *IKSWorkerPoolProvider) cleanup(ctx context.Context, allocation *Allocation) error {
 	if p.kubeClient == nil {
 		return fmt.Errorf("kubernetes client not set")
+	}
+	if err := p.verifyAllocationClaim(ctx, allocation); err != nil {
+		return err
 	}
 	unlock := lockPool(allocation.ClusterID, allocation.PoolName)
 	defer unlock()
@@ -1103,8 +1121,57 @@ func (p *IKSWorkerPoolProvider) cleanup(ctx context.Context, allocation *Allocat
 	if count > 1 {
 		return fmt.Errorf("isolated pool contains multiple workers")
 	}
+	if err := p.verifyAllocationClaim(ctx, allocation); err != nil {
+		return err
+	}
+	nodes := &corev1.NodeList{}
+	if err := p.reader().List(ctx, nodes); err != nil {
+		return err
+	}
+	for _, node := range nodes.Items {
+		if (node.Labels[ownership.ClaimUIDLabel] == allocation.ClaimUID && node.Labels[ownership.ClusterUIDLabel] == allocation.ClusterUID) || (allocation.WorkerID != "" && node.Spec.ProviderID == fmt.Sprintf("ibm://%s///%s/%s", allocation.AccountID, allocation.ClusterID, allocation.WorkerID)) {
+			return fmt.Errorf("allocated Node must finish graceful termination before cloud deletion")
+		}
+	}
 	if operationErr := iksClient.DeleteWorkerPool(ctx, allocation.ClusterID, pool.ID); operationErr != nil && !IsNotFound(operationErr) {
 		return fmt.Errorf("deleting allocated worker pool: %w", operationErr)
+	}
+	return nil
+}
+
+func (p *IKSWorkerPoolProvider) verifyAllocationClaim(ctx context.Context, allocation *Allocation) error {
+	claim := &v1.NodeClaim{}
+	if err := p.reader().Get(ctx, client.ObjectKey{Name: allocation.ClaimName}, claim); err != nil {
+		return err
+	}
+	if string(claim.UID) != allocation.ClaimUID {
+		return fmt.Errorf("allocation claim UID changed")
+	}
+	recorded, err := DecodeAllocation(claim.Annotations)
+	if err != nil {
+		return err
+	}
+	if recorded == nil {
+		return fmt.Errorf("allocation checkpoint disappeared")
+	}
+	currentSnapshot, recordedSnapshot := *allocation, *recorded
+	currentSnapshot.Version, currentSnapshot.MinimumWriterVersion = 0, 0
+	recordedSnapshot.Version, recordedSnapshot.MinimumWriterVersion = 0, 0
+	currentSnapshot.PoolID, currentSnapshot.WorkerID = "", ""
+	recordedSnapshot.PoolID, recordedSnapshot.WorkerID = "", ""
+	currentJSON, err := json.Marshal(currentSnapshot)
+	if err != nil {
+		return err
+	}
+	recordedJSON, err := json.Marshal(recordedSnapshot)
+	if err != nil {
+		return err
+	}
+	if string(currentJSON) != string(recordedJSON) || (recorded.PoolID != "" && allocation.PoolID != "" && recorded.PoolID != allocation.PoolID) || (recorded.WorkerID != "" && allocation.WorkerID != "" && recorded.WorkerID != allocation.WorkerID) {
+		return fmt.Errorf("allocation launch identity changed")
+	}
+	if claim.Status.ProviderID != "" && claim.Status.ProviderID != fmt.Sprintf("ibm://%s///%s/%s", allocation.AccountID, allocation.ClusterID, allocation.WorkerID) {
+		return fmt.Errorf("allocation provider identity changed")
 	}
 	return nil
 }
@@ -1116,22 +1183,31 @@ func TryDeleteEmptyPool(ctx context.Context, kubeClient client.Client, reader cl
 	if !accountPattern.MatchString(accountID) || region == "" {
 		return false, fmt.Errorf("pool cleanup requires immutable account and region identity")
 	}
+	if iksClient == nil || iksClient.GetAccountID() != accountID || iksClient.GetRegion() != region {
+		return false, fmt.Errorf("pool cleanup client differs from checkpoint account or region")
+	}
 	unlock := lockPool(clusterID, candidate.Name)
 	defer unlock()
 	key := ReservationKey(clusterID, candidate.Name, namespace)
 	reservation := &corev1.ConfigMap{}
 	err := reader.Get(ctx, key, reservation)
-	if err == nil && (reservation.Data[ReservationCleanupKey] != "true" || reservation.Data[ReservationPhaseKey] != "deleting") {
-		return false, nil
-	}
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
-	if err == nil && (reservation.Labels[ownership.ClusterUIDLabel] != clusterUID || reservation.Labels[ownership.NodeClassUIDLabel] != classUID) {
-		return false, fmt.Errorf("pool cleanup reservation ownership changed")
-	}
-	if err == nil && (reservation.Data[ReservationAccountIDKey] != accountID || reservation.Data[ReservationRegionKey] != region) {
-		return false, fmt.Errorf("pool cleanup target identity changed")
+	if err == nil {
+		checkpoint, decodeErr := DecodePoolCleanupCheckpoint(reservation)
+		if decodeErr != nil {
+			return false, decodeErr
+		}
+		if checkpoint == nil {
+			return false, nil
+		}
+		if checkpoint.ClusterUID != clusterUID || checkpoint.ClassUID != classUID {
+			return false, fmt.Errorf("pool cleanup reservation ownership changed")
+		}
+		if checkpoint.AccountID != accountID || checkpoint.Region != region || checkpoint.ClusterID != clusterID || checkpoint.PoolID != candidate.ID {
+			return false, fmt.Errorf("pool cleanup target identity changed")
+		}
 	}
 	claims := &v1.NodeClaimList{}
 	if operationErr := reader.List(ctx, claims); operationErr != nil {
@@ -1173,13 +1249,15 @@ func TryDeleteEmptyPool(ctx context.Context, kubeClient client.Client, reader cl
 	if reservation.Name == "" {
 		reservation = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace,
 			Labels: map[string]string{ownership.ManagedLabel: "true", ownership.ProviderLabel: "iks", ownership.ClusterUIDLabel: clusterUID, ownership.NodeClassUIDLabel: classUID}},
-			Data: map[string]string{ReservationPhaseKey: "deleting", ReservationCleanupKey: "true", ReservationClusterIDKey: clusterID, ReservationPoolIDKey: candidate.ID, ReservationAccountIDKey: accountID, ReservationRegionKey: region}}
+			Data: map[string]string{ReservationVersionKey: "1", ReservationMinimumWriterVersionKey: "1", ReservationPhaseKey: "deleting", ReservationCleanupKey: "true", ReservationClusterIDKey: clusterID, ReservationPoolIDKey: candidate.ID, ReservationAccountIDKey: accountID, ReservationRegionKey: region}}
 		if operationErr := kubeClient.Create(ctx, reservation); operationErr != nil {
 			return false, operationErr
 		}
 	} else {
 		stored := reservation.DeepCopy()
 		reservation.Data[ReservationPhaseKey] = "deleting"
+		reservation.Data[ReservationVersionKey] = "1"
+		reservation.Data[ReservationMinimumWriterVersionKey] = "1"
 		if operationErr := kubeClient.Patch(ctx, reservation, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); operationErr != nil {
 			return false, operationErr
 		}
@@ -1199,6 +1277,21 @@ func TryDeleteEmptyPool(ctx context.Context, kubeClient client.Client, reader cl
 		if worker != nil && worker.PoolID == candidate.ID && worker.Lifecycle.ActualState != "deleted" {
 			return false, nil
 		}
+	}
+	current := &corev1.ConfigMap{}
+	if readErr := reader.Get(ctx, key, current); readErr != nil {
+		return false, readErr
+	}
+	if current.UID != reservation.UID || current.ResourceVersion != reservation.ResourceVersion {
+		return false, fmt.Errorf("pool cleanup checkpoint changed before deletion")
+	}
+	checkpoint, decodeErr := DecodePoolCleanupCheckpoint(current)
+	if decodeErr != nil {
+		return false, decodeErr
+	}
+	if checkpoint == nil || checkpoint.ClusterUID != clusterUID || checkpoint.ClassUID != classUID ||
+		checkpoint.ClusterID != clusterID || checkpoint.PoolID != candidate.ID || checkpoint.AccountID != accountID || checkpoint.Region != region {
+		return false, fmt.Errorf("pool cleanup checkpoint target changed before deletion")
 	}
 	if operationErr := iksClient.DeleteWorkerPool(ctx, clusterID, candidate.ID); operationErr != nil && !IsNotFound(operationErr) {
 		return false, operationErr

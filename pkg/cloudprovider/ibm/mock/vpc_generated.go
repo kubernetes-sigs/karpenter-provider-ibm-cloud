@@ -166,6 +166,22 @@ func (mr *MockvpcClientInterfaceMockRecorder) GetImageWithContext(arg0, arg1 any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImageWithContext", reflect.TypeOf((*MockvpcClientInterface)(nil).GetImageWithContext), arg0, arg1)
 }
 
+// GetInstanceNetworkInterfaceWithContext mocks base method.
+func (m *MockvpcClientInterface) GetInstanceNetworkInterfaceWithContext(arg0 context.Context, arg1 *vpcv1.GetInstanceNetworkInterfaceOptions) (*vpcv1.NetworkInterface, *core.DetailedResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceNetworkInterfaceWithContext", arg0, arg1)
+	ret0, _ := ret[0].(*vpcv1.NetworkInterface)
+	ret1, _ := ret[1].(*core.DetailedResponse)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetInstanceNetworkInterfaceWithContext indicates an expected call of GetInstanceNetworkInterfaceWithContext.
+func (mr *MockvpcClientInterfaceMockRecorder) GetInstanceNetworkInterfaceWithContext(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceNetworkInterfaceWithContext", reflect.TypeOf((*MockvpcClientInterface)(nil).GetInstanceNetworkInterfaceWithContext), arg0, arg1)
+}
+
 // GetInstanceProfileWithContext mocks base method.
 func (m *MockvpcClientInterface) GetInstanceProfileWithContext(arg0 context.Context, arg1 *vpcv1.GetInstanceProfileOptions) (*vpcv1.InstanceProfile, *core.DetailedResponse, error) {
 	m.ctrl.T.Helper()
@@ -324,6 +340,22 @@ func (m *MockvpcClientInterface) ListImagesWithContext(arg0 context.Context, arg
 func (mr *MockvpcClientInterfaceMockRecorder) ListImagesWithContext(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListImagesWithContext", reflect.TypeOf((*MockvpcClientInterface)(nil).ListImagesWithContext), arg0, arg1)
+}
+
+// ListInstanceNetworkInterfaceFloatingIpsWithContext mocks base method.
+func (m *MockvpcClientInterface) ListInstanceNetworkInterfaceFloatingIpsWithContext(arg0 context.Context, arg1 *vpcv1.ListInstanceNetworkInterfaceFloatingIpsOptions) (*vpcv1.FloatingIPUnpaginatedCollection, *core.DetailedResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListInstanceNetworkInterfaceFloatingIpsWithContext", arg0, arg1)
+	ret0, _ := ret[0].(*vpcv1.FloatingIPUnpaginatedCollection)
+	ret1, _ := ret[1].(*core.DetailedResponse)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListInstanceNetworkInterfaceFloatingIpsWithContext indicates an expected call of ListInstanceNetworkInterfaceFloatingIpsWithContext.
+func (mr *MockvpcClientInterfaceMockRecorder) ListInstanceNetworkInterfaceFloatingIpsWithContext(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListInstanceNetworkInterfaceFloatingIpsWithContext", reflect.TypeOf((*MockvpcClientInterface)(nil).ListInstanceNetworkInterfaceFloatingIpsWithContext), arg0, arg1)
 }
 
 // ListInstanceProfilesWithContext mocks base method.

@@ -117,3 +117,12 @@ func InstanceName(clusterUID, claimUID string) string {
 	identity := sha256.Sum256([]byte(clusterUID + "/" + claimUID))
 	return fmt.Sprintf("karpenter-%x", identity[:26])
 }
+
+const StateFormatVersion = 1
+
+func ValidateStateVersion(version, minimumWriter int) error {
+	if version < 0 || version > StateFormatVersion || minimumWriter < 0 || minimumWriter > StateFormatVersion || (version == 0 && minimumWriter != 0) {
+		return fmt.Errorf("unsupported durable state version %d (minimum writer %d); retaining state", version, minimumWriter)
+	}
+	return nil
+}

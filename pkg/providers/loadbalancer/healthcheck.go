@@ -98,11 +98,6 @@ func (hc *HealthCheckManager) buildHealthCheckPatch(desired *v1alpha1.LoadBalanc
 		retryCount = int64(*desired.RetryCount)
 	}
 
-	// Check protocol
-	if current.Protocol == nil || *current.Protocol != protocol {
-		patch["protocol"] = protocol
-	}
-
 	// Compare health monitor fields against current values
 	needsMonitorUpdate := false
 	if hm, ok := current.HealthMonitor.(*vpcv1.LoadBalancerPoolHealthMonitor); ok {

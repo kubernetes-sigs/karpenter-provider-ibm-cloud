@@ -54,7 +54,7 @@ The provider requires IBM Cloud API credentials to manage infrastructure resourc
 - **Broad Permissions:** Over-privileged API keys
 
 **Recommendations:**
-- **Implement Rotation:** Regularly rotate API keys (recommended: every 90 days)
+- **Implement Rotation:** Rotate API keys through Helm so Secret checksums restart the controller; direct Secret updates require a restart. Preserve the checkpoint's original account access during cleanup.
 - **Principle of Least Privilege:** Create API keys with minimal required permissions
 - **Audit Access:** Enable IBM Cloud audit logging for all API key usage
 
@@ -95,7 +95,9 @@ The provider supports two deployment modes with different IAM requirements:
     {
       "role": "Editor",
       "resources": [
-        {"service": "is", "resourceType": "instance"}
+        {"service": "is", "resourceType": "instance"},
+        {"service": "is", "resourceType": "volume"},
+        {"service": "is", "resourceType": "load-balancer"}
       ]
     },
     {
@@ -114,9 +116,7 @@ The provider supports two deployment modes with different IAM requirements:
 }
 ```
 
-Instance lifecycle (`is.instance.create`, `is.instance.delete`, `is.instance.get`,
-`is.instance.list`, `is.instance.update`) is the only write path; everything
-else is read-only at runtime. `resource-group` Viewer is required to place
+Instance and volume lifecycle, resource tagging, and configured load-balancer registration perform writes. Grant those actions only for the resources/features in use; IKS also creates and deletes dedicated worker pools. `resource-group` Viewer is required to place
 VSIs in the configured resource group (without it VSI create returns
 `user does not have access to selected resource group`).
 
@@ -129,5 +129,7 @@ Read-only actions the controller exercises at runtime:
 - `is.instance-profile.list`
 
 **Deployment Mode Differences:**
-- **IKS Mode**: Used with managed IBM Kubernetes Service clusters. Requires `Operator` role for worker pool resizing and worker node management, plus `Viewer` access to VPC instances for worker-to-instance mapping.
+- **IKS Mode**: Used with managed IBM Kubernetes Service clusters. Requires `Operator` role for dedicated worker pool and worker management, plus `Viewer` access to VPC instances for worker-to-instance mapping.
 - **VPC Mode**: Used with self-managed Kubernetes clusters on IBM Cloud VPC. Requires full VPC resource management permissions for direct instance lifecycle management.
+
+Bootstrap Secret access is scoped to `kube-system` without a Secret informer. RBAC cannot restrict Secret list permission by ownership label. Claim-bound tokens last at most one hour; strict CSR approval validates cloud identity and does not grant serving approval to `system:nodes`. NodeClass `userData`/`userDataAppend` execute as root, so NodeClass writes require trusted administrators.

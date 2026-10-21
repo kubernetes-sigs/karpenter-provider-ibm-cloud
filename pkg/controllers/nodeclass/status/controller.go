@@ -37,7 +37,9 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/constants"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/image"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/vpc/subnet"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
@@ -215,7 +217,11 @@ func (c *Controller) validateRequiredFields(nc *v1alpha1.IBMNodeClass) error {
 		missingFields = append(missingFields, "region")
 	}
 	// Either image or imageSelector must be specified (but not both - validated elsewhere)
-	if strings.TrimSpace(nc.Spec.Image) == "" && nc.Spec.ImageSelector == nil {
+	mode, err := providers.ResolveProviderMode(nc)
+	if err != nil {
+		return err
+	}
+	if mode != commonTypes.IKSMode && strings.TrimSpace(nc.Spec.Image) == "" && nc.Spec.ImageSelector == nil {
 		missingFields = append(missingFields, "image or imageSelector")
 	}
 	if strings.TrimSpace(nc.Spec.VPC) == "" {
@@ -326,14 +332,14 @@ func (c *Controller) validateIBMCloudResources(ctx context.Context, nc *v1alpha1
 		}
 	} else {
 		// If no specific subnet, validate that subnets are available in the VPC
-		if err := c.validateSubnetsAvailable(ctx, nc.Spec.VPC, nc.Spec.Zone); err != nil {
+		if err := c.validateSubnetsAvailable(ctx, nc.Spec.VPC, nc.Spec.Zone, nc.Spec.Region); err != nil {
 			return fmt.Errorf("subnet availability validation failed: %w", err)
 		}
 	}
 
 	// Validate image configuration - either explicit image or imageSelector
-	if err := c.validateImageConfiguration(ctx, nc); err != nil {
-		return fmt.Errorf("image validation failed: %w", err)
+	if err := c.validateProviderImage(ctx, nc); err != nil {
+		return err
 	}
 
 	// Validate and resolve security groups
@@ -567,7 +573,7 @@ func (c *Controller) validateVPC(ctx context.Context, vpcID, resourceGroupID str
 
 // validateSubnet checks if the subnet exists and is in the correct VPC
 func (c *Controller) validateSubnet(ctx context.Context, subnetID, vpcID, expectedRegion string) error {
-	subnetInfo, err := c.subnetProvider.GetSubnet(ctx, subnetID)
+	subnetInfo, err := c.subnetProvider.GetSubnet(ctx, subnetID, expectedRegion)
 	if err != nil {
 		return fmt.Errorf("subnet %s not found or not accessible: %w", subnetID, err)
 	}
@@ -593,8 +599,12 @@ func (c *Controller) validateSubnet(ctx context.Context, subnetID, vpcID, expect
 }
 
 // validateSubnetsAvailable checks if subnets are available in the VPC/zone
-func (c *Controller) validateSubnetsAvailable(ctx context.Context, vpcID, zone string) error {
-	subnets, err := c.subnetProvider.ListSubnets(ctx, vpcID)
+func (c *Controller) validateSubnetsAvailable(ctx context.Context, vpcID, zone string, regions ...string) error {
+	region := ibm.ExtractRegionFromZone(zone)
+	if len(regions) > 0 {
+		region = regions[0]
+	}
+	subnets, err := c.subnetProvider.ListSubnets(ctx, vpcID, region)
 	if err != nil {
 		return fmt.Errorf("failed to list subnets in VPC %s: %w", vpcID, err)
 	}
@@ -626,7 +636,7 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 	}
 
 	// Use cached subnet info if available
-	cacheKey := fmt.Sprintf("subnet-zone-%s", subnetID)
+	cacheKey := fmt.Sprintf("subnet-zone-%s-%s", ibm.ExtractRegionFromZone(zone), subnetID)
 	if cachedZone, found := c.cache.Get(cacheKey); found {
 		if cachedZone.(string) != zone {
 			return fmt.Errorf("subnet %s is in zone %s, but requested zone is %s",
@@ -636,7 +646,7 @@ func (c *Controller) validateZoneSubnetCompatibility(ctx context.Context, zone, 
 	}
 
 	// Get subnet information
-	subnetInfo, err := c.subnetProvider.GetSubnet(ctx, subnetID)
+	subnetInfo, err := c.subnetProvider.GetSubnet(ctx, subnetID, ibm.ExtractRegionFromZone(zone))
 	if err != nil {
 		return fmt.Errorf("failed to get subnet information: %w", err)
 	}
@@ -885,4 +895,19 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		Named("nodeclass.status").
 		For(&v1alpha1.IBMNodeClass{}).
 		Complete(c)
+}
+
+func (c *Controller) validateProviderImage(ctx context.Context, nc *v1alpha1.IBMNodeClass) error {
+	mode, err := providers.ResolveProviderMode(nc)
+	if err != nil {
+		return err
+	}
+	if mode == commonTypes.IKSMode {
+		nc.Status.ResolvedImageID = ""
+		return nil
+	}
+	if err := c.validateImageConfiguration(ctx, nc); err != nil {
+		return fmt.Errorf("image validation failed: %w", err)
+	}
+	return nil
 }

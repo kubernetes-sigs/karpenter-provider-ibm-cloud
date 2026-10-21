@@ -36,7 +36,7 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
         with:
-          version: '3.12.0'
+          version: '4.3.0'
 
       - name: Cache dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -56,14 +56,47 @@ jobs:
         run: |
           mkdir -p _helm-repo
 
-          # Download existing index to preserve prior chart versions
-          echo "Downloading existing index.yaml..."
-          curl -s https://karpenter-ibm.sh/index.yaml > _helm-repo/old-index.yaml || echo "No existing index found"
-
-          if [ -f "charts/Chart.yaml" ]; then
-            echo "Packaging chart: charts/"
-            helm package charts/ --destination _helm-repo
-          fi
+          curl --fail --silent --show-error https://karpenter-ibm.sh/index.yaml -o _helm-repo/old-index.yaml
+          python3 - <<'PY'
+          import hashlib, pathlib, urllib.parse, urllib.request, yaml
+          directory = pathlib.Path('_helm-repo')
+          index = yaml.safe_load((directory / 'old-index.yaml').read_text())
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect)
+          for versions in index['entries'].values():
+              for version in versions:
+                  for url in version['urls']:
+                      parsed = urllib.parse.urlsplit(urllib.parse.urljoin('https://karpenter-ibm.sh/', url))
+                      name = pathlib.PurePosixPath(parsed.path).name
+                      if parsed.scheme != 'https' or parsed.netloc != 'karpenter-ibm.sh' or parsed.path != '/' + name or not name.endswith('.tgz') or parsed.query or parsed.fragment or '%' in name:
+                          raise ValueError('unexpected chart archive URL')
+                      with opener.open(parsed.geturl(), timeout=60) as response:
+                          archive = response.read()
+                      if hashlib.sha256(archive).hexdigest() != version['digest']:
+                          raise ValueError('chart archive digest mismatch')
+                      target = directory / name
+                      if target.exists() and target.read_bytes() != archive:
+                          raise ValueError('conflicting chart archives share a filename')
+                      target.write_bytes(archive)
+          PY
+          helm package charts/ --destination _helm-new
+          python3 - <<'PY'
+          import hashlib, pathlib, tarfile
+          def contents(path):
+              with tarfile.open(path) as archive:
+                  return sorted((entry.name, entry.type, entry.linkname, entry.mode,
+                                 hashlib.sha256(archive.extractfile(entry).read()).hexdigest() if entry.isfile() else '')
+                                for entry in archive.getmembers() if not entry.isdir())
+          for source in pathlib.Path('_helm-new').glob('*.tgz'):
+              target = pathlib.Path('_helm-repo') / source.name
+              if target.exists():
+                  if contents(target) != contents(source):
+                      raise ValueError('chart version already published; bump Chart.yaml')
+              else:
+                  target.write_bytes(source.read_bytes())
+          PY
 
           if [ -f "_helm-repo/old-index.yaml" ] && [ -s "_helm-repo/old-index.yaml" ]; then
             echo "Merging with existing index..."
@@ -79,7 +112,7 @@ jobs:
         run: |
           mkdir -p _site
           cp -r site/. _site/
-          cp _helm-repo/*.tgz _site/ 2>/dev/null || true
+          cp _helm-repo/*.tgz _site/
           cp _helm-repo/index.yaml _site/
           cp docs/CNAME _site/
 

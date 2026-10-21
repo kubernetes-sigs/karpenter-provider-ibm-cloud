@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"golang.org/x/sync/singleflight"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -44,6 +45,7 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/capacitytype"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/vpcclient"
 )
 
@@ -67,11 +69,20 @@ type IBMInstanceTypeProvider struct {
 	zonesCache           map[string][]string // Cache zones by region
 	zonesCacheTime       map[string]time.Time
 	unavailableOfferings *ibmcache.UnavailableOfferings
+	profilesMu           sync.Mutex
+	profiles             map[string]profileSnapshot
+	profileFlights       singleflight.Group
+	lifecycle            context.Context
 }
 
-func NewProvider(client *ibm.Client, pricingProvider pricing.Provider, unavailableOfferings *ibmcache.UnavailableOfferings) Provider {
+func NewProvider(client *ibm.Client, pricingProvider pricing.Provider, unavailableOfferings *ibmcache.UnavailableOfferings, contexts ...context.Context) Provider {
+	lifecycle := context.Background()
+	if len(contexts) > 0 {
+		lifecycle = contexts[0]
+	}
 	return &IBMInstanceTypeProvider{
 		client:               client,
+		lifecycle:            lifecycle,
 		pricingProvider:      pricingProvider,
 		vpcClientManager:     vpcclient.NewManager(client, constants.DefaultVPCClientCacheTTL),
 		zonesCache:           make(map[string][]string),
@@ -122,101 +133,19 @@ func getArchitecture(it *cloudprovider.InstanceType) string {
 }
 
 func (p *IBMInstanceTypeProvider) Get(ctx context.Context, name string, nodeClass *v1alpha1.IBMNodeClass) (*cloudprovider.InstanceType, error) {
-	logger := log.FromContext(ctx)
-
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client not initialized")
 	}
-
-	var instanceType *cloudprovider.InstanceType
-	var lastErr error
-
-	// Use same retry logic as List
-	backoff := wait.Backoff{
-		Duration: 1 * time.Second,
-		Factor:   2.0,
-		Jitter:   0.1,
-		Steps:    10,
-		Cap:      15 * time.Second,
+	profiles, err := p.rawProfiles(ctx, p.regionForClass(nodeClass))
+	if err != nil {
+		return nil, err
 	}
-
-	retryErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
-		attemptStart := time.Now()
-
-		// Get VPC client
-		vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to get VPC client: %w", err)
-			logger.V(1).Info("Failing to get VPC client, retrying",
-				"error", err,
-				"duration", time.Since(attemptStart))
-			return false, nil // Retry
+	for _, profile := range profiles {
+		if profile.Name != nil && *profile.Name == name {
+			return p.convertVPCProfileToInstanceType(ctx, profile, nodeClass)
 		}
-
-		// List all profiles
-		profiles, response, err := vpcClient.ListInstanceProfiles(ctx, &vpcv1.ListInstanceProfilesOptions{})
-		if err != nil {
-			lastErr = fmt.Errorf("failed to list instance profiles: %w", err)
-
-			statusCode := 0
-			if response != nil && response.StatusCode != 0 {
-				statusCode = response.StatusCode
-			}
-
-			if isRetryableError(err, statusCode) {
-				logger.Info("Retryable error getting instance type",
-					"name", name,
-					"error", err,
-					"status_code", statusCode,
-					"duration", time.Since(attemptStart),
-					"will_retry", true)
-				return false, nil // Retry
-			}
-
-			logger.Error(err, "Non-retryable error getting instance type",
-				"name", name,
-				"status_code", statusCode,
-				"duration", time.Since(attemptStart))
-			return false, err // Don't retry
-		}
-
-		if profiles == nil || profiles.Profiles == nil {
-			lastErr = fmt.Errorf("no instance profiles returned from VPC API")
-			return false, lastErr // Don't retry for empty response
-		}
-
-		// Find the requested profile
-		for _, profile := range profiles.Profiles {
-			if profile.Name != nil && *profile.Name == name {
-				it, err := p.convertVPCProfileToInstanceType(ctx, profile, nodeClass)
-				if err != nil {
-					lastErr = fmt.Errorf("failed to convert profile %s: %w", name, err)
-					return false, lastErr // Don't retry conversion errors
-				}
-				instanceType = it
-				logger.V(1).Info("Retrieving instance type",
-					"name", name,
-					"duration", time.Since(attemptStart))
-				return true, nil // Success
-			}
-		}
-
-		lastErr = fmt.Errorf("instance profile %s not found in VPC API", name)
-		return false, lastErr // Don't retry if not found
-	})
-
-	if retryErr != nil {
-		if lastErr != nil {
-			return nil, lastErr
-		}
-		return nil, retryErr
 	}
-
-	if instanceType == nil {
-		return nil, fmt.Errorf("instance profile %s not found", name)
-	}
-
-	return instanceType, nil
+	return nil, fmt.Errorf("instance profile %s not found", name)
 }
 
 func (p *IBMInstanceTypeProvider) List(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
@@ -378,29 +307,9 @@ func (p *IBMInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovid
 	// Convert to extended instance types with pricing
 	extended := make([]*ExtendedInstanceType, len(instanceTypes))
 	for i, it := range instanceTypes {
-		// Get price for this instance type (use default zone for ranking)
 		var price float64
-		if p.pricingProvider != nil {
-			// Get zone from client's region for pricing
-			if p.client == nil {
-				// Cannot get pricing without knowing the region
-				price = 0.0
-			} else {
-				region := p.client.GetRegion()
-				// IBM Cloud pricing is uniform across zones in a region, so any zone works for pricing
-				zone := region + "-1" // Pricing is region-level, zone selection doesn't affect price
-				priceVal, err := p.pricingProvider.GetPrice(context.Background(), it.Name, zone)
-				if err != nil {
-					// Log warning but continue with 0 price - use background context since we don't have the original
-					log.Log.WithName("instancetype").V(1).Info("Could not get pricing for instance type ranking, using fallback price",
-						"instance_type", it.Name, "pricing_zone", zone, "error", err, "fallback_price", 0.0)
-					price = 0.0
-				} else {
-					price = priceVal
-				}
-			}
-		} else {
-			price = 0.0
+		if available := it.Offerings.Available(); len(available) > 0 {
+			price = available.Cheapest().Price
 		}
 
 		extended[i] = &ExtendedInstanceType{
@@ -424,110 +333,158 @@ func (p *IBMInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovid
 
 // listFromVPC lists instance types using VPC API with exponential backoff retry
 func (p *IBMInstanceTypeProvider) listFromVPC(ctx context.Context, nodeClass *v1alpha1.IBMNodeClass) ([]*cloudprovider.InstanceType, error) {
-	logger := log.FromContext(ctx)
-
-	var instanceTypes []*cloudprovider.InstanceType
-	var lastErr error
-
-	// Exponential backoff configuration
-	backoff := wait.Backoff{
-		Duration: 1 * time.Second,
-		Factor:   2.0,
-		Jitter:   0.1,
-		Steps:    10, // up to 10 attempts
-		Cap:      15 * time.Second,
+	profiles, err := p.rawProfiles(ctx, p.regionForClass(nodeClass))
+	if err != nil {
+		return nil, err
 	}
-
-	retryErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
-		attemptStart := time.Now()
-
-		vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
+	var result []*cloudprovider.InstanceType
+	for _, profile := range profiles {
+		it, err := p.convertVPCProfileToInstanceType(ctx, profile, nodeClass)
 		if err != nil {
-			lastErr = fmt.Errorf("getting VPC client: %w", err)
-			logger.V(1).Info("Failing to get VPC client, retrying",
-				"error", err,
-				"duration", time.Since(attemptStart))
-			return false, nil // Retry
+			log.FromContext(ctx).Error(err, "Skipping unsupported instance profile")
+			continue
 		}
-
-		// List instance profiles from VPC
-		options := &vpcv1.ListInstanceProfilesOptions{}
-		result, response, err := vpcClient.ListInstanceProfiles(ctx, options)
-
-		if err != nil {
-			lastErr = fmt.Errorf("listing VPC instance profiles: %w", err)
-
-			// Log detailed error information
-			statusCode := 0
-			if response != nil && response.StatusCode != 0 {
-				statusCode = response.StatusCode
-			}
-
-			// Determine if error is retryable
-			if isRetryableError(err, statusCode) {
-				logger.Info("Retryable error listing instance types",
-					"error", err,
-					"status_code", statusCode,
-					"duration", time.Since(attemptStart),
-					"will_retry", true)
-				return false, nil // Retry
-			}
-
-			// Non-retryable error
-			logger.Error(err, "Non-retryable error listing instance types",
-				"status_code", statusCode,
-				"duration", time.Since(attemptStart))
-			return false, err // Don't retry
-		}
-
-		// Success - process the results
-		var types []*cloudprovider.InstanceType
-		for _, profile := range result.Profiles {
-			// Log each profile for debugging
-			profileName := "<nil>"
-			if profile.Name != nil {
-				profileName = *profile.Name
-			}
-
-			instanceType, err := p.convertVPCProfileToInstanceType(ctx, profile, nodeClass)
-			if err != nil {
-				logger.Error(err, "Failed to convert VPC profile",
-					"profile_name", profileName,
-					"profile_details", fmt.Sprintf("%+v", profile))
-				continue
-			}
-
-			// Validate the converted instance type has a valid name
-			if instanceType.Name == "" {
-				logger.Error(fmt.Errorf("converted instance type has empty name"),
-					"Converted instance type validation failed",
-					"original_profile_name", profileName,
-					"converted_name", instanceType.Name)
-				continue
-			}
-
-			types = append(types, instanceType)
-		}
-
-		instanceTypes = types
-		logger.V(1).Info("Listing instance types from VPC API",
-			"count", len(instanceTypes),
-			"duration", time.Since(attemptStart))
-		return true, nil // Success, stop retrying
-	})
-
-	if retryErr != nil {
-		if lastErr != nil {
-			return nil, fmt.Errorf("failed after retries: %w", lastErr)
-		}
-		return nil, fmt.Errorf("failed to list instance types: %w", retryErr)
+		result = append(result, it)
 	}
-
-	if len(instanceTypes) == 0 {
+	if len(result) == 0 {
 		return nil, fmt.Errorf("no instance types returned from VPC API")
 	}
+	return result, nil
+}
 
-	return instanceTypes, nil
+type profileSnapshot struct {
+	profiles []vpcv1.InstanceProfile
+	updated  time.Time
+	// refreshErr is set while a previous catalog is served because the last refetch failed.
+	refreshErr error
+}
+
+// staleProfileRetry is how long a previous catalog is served after a failed refetch.
+const staleProfileRetry = 5 * time.Minute
+
+func (p *IBMInstanceTypeProvider) regionForClass(nc *v1alpha1.IBMNodeClass) string {
+	if nc != nil && nc.Spec.Region != "" {
+		return nc.Spec.Region
+	}
+	if p.client != nil {
+		return p.client.GetRegion()
+	}
+	return ""
+}
+func (p *IBMInstanceTypeProvider) regionalClient(ctx context.Context, region string) (*ibm.VPCClient, error) {
+	var base *ibm.VPCClient
+	var err error
+	if p.vpcClientManager != nil {
+		base, err = p.vpcClientManager.GetVPCClient(ctx)
+	} else if p.client != nil {
+		base, err = p.client.GetVPCClient(ctx)
+	} else {
+		return nil, fmt.Errorf("IBM client not initialized")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return base.ForRegion(region)
+}
+func (p *IBMInstanceTypeProvider) rawProfiles(ctx context.Context, region string) ([]vpcv1.InstanceProfile, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	p.profilesMu.Lock()
+	cached, ok := p.profiles[region]
+	p.profilesMu.Unlock()
+	if ok && time.Since(cached.updated) < time.Hour {
+		return cached.profiles, nil
+	}
+	result := p.profileFlights.DoChan(region, func() (interface{}, error) {
+		p.profilesMu.Lock()
+		cached, ok := p.profiles[region]
+		p.profilesMu.Unlock()
+		if ok && time.Since(cached.updated) < time.Hour {
+			return cached.profiles, nil
+		}
+		lifecycle := p.lifecycle
+		if lifecycle == nil {
+			lifecycle = context.WithoutCancel(ctx)
+		}
+		refreshCtx, cancel := context.WithTimeout(lifecycle, 2*time.Minute)
+		defer cancel()
+		var profiles []vpcv1.InstanceProfile
+		err := wait.ExponentialBackoffWithContext(refreshCtx, wait.Backoff{Duration: time.Second, Factor: 2, Jitter: .1, Steps: 7, Cap: 15 * time.Second}, func(callCtx context.Context) (bool, error) {
+			vpc, err := p.regionalClient(callCtx, region)
+			if err != nil {
+				return false, fmt.Errorf("listing VPC instance profiles: %w", err)
+			}
+			collection, response, err := vpc.ListInstanceProfiles(callCtx, &vpcv1.ListInstanceProfilesOptions{})
+			if err != nil {
+				code := 0
+				if response != nil {
+					code = response.StatusCode
+				}
+				if isRetryableError(err, code) {
+					return false, nil
+				}
+				return false, fmt.Errorf("listing VPC instance profiles: %w", err)
+			}
+			if collection == nil || len(collection.Profiles) == 0 {
+				return false, fmt.Errorf("no instance profiles returned from VPC API")
+			}
+			profiles = collection.Profiles
+			return true, nil
+		})
+		if err != nil {
+			if !ok {
+				return nil, err
+			}
+			log.FromContext(ctx).Error(err, "Serving previous VPC instance profiles", "region", region)
+			p.profilesMu.Lock()
+			p.profiles[region] = profileSnapshot{profiles: cached.profiles, updated: time.Now().Add(staleProfileRetry - time.Hour), refreshErr: err}
+			p.profilesMu.Unlock()
+			return cached.profiles, nil
+		}
+		p.profilesMu.Lock()
+		if p.profiles == nil {
+			p.profiles = map[string]profileSnapshot{}
+		}
+		p.profiles[region] = profileSnapshot{profiles: profiles, updated: time.Now()}
+		p.profilesMu.Unlock()
+		return profiles, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-result:
+		if r.Err != nil {
+			return nil, r.Err
+		}
+		return r.Val.([]vpcv1.InstanceProfile), nil
+	}
+}
+func (p *IBMInstanceTypeProvider) Refresh(ctx context.Context) error {
+	regions := map[string]bool{p.regionForClass(nil): true}
+	p.profilesMu.Lock()
+	for region, snapshot := range p.profiles {
+		regions[region] = true
+		snapshot.updated = time.Time{}
+		p.profiles[region] = snapshot
+	}
+	p.profilesMu.Unlock()
+	p.zonesMu.Lock()
+	p.zonesCache = map[string][]string{}
+	p.zonesCacheTime = map[string]time.Time{}
+	p.zonesMu.Unlock()
+	for region := range regions {
+		if _, err := p.rawProfiles(ctx, region); err != nil {
+			return err
+		}
+		p.profilesMu.Lock()
+		refreshErr := p.profiles[region].refreshErr
+		p.profilesMu.Unlock()
+		if refreshErr != nil {
+			return fmt.Errorf("refreshing VPC instance profiles for %s: %w", region, refreshErr)
+		}
+	}
+	return nil
 }
 
 // isRetryableError determines if an error should trigger a retry
@@ -594,7 +551,7 @@ func (p *IBMInstanceTypeProvider) getZonesForRegion(ctx context.Context, region 
 	p.zonesMu.RUnlock()
 
 	// Get the SDK client directly for zone listing
-	vpcClient, err := p.client.GetVPCClient(ctx)
+	vpcClient, err := p.regionalClient(ctx, region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VPC client: %w", err)
 	}
@@ -701,14 +658,11 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 	memoryResource := resource.NewQuantity(memoryGB*1024*1024*1024, resource.BinarySI)
 	gpuResource := resource.NewQuantity(gpuCount, resource.DecimalSI)
 
-	// Calculate pod capacity (rough estimate: 110 pods per node for most instance types)
-	var podCount int64 = 110
-	if cpuCount <= 2 {
-		podCount = 30
-	} else if cpuCount <= 4 {
-		podCount = 60
+	var kubelet *v1alpha1.KubeletConfiguration
+	if nodeClass != nil {
+		kubelet = nodeClass.Spec.Kubelet
 	}
-	podResource := resource.NewQuantity(podCount, resource.DecimalSI)
+	podResource := resource.NewQuantity(commonTypes.EffectiveMaxPods(kubelet, cpuCount), resource.DecimalSI)
 
 	// Create requirements
 	requirements := scheduling.NewRequirements(
@@ -723,7 +677,7 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 		return nil, fmt.Errorf("IBM client not initialized - cannot determine zones for instance offerings")
 	}
 
-	region := p.client.GetRegion()
+	region := p.regionForClass(nodeClass)
 	zones, err := p.getZonesForRegion(ctx, region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get zones for region %s: %w", region, err)
@@ -739,13 +693,17 @@ func (p *IBMInstanceTypeProvider) convertVPCProfileToInstanceType(ctx context.Co
 		spotDiscountPercent = 60
 	}
 
-	// A price cap needs a real quote; filterCatalog rejects quotes that are not finite and nonnegative.
-	priceLimited := nodeClass != nil && nodeClass.Spec.InstanceRequirements != nil && nodeClass.Spec.InstanceRequirements.MaximumHourlyPrice != ""
 	var offerings cloudprovider.Offerings
 	for _, zone := range zones {
 		for _, capacityType := range supportedCapacityTypes {
+			if p.pricingProvider == nil {
+				continue
+			}
 			price, priceErr := p.pricingProvider.GetPrice(ctx, *profile.Name, zone)
-			if priceLimited && priceErr != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if priceErr != nil || math.IsNaN(price) || math.IsInf(price, 0) || price <= 0 {
 				continue
 			}
 			if capacityType == karpv1.CapacityTypeSpot {

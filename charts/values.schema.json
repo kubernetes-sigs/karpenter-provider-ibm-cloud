@@ -1,0 +1,603 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "bootstrapMode": {
+      "enum": [
+        "auto",
+        "cloud-init",
+        "iks-api"
+      ]
+    },
+    "customResources": {
+      "type": "object",
+      "properties": {
+        "nodeClass": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "spec": {
+              "description": "Spec defines the desired state of IBMNodeClass",
+              "properties": {
+                "apiServerEndpoint": {
+                  "description": "APIServerEndpoint is the Kubernetes API server endpoint for node registration.\nIf specified, this endpoint will be used instead of automatic discovery.\nThis is useful when the control plane is not accessible via standard discovery methods.\nMust be a valid HTTP or HTTPS URL with hostname/IP and port.\nExamples: \"https://10.243.65.4:6443\", \"http://k8s-api.example.com:6443\"",
+                  "minLength": 1,
+                  "pattern": "^https?://[a-zA-Z0-9.-]+:[0-9]+$",
+                  "type": "string"
+                },
+                "blockDeviceMappings": {
+                  "description": "BlockDeviceMappings defines custom block device configurations for instances\nIf not specified, a default 100GB general-purpose boot volume will be used\nA missing root mapping uses the default boot volume. At most one mapping can be a root volume.",
+                  "items": {
+                    "description": "IBMNodeClassSpec defines the desired state of IBMNodeClass.\nThis specification validates several IBM Cloud resource identifiers and configuration constraints:\n\nVPC ID Format: Must follow pattern \"r###-########-####-####-####-############\"\nExample: \"r010-12345678-1234-5678-9abc-def012345678\"\n\nSubnet ID Format: Must follow pattern \"####-########-####-####-####-############\"\nExample: \"0717-197e06f4-b500-426c-bc0f-900b215f996c\"\n\nConfiguration Rules:\n- instanceProfile and instanceRequirements are mutually exclusive (both are optional)\n- When bootstrapMode is \"iks-api\", iksClusterID must be provided\n- When zone is specified, it must belong to the specified region\n\nBlockDeviceMapping defines storage device configuration for instances\nThis allows customization of boot and data volumes attached to instances",
+                    "properties": {
+                      "deviceName": {
+                        "description": "DeviceName is the name for this volume attachment\nIf not specified, a name will be auto-generated",
+                        "maxLength": 63,
+                        "minLength": 1,
+                        "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+                        "type": "string"
+                      },
+                      "rootVolume": {
+                        "description": "RootVolume indicates if this is the boot/root volume\nOnly one volume can be marked as root volume",
+                        "type": "boolean"
+                      },
+                      "volumeSpec": {
+                        "description": "VolumeSpec contains the volume configuration",
+                        "properties": {
+                          "bandwidth": {
+                            "description": "Bandwidth is the max bandwidth in megabits per second\nIf not specified, it will be calculated based on profile, capacity, and IOPS",
+                            "format": "int64",
+                            "maximum": 16000,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "capacity": {
+                            "description": "Capacity is the volume size in gigabytes\nFor boot volumes: minimum is typically the image's minimum provisioned size, maximum is 250GB\nFor data volumes: ranges vary by profile (typically 10GB to 16000GB)",
+                            "format": "int64",
+                            "maximum": 16000,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "deleteOnTermination": {
+                            "default": true,
+                            "description": "DeleteOnTermination controls whether the volume is deleted when the instance is terminated\nDefaults to true",
+                            "type": "boolean"
+                          },
+                          "encryptionKeyID": {
+                            "description": "EncryptionKeyID is the CRN of the customer root key for volume encryption\nIf not specified, provider-managed encryption will be used\nExample: \"crn:v1:bluemix:public:kms:us-south:a/...\"",
+                            "type": "string"
+                          },
+                          "iops": {
+                            "description": "IOPS is the max I/O operations per second\nOnly applicable when Profile is \"custom\" or \"defined_performance\"\nMust be within the range supported by the profile and capacity",
+                            "format": "int64",
+                            "maximum": 64000,
+                            "minimum": 100,
+                            "type": "integer"
+                          },
+                          "profile": {
+                            "description": "Profile is the storage profile to use\nExamples: \"general-purpose\", \"5iops-tier\", \"10iops-tier\", \"custom\"\nIf not specified, defaults to \"general-purpose\"",
+                            "type": "string"
+                          },
+                          "tags": {
+                            "description": "Tags are user tags to apply to the volume",
+                            "items": {
+                              "type": "string"
+                            },
+                            "maxItems": 10,
+                            "type": "array"
+                          }
+                        },
+                        "type": "object",
+                        "additionalProperties": false
+                      }
+                    },
+                    "type": "object",
+                    "additionalProperties": false
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "bootstrapMode": {
+                  "default": "auto",
+                  "description": "BootstrapMode determines how nodes should be bootstrapped to join the cluster\nValid values are:\n- \"auto\" - Automatically select the best method based on cluster type (default)\n- \"cloud-init\" - Use cloud-init scripts to bootstrap nodes\n- \"iks-api\" - Use IKS Worker Pool API to add nodes to cluster",
+                  "enum": [
+                    "cloud-init",
+                    "iks-api",
+                    "auto"
+                  ],
+                  "type": "string"
+                },
+                "iksClusterID": {
+                  "description": "IKSClusterID is the IKS cluster ID for API-based bootstrapping.\nRequired when BootstrapMode is \"iks-api\".\nMust be a valid IKS cluster identifier containing only lowercase letters and numbers.\nExamples: \"bng6n48d0t6vj7b33kag\", \"c4f7x6qw0bx25g5b4vhg\"",
+                  "pattern": "^[a-z0-9]+$",
+                  "type": "string"
+                },
+                "iksDynamicPools": {
+                  "description": "IKSDynamicPools configures dynamic worker pool creation for IKS mode.\nWhen enabled, Karpenter will create new worker pools to match pod requirements\nwhen no existing pool with the required instance type is available.\nThis allows Karpenter to provision nodes with specific instance types dynamically.",
+                  "properties": {
+                    "allowedInstanceTypes": {
+                      "description": "AllowedInstanceTypes is a list of instance types (flavors) that can be used when\ncreating dynamic pools. If empty, all available instance types are allowed.\nExample: [\"bx2-4x16\", \"bx2-8x32\", \"cx2-4x8\"]",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "cleanupPolicy": {
+                      "description": "CleanupPolicy defines when dynamically created worker pools should be deleted.",
+                      "properties": {
+                        "deleteOnEmpty": {
+                          "default": true,
+                          "description": "DeleteOnEmpty controls whether empty pools are automatically deleted.\nWhen true (default), pools are deleted after being empty for EmptyPoolTTL.\nWhen false, pools are retained even when empty.",
+                          "type": "boolean"
+                        },
+                        "emptyPoolTTL": {
+                          "default": "5m",
+                          "description": "EmptyPoolTTL specifies how long an empty pool should remain before being deleted.\nAn empty pool is one with SizePerZone of 0 nodes.\nFormat: duration string (e.g., \"30m\", \"1h\", \"24h\")\nIf not specified, empty pools are cleaned up immediately.",
+                          "pattern": "^([0-9]+(s|m|h))+$",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "diskEncryption": {
+                      "default": true,
+                      "description": "DiskEncryption enables disk encryption for worker nodes in dynamically created pools.\nWhen true, the boot volume of worker nodes will be encrypted.",
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "default": false,
+                      "description": "Enabled controls whether dynamic pool creation is active.\nWhen true, Karpenter will create new worker pools as needed to satisfy pod requirements.\nWhen false (default), Karpenter will only use existing worker pools.",
+                      "type": "boolean"
+                    },
+                    "labels": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Labels are key-value pairs applied to dynamically created worker pools.\nThese labels help identify and manage Karpenter-created pools.\nThe label \"karpenter.sh/managed=true\" is always added automatically.",
+                      "type": "object"
+                    },
+                    "namePrefix": {
+                      "default": "karp",
+                      "description": "NamePrefix is the prefix used when naming dynamically created worker pools.\nPool names combine this prefix with a digest of the cluster and NodeClaim UIDs.",
+                      "maxLength": 20,
+                      "pattern": "^[a-z][a-z0-9-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "iksWorkerPoolID": {
+                  "description": "IKSWorkerPoolID is the worker pool ID to add nodes to\nUsed with IKS API bootstrapping mode",
+                  "type": "string"
+                },
+                "image": {
+                  "description": "Image is the ID or name of the boot image to use for nodes.\nMust contain only lowercase letters, numbers, and hyphens.\nCan be either an image ID or a standard image name.\nExamples: \"ubuntu-24-04-amd64\", \"rhel-8-amd64\", \"centos-8-amd64\"\nMutually exclusive with ImageSelector. If both are specified, Image takes precedence.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "imageSelector": {
+                  "description": "ImageSelector provides semantic image selection based on OS, version, and architecture.\nThis allows for automatic selection of the latest available minor versions and provides\nfallback mechanisms when specific images become unavailable.\nMutually exclusive with Image. If both are specified, Image takes precedence.",
+                  "properties": {
+                    "architecture": {
+                      "default": "amd64",
+                      "description": "Architecture specifies the CPU architecture for the image.\nMust match the architecture requirements of your workload.\nExamples: \"amd64\", \"arm64\", \"s390x\"",
+                      "enum": [
+                        "amd64",
+                        "arm64",
+                        "s390x"
+                      ],
+                      "type": "string"
+                    },
+                    "majorVersion": {
+                      "description": "MajorVersion specifies the major version of the operating system.\nExamples: \"20\" for Ubuntu 20.x, \"8\" for RHEL 8.x, \"22\" for Ubuntu 22.x",
+                      "minLength": 1,
+                      "pattern": "^[0-9]+$",
+                      "type": "string"
+                    },
+                    "minorVersion": {
+                      "description": "MinorVersion specifies the minor version of the operating system.\nIf not specified, the latest available minor version will be automatically selected.\nExamples: \"04\" for Ubuntu x.04, omit for latest",
+                      "pattern": "^[0-9]+$",
+                      "type": "string"
+                    },
+                    "os": {
+                      "description": "OS specifies the operating system for the image.\nCommon values include: \"ubuntu\", \"rhel\", \"centos\", \"rocky\", \"fedora\", \"debian\", \"suse\"\nExamples: \"ubuntu\", \"rhel\", \"centos\"",
+                      "minLength": 1,
+                      "pattern": "^[a-z]+$",
+                      "type": "string"
+                    },
+                    "variant": {
+                      "description": "Variant specifies the image variant or flavor.\nCommon variants include: \"minimal\", \"server\", \"cloud\", \"base\"\nIf not specified, any variant will be considered, with preference for \"minimal\".\nExamples: \"minimal\", \"server\"",
+                      "pattern": "^[a-z]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "majorVersion",
+                    "os"
+                  ],
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "instanceProfile": {
+                  "description": "InstanceProfile is the name of the instance profile to use for nodes.\nIf not specified, instance types will be automatically selected based on NodePool requirements.\nMust follow IBM Cloud instance profile naming convention: family-cpuxmemory.\nExamples: \"bx2-4x16\" (4 vCPUs, 16GB RAM), \"mx2-8x64\" (8 vCPUs, 64GB RAM), \"gx2-16x128x2v100\" (GPU instance)",
+                  "minLength": 1,
+                  "pattern": "^[a-z][a-z0-9]*-[0-9]+x[0-9]+[a-z0-9x]*$",
+                  "type": "string"
+                },
+                "instanceRequirements": {
+                  "description": "InstanceRequirements defines requirements for automatic instance type selection\nOnly used when InstanceProfile is not specified\nIf neither InstanceProfile nor InstanceRequirements are specified, NodePool requirements will be used",
+                  "properties": {
+                    "architecture": {
+                      "description": "Architecture specifies the required CPU architecture for instance types.\nThis must match the architecture of your container images and workloads.\nValid values: \"amd64\", \"arm64\", \"s390x\"\nExample: \"amd64\" for x86-64 based workloads, \"arm64\" for ARM-based workloads,\n\"s390x\" for IBM Z mainframe workloads",
+                      "enum": [
+                        "amd64",
+                        "arm64",
+                        "s390x"
+                      ],
+                      "type": "string"
+                    },
+                    "maximumHourlyPrice": {
+                      "description": "MaximumHourlyPrice specifies the maximum hourly price in USD for instance types.\nInstance types exceeding this price will be excluded from consideration.\nThis helps control costs by preventing the selection of expensive instance types.\nMust be specified as a decimal string (e.g., \"0.50\" for 50 cents per hour).\nExample: \"1.00\" limits selection to instance types costing $1.00/hour or less",
+                      "pattern": "^\\\\d+\\\\.?\\\\d*$",
+                      "type": "string"
+                    },
+                    "minimumCPU": {
+                      "description": "MinimumCPU specifies the minimum number of vCPUs required for instance types.\nInstance types with fewer CPUs than this value will be excluded from consideration.\nThis helps ensure adequate compute capacity for CPU-intensive workloads.\nExample: Setting this to 4 will only consider instance types with 4 or more vCPUs",
+                      "format": "int32",
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "minimumMemory": {
+                      "description": "MinimumMemory specifies the minimum amount of memory in GiB required for instance types.\nInstance types with less memory than this value will be excluded from consideration.\nThis helps ensure adequate memory capacity for memory-intensive workloads.\nExample: Setting this to 16 will only consider instance types with 16 GiB or more memory",
+                      "format": "int32",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "kubelet": {
+                  "description": "Kubelet defines args to be used when configuring kubelet on provisioned nodes.\nThey are a subset of the upstream types, recognizing not all options may be supported.\nWherever possible, the types and names should reflect the upstream kubelet types.",
+                  "properties": {
+                    "clusterDNS": {
+                      "description": "ClusterDNS is a list of IP addresses for the cluster DNS server.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "cpuCFSQuota": {
+                      "description": "CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.",
+                      "type": "boolean"
+                    },
+                    "evictionHard": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "EvictionHard is the map of signal names to quantities that define hard eviction thresholds",
+                      "type": "object"
+                    },
+                    "evictionMaxPodGracePeriod": {
+                      "description": "EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in\nresponse to soft eviction thresholds being met.",
+                      "format": "int32",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "evictionSoft": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "EvictionSoft is the map of signal names to quantities that define soft eviction thresholds",
+                      "type": "object"
+                    },
+                    "evictionSoftGracePeriod": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "EvictionSoftGracePeriod is the map of signal names to quantities that define grace periods for each eviction signal",
+                      "type": "object"
+                    },
+                    "imageGCHighThresholdPercent": {
+                      "description": "ImageGCHighThresholdPercent is the percent of disk usage after which image\ngarbage collection is always run.",
+                      "format": "int32",
+                      "maximum": 100,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "imageGCLowThresholdPercent": {
+                      "description": "ImageGCLowThresholdPercent is the percent of disk usage before which image\ngarbage collection is never run.",
+                      "format": "int32",
+                      "maximum": 100,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "kubeReserved": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "KubeReserved contains resources reserved for Kubernetes system components.",
+                      "type": "object"
+                    },
+                    "maxPods": {
+                      "description": "MaxPods is an override for the maximum number of pods that can run on a worker node instance.",
+                      "format": "int32",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "podsPerCore": {
+                      "description": "PodsPerCore is an override for the number of pods that can run on a worker node\ninstance based on the number of cpu cores.",
+                      "format": "int32",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "systemReserved": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "SystemReserved contains resources reserved for OS system daemons and kernel memory.",
+                      "type": "object"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "loadBalancerIntegration": {
+                  "description": "LoadBalancerIntegration defines load balancer integration settings\nWhen configured, nodes will be automatically registered with IBM Cloud Load Balancers",
+                  "properties": {
+                    "autoDeregister": {
+                      "default": true,
+                      "description": "AutoDeregister controls whether nodes are automatically removed from\nload balancers when they are terminated or become unhealthy",
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "default": false,
+                      "description": "Enabled controls whether load balancer integration is active\nWhen enabled, nodes will be automatically registered with specified load balancers",
+                      "type": "boolean"
+                    },
+                    "registrationTimeout": {
+                      "default": 300,
+                      "description": "RegistrationTimeout is the maximum time to wait for target registration",
+                      "format": "int32",
+                      "maximum": 600,
+                      "minimum": 30,
+                      "type": "integer"
+                    },
+                    "targetGroups": {
+                      "description": "TargetGroups defines the load balancer pools to register nodes with",
+                      "items": {
+                        "description": "LoadBalancerTarget defines a target group configuration for load balancer integration",
+                        "properties": {
+                          "healthCheck": {
+                            "description": "HealthCheck defines health check configuration for the target",
+                            "properties": {
+                              "interval": {
+                                "default": 30,
+                                "description": "Interval is the time in seconds between health checks",
+                                "format": "int32",
+                                "maximum": 300,
+                                "minimum": 5,
+                                "type": "integer"
+                              },
+                              "path": {
+                                "description": "Path is the URL path for HTTP/HTTPS health checks\nOnly used when Protocol is \"http\" or \"https\"",
+                                "pattern": "^/.*$",
+                                "type": "string"
+                              },
+                              "protocol": {
+                                "default": "tcp",
+                                "description": "Protocol is the protocol to use for health checks",
+                                "enum": [
+                                  "http",
+                                  "https",
+                                  "tcp"
+                                ],
+                                "type": "string"
+                              },
+                              "retryCount": {
+                                "default": 2,
+                                "description": "RetryCount is the number of consecutive successful checks required\nbefore marking a target as healthy",
+                                "format": "int32",
+                                "maximum": 10,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "timeout": {
+                                "default": 5,
+                                "description": "Timeout is the timeout in seconds for each health check",
+                                "format": "int32",
+                                "maximum": 60,
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "type": "object",
+                            "additionalProperties": false
+                          },
+                          "loadBalancerID": {
+                            "description": "LoadBalancerID is the ID of the IBM Cloud Load Balancer\nMust be a valid IBM Cloud Load Balancer ID\nExample: \"r010-12345678-1234-5678-9abc-def012345678\"",
+                            "minLength": 1,
+                            "pattern": "^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$",
+                            "type": "string"
+                          },
+                          "poolName": {
+                            "description": "PoolName is the name of the load balancer pool to add targets to",
+                            "maxLength": 63,
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+                            "type": "string"
+                          },
+                          "port": {
+                            "description": "Port is the port number on the target instances",
+                            "format": "int32",
+                            "maximum": 65535,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "weight": {
+                            "default": 50,
+                            "description": "Weight specifies the weight for load balancing traffic to targets\nHigher weights receive proportionally more traffic",
+                            "format": "int32",
+                            "maximum": 100,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "loadBalancerID",
+                          "poolName",
+                          "port"
+                        ],
+                        "type": "object",
+                        "additionalProperties": false
+                      },
+                      "maxItems": 10,
+                      "type": "array"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "placementStrategy": {
+                  "description": "PlacementStrategy defines how nodes should be placed across zones and subnets when explicit\nZone or Subnet is not specified. This allows for intelligent distribution of nodes across\navailability zones to optimize for cost, availability, or balanced distribution.\nWhen Zone is specified, placement strategy is ignored for zone selection but may still\naffect subnet selection within that zone. When Subnet is specified, placement strategy\nis completely ignored as the exact placement is already determined.\nIf PlacementStrategy is nil, a default balanced distribution will be used.",
+                  "properties": {
+                    "subnetSelection": {
+                      "description": "SubnetSelection defines criteria for automatic subnet selection when multiple subnets are available.\nThis is only used when the Subnet field is not explicitly specified in the IBMNodeClassSpec.\nWhen both ZoneBalance and SubnetSelection are configured, subnets are first filtered by the\nselection criteria, then distributed according to the zone balancing strategy.\nIf SubnetSelection is nil, all available subnets in the VPC will be considered for placement.",
+                      "properties": {
+                        "minimumAvailableIPs": {
+                          "description": "MinimumAvailableIPs is the minimum number of available IPs a subnet must have to be considered\nfor node placement. This helps ensure that subnets with sufficient capacity are chosen,\npreventing placement failures due to IP exhaustion.\nExample: Setting this to 10 ensures only subnets with at least 10 available IPs are used.",
+                          "format": "int32",
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "requiredTags": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "RequiredTags specifies key-value pairs that subnets must have to be considered for selection.\nAll specified tags must be present on a subnet for it to be eligible.\nThis is useful for filtering subnets based on environment, team, or other organizational criteria.\nExample: {\"Environment\": \"production\", \"Team\": \"platform\"} will only select subnets\nthat have both the Environment=production and Team=platform tags.",
+                          "type": "object"
+                        }
+                      },
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "zoneBalance": {
+                      "default": "Balanced",
+                      "description": "ZoneBalance determines the strategy for distributing nodes across availability zones.\nThis affects both initial placement and replacement decisions when nodes are scaled or replaced.\nValid values are:\n- \"Balanced\" (default) - Nodes are evenly distributed across all available zones to maximize\n  fault tolerance and prevent concentration in any single zone\n- \"AvailabilityFirst\" - Prioritizes zones with the highest availability scores and most\n  available capacity, which may result in uneven distribution but better resilience\n- \"CostOptimized\" - Balances cost considerations with availability, preferring zones and\n  instance types that offer the best price-performance ratio while maintaining redundancy",
+                      "enum": [
+                        "Balanced",
+                        "AvailabilityFirst",
+                        "CostOptimized"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "placementTarget": {
+                  "description": "PlacementTarget is the ID of the placement target (dedicated host, placement group)",
+                  "type": "string"
+                },
+                "region": {
+                  "description": "Region is the IBM Cloud region where nodes will be created.\nMust follow IBM Cloud region naming convention: two-letter country code followed by region name.\nExamples: \"us-south\", \"eu-de\", \"jp-tok\", \"au-syd\"",
+                  "minLength": 1,
+                  "pattern": "^[a-z]{2}-[a-z]+$",
+                  "type": "string"
+                },
+                "resourceGroup": {
+                  "description": "ResourceGroup is the ID of the resource group for the instance",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "securityGroups": {
+                  "description": "SecurityGroups is a list of security group IDs to attach to nodes.\nIf empty, the VPC default security group is used.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sshKeys": {
+                  "description": "SSHKeys is a list of SSH key IDs to add to the instance.\nMust be valid IBM Cloud SSH key IDs in the format \"r###-########-####-####-####-############\".\nExample: \"r010-82091c89-68e4-4b3f-bd2b-4e63ca2f67da\"\nTo find SSH key IDs: ibmcloud is keys --output json | jq '.[] | {name, id}'",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "subnet": {
+                  "description": "Subnet is the ID of the subnet where nodes will be created.\nIf not specified, subnets will be automatically selected based on placement strategy.\nMust be a valid IBM Cloud subnet ID following the format \"####-########-####-####-####-############\".\nExample: \"0717-197e06f4-b500-426c-bc0f-900b215f996c\"",
+                  "type": "string"
+                },
+                "tags": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Tags to apply to the instances",
+                  "type": "object"
+                },
+                "userData": {
+                  "description": "UserData contains user data script to run on instance initialization\nWhen specified, this completely overrides the default bootstrap script\nUse UserDataAppend if you want to add custom commands without replacing the bootstrap process",
+                  "type": "string"
+                },
+                "userDataAppend": {
+                  "description": "UserDataAppend contains additional user data script to append to the default bootstrap script\nUnlike UserData, this field adds your custom commands after the standard bootstrap process\nThis is useful for running additional configuration without disrupting node bootstrapping",
+                  "type": "string"
+                },
+                "vpc": {
+                  "description": "VPC is the ID of the IBM Cloud VPC where nodes will be created.\nMust be a valid IBM Cloud VPC ID following the format \"r###-########-####-####-####-############\".\nExample: \"r010-12345678-1234-5678-9abc-def012345678\"",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "zone": {
+                  "description": "Zone is the availability zone where nodes will be created.\nIf not specified, zones will be automatically selected based on placement strategy.\nMust follow IBM Cloud zone naming convention: region name followed by zone number.\nExamples: \"us-south-1\", \"eu-de-2\", \"jp-tok-3\"",
+                  "pattern": "^[a-z]{2}-[a-z]+-[0-9]+$",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "ibmApiKey": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "zone": {
+          "type": "string"
+        },
+        "resourceGroupId": {
+          "type": "string"
+        },
+        "vpcUrl": {
+          "type": "string"
+        },
+        "vpcAuthType": {
+          "type": "string"
+        },
+        "vpcApiKey": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

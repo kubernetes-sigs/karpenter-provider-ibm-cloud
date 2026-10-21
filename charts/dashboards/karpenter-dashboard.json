@@ -182,7 +182,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "sum(rate(karpenter_ibm_api_requests_total{status!=\"success\"}[5m])) / (sum(rate(karpenter_ibm_api_requests_total[5m])) > 0 or vector(0))",
+          "expr": "sum(rate(karpenter_ibm_api_requests_total{status!~\"2..\"}[5m])) / (sum(rate(karpenter_ibm_api_requests_total[5m])) > 0 or vector(0))",
           "legendFormat": "Error Rate",
           "refId": "A"
         }

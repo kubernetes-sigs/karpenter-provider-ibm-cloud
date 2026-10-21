@@ -106,9 +106,7 @@ bootstrapMode: "auto"
 # Custom Resource Configuration
 customResources:
   # Enable automatic creation of NodePools and IBMNodeClasses
-  # When enabled, you must provide configuration based on your mode:
-  # - For vpc mode: customResources.nodeClass.vpc.vpcId is required
-  # - For iks mode: iksClusterID is required
+  # Configure customResources.nodeClass.spec using the IBMNodeClass API schema.
   enabled: false
 
   # Mode: "iks" for IBM Kubernetes Service, "vpc" for self-managed VPC clusters
@@ -151,99 +149,9 @@ customResources:
     enabled: true
     name: "default"
 
-    # VPC-specific settings (when mode=vpc)
-    vpc:
-      # VPC ID (required for VPC mode)
-      vpcId: ""
-
-      # Subnet selection strategy
-      subnetSelection:
-        # Strategy: "all", "zone-balanced", "cost-optimized", "availability-preferred"
-        strategy: "zone-balanced"
-
-        # Specific subnet IDs (optional - overrides strategy)
-        subnetIds: []
-        # - "subnet-123"
-        # - "subnet-456"
-
-        # Availability zones to use (optional)
-        zones: []
-        # - "us-south-1"
-        # - "us-south-2"
-
-      # Security group settings
-      securityGroups:
-        # Selection strategy: "auto", "manual"
-        strategy: "auto"
-
-        # Specific security group IDs (when strategy=manual)
-        groupIds: []
-        # - "sg-123"
-        # - "sg-456"
-
-      # Boot volume configuration
-      bootVolume:
-        # Volume type: "general-purpose", "5iops-tier", "10iops-tier", "custom"
-        volumeType: "general-purpose"
-        size: 100  # GB
-        encrypted: true
-
-        # Custom IOPS (when volumeType=custom)
-        iops: null
-
-      # Network interface settings
-      networkInterface:
-        # Enable IP forwarding
-        allowIpSpoofing: false
-
-        # Primary interface subnet strategy
-        primaryInterfaceSubnetStrategy: "zone-balanced"
-
-    # IKS-specific settings (when mode=iks)
-    iks:
-      # Worker pool template settings
-      workerPoolTemplate:
-        # Machine type for IKS worker pools
-        machineType: "bx2.4x16"
-
-        # Disk encryption
-        diskEncryption: true
-
-        # Operating system
-        operatingSystem: "UBUNTU_20_64"
-
-    # Common settings for both VPC and IKS
-    common:
-      # Image selection
-      image:
-        # Image selection strategy: "latest", "specific", "family"
-        strategy: "latest"
-
-        # Specific image ID (when strategy=specific)
-        imageId: ""
-
-        # Image family (when strategy=family)
-        family: "ubuntu-minimal"
-
-        # Operating system filter
-        operatingSystem: "ubuntu"
-
-        # Architecture filter
-        architecture: "amd64"
-
-      # User data / cloud-init configuration
-      userData: ""
-
-      # Instance metadata service
-      metadataService:
-        enabled: true
-        hopLimit: 1
-
-      # Resource tags
-      tags:
-        Environment: "development"
-        ManagedBy: "karpenter"
-        # Add custom tags here
+    # Canonical IBMNodeClassSpec; required when this NodeClass is enabled.
+    # See charts/examples for VPC and IKS configurations.
+    spec: {}
 
   # NodePool configurations - supports multiple pools
   nodePools:

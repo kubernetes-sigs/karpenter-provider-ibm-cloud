@@ -392,7 +392,8 @@ func TestMarkNodeAsInterrupted(t *testing.T) {
 
 	node := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-node",
+			Name:        "test-node",
+			Annotations: map[string]string{"ibm-cloud.kubernetes.io/status": "capacity unavailable"},
 		},
 	}
 
@@ -403,6 +404,7 @@ func TestMarkNodeAsInterrupted(t *testing.T) {
 
 	controller := &Controller{
 		kubeClient: fakeClient,
+		apiReader:  fakeClient,
 	}
 
 	ctx := context.Background()

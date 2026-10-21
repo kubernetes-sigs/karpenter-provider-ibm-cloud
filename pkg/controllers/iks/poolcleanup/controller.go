@@ -171,13 +171,17 @@ func (c *Controller) releaseDeletedReservations(ctx context.Context, iksClient i
 	}
 	for i := range reservations.Items {
 		reservation := &reservations.Items[i]
-		if reservation.Data[workerpool.ReservationCleanupKey] != "true" || reservation.Data[workerpool.ReservationPhaseKey] != "deleting" || reservation.Data[workerpool.ReservationClusterIDKey] == "" || reservation.Data[workerpool.ReservationPoolIDKey] == "" {
+		checkpoint, decodeErr := workerpool.DecodePoolCleanupCheckpoint(reservation)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if checkpoint == nil {
 			continue
 		}
-		if reservation.Data[workerpool.ReservationAccountIDKey] != accountID || reservation.Data[workerpool.ReservationRegionKey] != region {
+		if checkpoint.ClusterUID != clusterUID || checkpoint.AccountID != accountID || checkpoint.Region != region {
 			return fmt.Errorf("IKS pool cleanup target changed; retaining reservation")
 		}
-		_, err := iksClient.GetWorkerPool(ctx, reservation.Data[workerpool.ReservationClusterIDKey], reservation.Data[workerpool.ReservationPoolIDKey])
+		_, err := iksClient.GetWorkerPool(ctx, checkpoint.ClusterID, checkpoint.PoolID)
 		if workerpool.IsNotFound(err) {
 			if operationErr := c.kubeClient.Delete(ctx, reservation, client.Preconditions{UID: &reservation.UID, ResourceVersion: &reservation.ResourceVersion}); client.IgnoreNotFound(operationErr) != nil {
 				return operationErr
@@ -190,14 +194,10 @@ func (c *Controller) releaseDeletedReservations(ctx context.Context, iksClient i
 }
 
 func (c *Controller) target(iksClient ibm.IKSClientInterface) (string, string, error) {
-	target, ok := iksClient.(interface {
-		GetAccountID() string
-		GetRegion() string
-	})
-	if !ok || target.GetAccountID() == "" || target.GetRegion() == "" {
+	if iksClient == nil || iksClient.GetAccountID() == "" || iksClient.GetRegion() == "" {
 		return "", "", fmt.Errorf("IKS pool cleanup client has no account and region identity")
 	}
-	return target.GetAccountID(), target.GetRegion(), nil
+	return iksClient.GetAccountID(), iksClient.GetRegion(), nil
 }
 
 func (c *Controller) isKarpenterManaged(pool *ibm.WorkerPool) bool {

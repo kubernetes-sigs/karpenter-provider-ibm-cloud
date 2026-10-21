@@ -169,7 +169,7 @@ var _ = Describe("HealthCheckManager", func() {
 			needsUpdate, patch := manager.buildHealthCheckPatch(healthCheck, currentPool)
 			Expect(needsUpdate).To(BeTrue())
 
-			Expect(patch["protocol"]).To(Equal("https"))
+			Expect(patch).NotTo(HaveKey("protocol"))
 			healthMonitor := patch["health_monitor"].(map[string]interface{})
 			Expect(healthMonitor["delay"]).To(Equal(int64(60)))
 			Expect(healthMonitor["timeout"]).To(Equal(int64(10)))

@@ -396,7 +396,7 @@ func TestSelectSubnets_TagFiltering(t *testing.T) {
 		Tags:         map[string]string{},
 	}
 
-	p.subnetCache.Set("vpc-subnets:vpc-1", []SubnetInfo{tagged, untagged})
+	p.subnetCache.Set("vpc-subnets::vpc-1", []SubnetInfo{tagged, untagged})
 
 	ctx := context.Background()
 	strategy := &v1alpha1.PlacementStrategy{

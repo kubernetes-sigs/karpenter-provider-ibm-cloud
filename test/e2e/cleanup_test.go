@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -40,6 +41,11 @@ import (
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
+
+func TestCleanupE2EEnvironment(t *testing.T) {
+	suite := SetupE2ETestSuite(t)
+	require.NoError(t, suite.cleanupSelectedResources(context.Background(), ""))
+}
 
 // TestE2ECleanupNodePoolDeletion tests proper cleanup when deleting NodePools
 func TestE2ECleanupNodePoolDeletion(t *testing.T) {
@@ -73,6 +79,10 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	initialNodes := suite.getKarpenterNodes(t, nodePool.Name)
 	require.Greater(t, len(initialNodes), 0, "Should have provisioned at least one node")
 	t.Logf("Initial provisioned nodes: %d", len(initialNodes))
+	var originalPods corev1.PodList
+	require.NoError(t, suite.kubeClient.List(ctx, &originalPods,
+		client.InNamespace(deployment.Namespace), client.MatchingLabels(deployment.Spec.Selector.MatchLabels)))
+	require.NotEmpty(t, originalPods.Items, "Should have running workload pods before deletion")
 
 	// Delete the NodePool first - this should trigger cleanup
 	err := suite.kubeClient.Delete(ctx, nodePool, client.Preconditions{UID: &nodePool.UID})
@@ -80,7 +90,19 @@ func TestE2ECleanupNodePoolDeletion(t *testing.T) {
 	t.Logf("Deleted NodePool: %s", nodePool.Name)
 
 	// Wait for pods to be evicted
-	suite.waitForPodsGone(t, deployment.Name+"-workload")
+	require.Eventually(t, func() bool {
+		for _, original := range originalPods.Items {
+			var current corev1.Pod
+			err := suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(&original), &current)
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			if err != nil || current.UID == original.UID {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Minute, pollInterval, "Original workload pods should be evicted after NodePool deletion")
 	t.Logf("Pods evicted successfully")
 
 	// Wait for nodes to be cleaned up using proper polling
@@ -132,7 +154,7 @@ func TestE2ECleanupNodeClassDeletion(t *testing.T) {
 
 	// Delete the deployment first to reduce resource pressure
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.waitForPodsGone(t, deployment.Name+"-workload")
+	suite.waitForPodsGone(t, deployment.Name)
 
 	// Delete the NodePool first
 	err = suite.kubeClient.Delete(ctx, nodePool, client.Preconditions{UID: &nodePool.UID})
@@ -188,7 +210,7 @@ func TestE2ECleanupOrphanedResources(t *testing.T) {
 
 	// Clean up workload
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.waitForPodsGone(t, deployment.Name+"-workload")
+	suite.waitForPodsGone(t, deployment.Name)
 
 	// Use our comprehensive cleanup function to catch any remaining orphaned resources
 	suite.cleanupOrphanedKubernetesResources(t)
@@ -238,7 +260,7 @@ func TestE2ECleanupIBMCloudResources(t *testing.T) {
 
 	// Start cleanup process
 	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.waitForPodsGone(t, deployment.Name+"-workload")
+	suite.waitForPodsGone(t, deployment.Name)
 
 	// Delete NodePool to trigger instance cleanup
 	err = suite.kubeClient.Delete(ctx, nodePool, client.Preconditions{UID: &nodePool.UID})
@@ -331,10 +353,17 @@ func TestCleanupCurrentTestPreservesOtherTests(t *testing.T) {
 	otherPool.UID = "other-pool-uid"
 	otherClaim := cleanupClaim("generated-other", otherPool)
 	otherClaim.UID = "other-claim-uid"
-	currentWorkload := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "current-workload", Namespace: "default", UID: "workload-uid", Labels: map[string]string{"test": "e2e"}}}
+	currentWorkload := createResourceIntensiveWorkload("test-deployment-current", "current", nil, map[string]string{"test": "current"})
+	currentWorkload.UID = "workload-uid"
+	intolerantWorkload := createResourceIntensiveWorkload("test-deployment-intolerant", "currentintolerant", nil, map[string]string{"test": "current"})
+	intolerantWorkload.UID = "intolerant-workload-uid"
+	require.Equal(t, "current", intolerantWorkload.Spec.Template.Spec.NodeSelector["test"])
+	require.Equal(t, "currentintolerant", intolerantWorkload.Spec.Template.Labels["test"])
 	otherWorkload := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "current-other-workload", Namespace: "default", UID: "other-workload-uid", Labels: map[string]string{"test": "e2e", "test-name": "current-other"}}}
+	currentDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "taint-remover-current", Namespace: "default", UID: "daemonset-uid", Labels: taintTestLabels("current")}}
+	otherDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "taint-remover-other", Namespace: "default", UID: "other-daemonset-uid", Labels: taintTestLabels("other")}}
 	var deletionOrder []string
-	kube := fake.NewClientBuilder().WithScheme(cleanupTestScheme(t)).WithObjects(class, pool, claim, otherClass, otherPool, otherClaim, currentWorkload, otherWorkload).WithInterceptorFuncs(interceptor.Funcs{
+	kube := fake.NewClientBuilder().WithScheme(cleanupTestScheme(t)).WithObjects(class, pool, claim, otherClass, otherPool, otherClaim, currentWorkload, intolerantWorkload, otherWorkload, currentDaemonSet, otherDaemonSet).WithInterceptorFuncs(interceptor.Funcs{
 		Delete: func(ctx context.Context, c client.WithWatch, object client.Object, options ...client.DeleteOption) error {
 			deleteOptions := (&client.DeleteOptions{}).ApplyOptions(options)
 			require.NotNil(t, deleteOptions.Preconditions)
@@ -347,9 +376,116 @@ func TestCleanupCurrentTestPreservesOtherTests(t *testing.T) {
 	}).Build()
 	suite := &E2ETestSuite{kubeClient: kube}
 	require.NoError(t, suite.cleanupSelectedResources(ctx, "current"))
-	require.Equal(t, []string{currentWorkload.Name, claim.Name, pool.Name, class.Name}, deletionOrder)
-	for _, object := range []client.Object{otherClass, otherPool, otherClaim, otherWorkload} {
+	require.Equal(t, []string{currentDaemonSet.Name, currentWorkload.Name, intolerantWorkload.Name, claim.Name, pool.Name, class.Name}, deletionOrder)
+	for _, object := range []client.Object{otherClass, otherPool, otherClaim, otherWorkload, otherDaemonSet} {
 		require.NoError(t, kube.Get(ctx, client.ObjectKeyFromObject(object), object.DeepCopyObject().(client.Object)))
+	}
+}
+
+func TestCleanupQuiescesSelectedPoolsBeforeDeletingClaims(t *testing.T) {
+	class := cleanupClass("current-class", "current")
+	pool := cleanupPool("current-pool", "current", class)
+	pool.Spec.Limits = karpv1.Limits{
+		corev1.ResourceCPU:    resource.MustParse("8"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	claim := cleanupClaim("generated-current", pool)
+	foreignPool := cleanupPool("other-pool", "other", cleanupClass("other-class", "other"))
+	foreignPool.UID = "other-pool-uid"
+	foreignPool.Finalizers = []string{"example.com/protect"}
+	foreignPool.Spec.Limits = karpv1.Limits{corev1.ResourceCPU: resource.MustParse("16")}
+	claimDeletes := 0
+	kube := fake.NewClientBuilder().WithScheme(cleanupTestScheme(t)).WithObjects(class, pool, claim, foreignPool).WithInterceptorFuncs(interceptor.Funcs{
+		Delete: func(ctx context.Context, c client.WithWatch, object client.Object, options ...client.DeleteOption) error {
+			if _, ok := object.(*karpv1.NodeClaim); ok {
+				claimDeletes++
+				current := &karpv1.NodePool{}
+				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(pool), current))
+				cpu := current.Spec.Limits[corev1.ResourceCPU]
+				require.True(t, cpu.IsZero(), "Selected pool must stop provisioning before claim deletion")
+				require.Equal(t, pool.Spec.Limits[corev1.ResourceMemory], current.Spec.Limits[corev1.ResourceMemory])
+				require.Equal(t, pool.Spec.Template, current.Spec.Template)
+				require.True(t, current.DeletionTimestamp.IsZero(), "Existing dependent deletion order must be preserved")
+				foreign := &karpv1.NodePool{}
+				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(foreignPool), foreign))
+				require.Equal(t, foreignPool.Spec, foreign.Spec)
+				require.Equal(t, foreignPool.Finalizers, foreign.Finalizers)
+			}
+			return c.Delete(ctx, object, options...)
+		},
+	}).Build()
+	suite := &E2ETestSuite{kubeClient: kube}
+	require.NoError(t, suite.cleanupSelectedResources(t.Context(), "current"))
+	require.Equal(t, 1, claimDeletes)
+	foreign := &karpv1.NodePool{}
+	require.NoError(t, kube.Get(t.Context(), client.ObjectKeyFromObject(foreignPool), foreign))
+	require.Equal(t, foreignPool.Spec, foreign.Spec)
+	require.True(t, foreign.DeletionTimestamp.IsZero())
+}
+
+func TestCleanupQuiesceRetriesConflictWithoutLosingConcurrentChanges(t *testing.T) {
+	pool := cleanupPool("pool", "current", cleanupClass("class", "current"))
+	pool.Finalizers = []string{"example.com/protect"}
+	patches := 0
+	kube := fake.NewClientBuilder().WithScheme(cleanupTestScheme(t)).WithObjects(pool).WithInterceptorFuncs(interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+			patches++
+			if patches == 1 {
+				current := &karpv1.NodePool{}
+				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(object), current))
+				current.Spec.Limits = karpv1.Limits{corev1.ResourceMemory: resource.MustParse("64Gi")}
+				current.Annotations = map[string]string{"concurrent": "preserved"}
+				require.NoError(t, c.Update(ctx, current))
+			}
+			return c.Patch(ctx, object, patch, options...)
+		},
+	}).Build()
+	suite := &E2ETestSuite{kubeClient: kube}
+	scope := cleanupScope{testName: "current", poolUIDs: map[string]types.UID{pool.Name: pool.UID}}
+	require.NoError(t, suite.quiesceCleanupPools(t.Context(), scope))
+	require.Equal(t, 2, patches, "Optimistic lock must retry after a concurrent update")
+	current := &karpv1.NodePool{}
+	require.NoError(t, kube.Get(t.Context(), client.ObjectKeyFromObject(pool), current))
+	cpu := current.Spec.Limits[corev1.ResourceCPU]
+	require.True(t, cpu.IsZero())
+	require.Equal(t, resource.MustParse("64Gi"), current.Spec.Limits[corev1.ResourceMemory])
+	require.Equal(t, "preserved", current.Annotations["concurrent"])
+	require.Equal(t, pool.Finalizers, current.Finalizers)
+	require.True(t, current.DeletionTimestamp.IsZero())
+}
+
+func TestCleanupQuiesceRechecksIdentityAndOwnershipDuringRetry(t *testing.T) {
+	for _, change := range []string{"identity", "ownership"} {
+		t.Run(change, func(t *testing.T) {
+			pool := cleanupPool("pool", "current", cleanupClass("class", "current"))
+			pool.Spec.Limits = karpv1.Limits{corev1.ResourceCPU: resource.MustParse("8")}
+			patches := 0
+			kube := fake.NewClientBuilder().WithScheme(cleanupTestScheme(t)).WithObjects(pool).WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(ctx context.Context, c client.WithWatch, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					patches++
+					current := &karpv1.NodePool{}
+					require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(object), current))
+					if change == "identity" {
+						require.NoError(t, c.Delete(ctx, current))
+						current.UID = "replacement-pool-uid"
+						current.ResourceVersion = ""
+						require.NoError(t, c.Create(ctx, current))
+					} else {
+						current.Labels["test-name"] = "other"
+						require.NoError(t, c.Update(ctx, current))
+					}
+					return apierrors.NewConflict(schema.GroupResource{Group: "karpenter.sh", Resource: "nodepools"}, object.GetName(), fmt.Errorf("pool changed during cleanup"))
+				},
+			}).Build()
+			suite := &E2ETestSuite{kubeClient: kube}
+			scope := cleanupScope{testName: "current", poolUIDs: map[string]types.UID{pool.Name: pool.UID}}
+			require.ErrorContains(t, suite.quiesceCleanupPools(t.Context(), scope), "cleanup "+change+" changed")
+			require.Equal(t, 1, patches)
+			current := &karpv1.NodePool{}
+			require.NoError(t, kube.Get(t.Context(), client.ObjectKeyFromObject(pool), current))
+			require.Equal(t, pool.Spec.Limits, current.Spec.Limits)
+			require.True(t, current.DeletionTimestamp.IsZero())
+		})
 	}
 }
 

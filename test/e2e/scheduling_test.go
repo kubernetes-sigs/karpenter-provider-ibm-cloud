@@ -28,16 +28,20 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 // TestE2EConsolidationWithPDB tests node consolidation behavior with Pod Disruption Budgets
 func TestE2EConsolidationWithPDB(t *testing.T) {
 	suite := SetupE2ETestSuite(t)
 	testName := fmt.Sprintf("consolidation-pdb-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	t.Logf("Starting consolidation with PDB test: %s", testName)
 	ctx := context.Background()
 
@@ -45,6 +49,10 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 	nodeClass := suite.createTestNodeClass(t, testName)
 	suite.waitForNodeClassReady(t, nodeClass.Name)
 	nodePool := suite.createTestNodePool(t, testName, nodeClass.Name)
+	require.NoError(t, suite.mutateOwnedTestObject(ctx, nodePool, testName, func(object client.Object) error {
+		object.(*karpv1.NodePool).Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("10s")
+		return nil
+	}))
 
 	// Create deployment with multiple replicas to spread across nodes
 	deployment := &appsv1.Deployment{
@@ -52,9 +60,10 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 			Name:      fmt.Sprintf("%s-deployment", testName),
 			Namespace: "default",
 			Labels: map[string]string{
-				"app":       fmt.Sprintf("%s-app", testName),
-				"test":      "e2e",
-				"test-name": testName,
+				"app":        fmt.Sprintf("%s-app", testName),
+				"test":       "e2e",
+				"test-name":  testName,
+				"created-by": "karpenter-e2e",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -128,8 +137,9 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 			Name:      fmt.Sprintf("%s-pdb", testName),
 			Namespace: "default",
 			Labels: map[string]string{
-				"test":      "e2e",
-				"test-name": testName,
+				"test":       "e2e",
+				"test-name":  testName,
+				"created-by": "karpenter-e2e",
 			},
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
@@ -150,25 +160,33 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 	t.Logf("Created PodDisruptionBudget: %s", pdb.Name)
 
 	// Scale down deployment to trigger potential consolidation
-	deployment.Spec.Replicas = &[]int32{2}[0]
-	err = suite.kubeClient.Update(ctx, deployment)
-	require.NoError(t, err)
+	require.NoError(t, suite.scaleTestDeployment(ctx, deployment, 2))
 	t.Logf("Scaled deployment down to 2 replicas")
 
 	// Wait for scaling to complete by checking deployment status
 	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
 
-	// Check if consolidation occurred while respecting PDB
-	// Note: Actual consolidation timing depends on Karpenter configuration
-	finalNodes := suite.getKarpenterNodes(t, nodePool.Name)
-	t.Logf("Final nodes after scaling: %d (initial: %d)", len(finalNodes), len(initialNodes))
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
+		var currentPDB policyv1.PodDisruptionBudget
+		if err := suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(pdb), &currentPDB); err != nil {
+			return false, err
+		}
+		if currentPDB.Status.ObservedGeneration < currentPDB.Generation {
+			return false, nil
+		}
+		if currentPDB.Status.CurrentHealthy < 2 {
+			return false, fmt.Errorf("consolidation reduced healthy replicas below the disruption budget: %d", currentPDB.Status.CurrentHealthy)
+		}
+		var nodes corev1.NodeList
+		if err := suite.kubeClient.List(ctx, &nodes, client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool.Name}); err != nil {
+			return false, err
+		}
+		return len(nodes.Items) < len(initialNodes), nil
+	}), "An empty owned node must consolidate while both protected replicas stay healthy")
 
 	// Verify pods are still running
 	suite.verifyPodsScheduledOnCorrectNodes(t, deployment.Name, "default", nodePool.Name)
 
-	// Cleanup
-	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.cleanupTestResources(t, testName)
 	t.Logf("Consolidation with PDB test completed: %s", testName)
 }
 
@@ -176,70 +194,73 @@ func TestE2EConsolidationWithPDB(t *testing.T) {
 func TestE2EPodDisruptionBudget(t *testing.T) {
 	suite := SetupE2ETestSuite(t)
 	testName := fmt.Sprintf("pdb-test-%d", time.Now().Unix())
-	t.Logf("Starting PodDisruptionBudget test: %s", testName)
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	ctx := context.Background()
-
-	// Ensure cleanup happens even if test fails
-	defer func() {
-		t.Logf("Running deferred cleanup for test: %s", testName)
-		suite.cleanupTestResources(t, testName)
-	}()
-
-	// Create infrastructure
-	nodeClass := suite.createTestNodeClass(t, testName)
-	suite.waitForNodeClassReady(t, nodeClass.Name)
-	_ = suite.createTestNodePool(t, testName, nodeClass.Name)
-
-	// Create deployment with 3 replicas (default from createTestWorkload)
+	class := suite.createTestNodeClass(t, testName)
+	suite.waitForNodeClassReady(t, class.Name)
+	pool := suite.createTestNodePool(t, testName, class.Name)
 	deployment := suite.createTestWorkload(t, testName)
-
-	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
-
-	// Create restrictive PDB
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
+	var pods corev1.PodList
+	require.NoError(t, suite.kubeClient.List(ctx, &pods, client.InNamespace(deployment.Namespace), client.MatchingLabels(deployment.Spec.Selector.MatchLabels)))
+	require.NotEmpty(t, pods.Items)
+	victim := pods.Items[0]
+	zero := intstr.FromInt32(0)
 	pdb := &policyv1.PodDisruptionBudget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-pdb", testName),
-			Namespace: "default",
-			Labels: map[string]string{
-				"test":      "e2e",
-				"test-name": testName,
-			},
-		},
-		Spec: policyv1.PodDisruptionBudgetSpec{
-			MaxUnavailable: &intstr.IntOrString{
-				Type:   intstr.Int,
-				IntVal: 1, // Only allow 1 pod to be unavailable
-			},
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": fmt.Sprintf("%s-workload", testName),
-				},
-			},
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: testName + "-pdb", Namespace: deployment.Namespace,
+			Labels: map[string]string{"test": "e2e", "test-name": testName, "created-by": "karpenter-e2e"}},
+		Spec: policyv1.PodDisruptionBudgetSpec{MaxUnavailable: &zero, Selector: deployment.Spec.Selector.DeepCopy()},
 	}
-
-	err := suite.kubeClient.Create(ctx, pdb)
+	require.NoError(t, suite.kubeClient.Create(ctx, pdb))
+	suite.waitForPDBReady(t, pdb.Name, pdb.Namespace, time.Minute)
+	var currentPDB policyv1.PodDisruptionBudget
+	require.NoError(t, suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(pdb), &currentPDB))
+	require.Greater(t, currentPDB.Status.ExpectedPods, int32(0))
+	require.Equal(t, currentPDB.Status.ExpectedPods, currentPDB.Status.CurrentHealthy)
+	require.Zero(t, currentPDB.Status.DisruptionsAllowed)
+	err := suite.coreClient.Pods(victim.Namespace).EvictV1(ctx, &policyv1.Eviction{
+		ObjectMeta:    metav1.ObjectMeta{Name: victim.Name, Namespace: victim.Namespace},
+		DeleteOptions: &metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &victim.UID}},
+	})
+	require.True(t, apierrors.IsTooManyRequests(err), "PDB must reject protected eviction; got %v", err)
+	var claims karpv1.NodeClaimList
+	require.NoError(t, suite.kubeClient.List(ctx, &claims, client.MatchingLabels{karpv1.NodePoolLabelKey: pool.Name}))
+	var retiring *karpv1.NodeClaim
+	for i := range claims.Items {
+		if claims.Items[i].Status.NodeName == victim.Spec.NodeName {
+			retiring = &claims.Items[i]
+		}
+	}
+	require.NotNil(t, retiring, "Victim must be on a claim owned by this test")
+	scope, err := suite.newCleanupScope(ctx, testName)
 	require.NoError(t, err)
-	t.Logf("Created restrictive PDB: %s", pdb.Name)
-
-	// Wait for PDB to be processed
-	suite.waitForPDBReady(t, pdb.Name, pdb.Namespace, 30*time.Second)
-
-	// Verify PDB is active
-	var updatedPDB policyv1.PodDisruptionBudget
-	err = suite.kubeClient.Get(ctx, client.ObjectKey{Name: pdb.Name, Namespace: pdb.Namespace}, &updatedPDB)
-	require.NoError(t, err)
-	t.Logf("PDB Status - Expected: %d, Current: %d, Desired: %d",
-		updatedPDB.Status.ExpectedPods, updatedPDB.Status.CurrentHealthy, updatedPDB.Status.DesiredHealthy)
-
-	// Verify that pods remain available despite potential disruptions
-	// This is more of a validation that the PDB is properly configured
-	require.True(t, updatedPDB.Status.CurrentHealthy >= updatedPDB.Status.DesiredHealthy,
-		"PDB should maintain desired number of healthy pods")
-
-	// Cleanup workload explicitly (resources will be cleaned by defer)
-	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	t.Logf("PodDisruptionBudget test completed: %s", testName)
+	require.NoError(t, suite.deleteCleanupObject(ctx, retiring, scope))
+	for until := time.Now().Add(20 * time.Second); time.Now().Before(until); {
+		var protected corev1.Pod
+		require.NoError(t, suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(&victim), &protected))
+		require.Equal(t, victim.UID, protected.UID)
+		require.True(t, protected.DeletionTimestamp.IsZero(), "Claim drain must preserve the protected Pod")
+		time.Sleep(pollInterval)
+	}
+	require.NoError(t, suite.mutateOwnedTestObject(ctx, pdb, testName, func(object client.Object) error {
+		allowed := intstr.FromInt32(1)
+		object.(*policyv1.PodDisruptionBudget).Spec.MaxUnavailable = &allowed
+		return nil
+	}))
+	suite.waitForPDBReady(t, pdb.Name, pdb.Namespace, time.Minute)
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
+		var current corev1.Pod
+		err := suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(&victim), &current)
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return current.UID != victim.UID, nil
+	}), "Protected Pod should be evicted after budget relaxation")
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
+	suite.waitForNodeClaimCleanedUp(t, retiring.Name, testTimeout)
 }
 
 // TestE2EPodAntiAffinity tests pod anti-affinity scheduling behavior

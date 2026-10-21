@@ -2,6 +2,8 @@
 
 This guide helps diagnose and resolve common issues with the Karpenter IBM Cloud Provider.
 
+The examples below use release `karpenter-ibm`; substitute the installed chart fullname when using another release name.
+
 ## Quick Diagnostics
 
 ### Check Controller Status
@@ -10,13 +12,23 @@ This guide helps diagnose and resolve common issues with the Karpenter IBM Cloud
 kubectl get pods -n karpenter
 
 # Check controller logs
-kubectl logs -n karpenter deployment/karpenter -f
+kubectl logs -n karpenter deployment/karpenter-ibm -f
 
 # Check controller startup messages
-kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
+kubectl logs -n karpenter deployment/karpenter-ibm | grep "Starting Controller"
 ```
 
 ## Common Issues
+
+### Upgrade and Cleanup Recovery
+
+Install the matching chart RBAC and CRDs before deploying a new image. Older controllers may require their original RBAC when restored. New launch, IKS allocation/cleanup, load-balancer target, hash-migration, and placement records use version 1/minimum-writer version 1. Hash version 2 migrates unchanged legacy claims without inducing drift. Older binaries must not manage remaining records they cannot read. Retire those allocations and reservations before downgrading.
+
+For legacy IKS workers, retain the original Node, claim/class/cluster UIDs, account, region, cluster/pool/worker IDs, provider ID, and zone. Verify these against the original Node inventory and a fresh cloud worker lookup. The controller can prepare `karpenter-ibm.sh/iks-legacy-retirement` from intact ownership evidence; stranded claims require an administrator-pinned original identity record with `version`/`minimumWriterVersion` 1. Patch only the saved claim UID/resourceVersion, preserve other annotations, then delete the claim normally. Cleanup removes only the exact worker; never resize/delete its shared pool. Missing evidence leaves cleanup blocked.
+
+Legacy load-balancer registration needs an original target snapshot, not targets from an edited class. Restore access to the original account before retrying cleanup; do not strip finalizers. Disaster recovery requires a backup that preserves the `kube-system`, class, claim, and Node UIDs. Recreating manifests produces new ownership identities and cannot adopt the old allocations automatically.
+
+Bootstrap metadata failures are recorded in `kube-system/karpenter-bootstrap-<claim UID>` and `BootstrapFailed` claim Events. The record contains status, not token credentials. Check the worker's trusted CA and API connectivity before changing CSR policy; generic provider-token `nodeclient` autoapproval must remain disabled.
 
 ### Authentication Issues
 
@@ -30,13 +42,12 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
 
     1. Verify API keys are correctly set
     2. Check Service ID permissions
-    3. Update Kubernetes secret:
+    3. Update your values file's `credentials.ibmApiKey`, `credentials.vpcApiKey`, and `credentials.region`, then rotate through Helm:
     ```bash
-    kubectl create secret generic karpenter-ibm-credentials \
-      --from-literal=api-key="$IBM_API_KEY" \
-      --from-literal=vpc-api-key="$VPC_API_KEY" \
-      --namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
+    helm upgrade karpenter-ibm karpenter-ibm/karpenter-ibm -n karpenter -f credentials.yaml
+    kubectl rollout status deployment/karpenter-ibm -n karpenter
     ```
+    The Secret is `<fullname>-credentials`, using `ibm_api_key`, `vpc_api_key`, `region`, and optional `account_id`, `zone`, `resource_group_id`, `vpc_url`, and `vpc_auth_type`. A direct Secret edit must preserve the other keys and be followed by a controller restart.
 
 ### Instance Provisioning Issues
 
@@ -65,7 +76,8 @@ kubectl logs -n karpenter deployment/karpenter | grep "Starting Controller"
 
 ```bash
 # Check if instances are being created
-ibmcloud is instances --output json | jq '.[] | select(.name | contains("nodepool"))'
+kubectl get nodeclaim NODECLAIM_NAME -o jsonpath='{.status.providerID}'
+ibmcloud is instance INSTANCE_ID --output json
 
 # Check NodeClaim status
 kubectl get nodeclaims -o wide
@@ -112,7 +124,7 @@ ssh -i ~/.ssh/eb root@FLOATING_IP
 # Test network layers
 ping INTERNAL_API_IP                          # Test ICMP
 telnet INTERNAL_API_IP 6443                   # Test TCP
-curl -k https://INTERNAL_API_IP:6443/healthz  # Test HTTPS
+curl --cacert /etc/kubernetes/pki/ca.crt https://INTERNAL_API_IP:6443/healthz
 ```
 
 #### 3. Verify Security Groups
@@ -194,7 +206,7 @@ ibmcloud is instances --output json | \
   {name: .name, resource_group: .resource_group.id}'
 
 # Should match the resource group in IBMNodeClass
-kubectl get ibmnodeclass YOUR-NODECLASS -o yaml | grep resourceGroupID
+kubectl get ibmnodeclass YOUR-NODECLASS -o yaml | grep resourceGroup
 ```
 
 ### Security Group Configuration
@@ -237,7 +249,7 @@ kubectl get ibmnodeclass YOUR-NODECLASS -o yaml | grep resourceGroupID
     # Test layer by layer
     ping API_SERVER_IP                    # ICMP connectivity
     telnet API_SERVER_IP 6443            # TCP connectivity
-    curl -k https://API_SERVER_IP:6443/healthz  # Application layer
+    curl --cacert /etc/kubernetes/pki/ca.crt https://API_SERVER_IP:6443/healthz
     ```
 ## Debug Mode
 

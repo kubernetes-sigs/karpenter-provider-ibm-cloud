@@ -23,12 +23,13 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 )
 
 // cloudInitTemplate defines the cloud-init script template for IBM Cloud VPC using direct kubelet configuration
 const cloudInitTemplate = `#!/bin/bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # Enhanced logging
 LOG_FILE="/var/log/karpenter-bootstrap.log"
@@ -37,17 +38,24 @@ exec > >(tee -a $LOG_FILE) 2>&1
 echo "$(date): ===== Karpenter IBM Cloud Bootstrap (Direct Kubelet) ====="
 
 # Configuration
-CLUSTER_ENDPOINT="{{ .ClusterEndpoint }}"
-BOOTSTRAP_TOKEN="{{ .BootstrapToken }}"
-CLUSTER_DNS="{{ .DNSClusterIP }}"
-REGION="{{ .Region }}"
-ZONE="{{ .Zone }}"
-NODE_NAME="{{ .NodeName }}"
+CLUSTER_ENDPOINT={{ shellQuote .ClusterEndpoint }}
+BOOTSTRAP_TOKEN={{ shellQuote .BootstrapToken }}
+BOOTSTRAP_STATUS_CONFIGMAP={{ shellQuote .BootstrapStatusConfigMap }}
+CLUSTER_DNS={{ shellQuote .DNSClusterIP }}
+REGION={{ shellQuote .Region }}
+ZONE={{ shellQuote .Zone }}
+NODE_NAME={{ shellQuote .NodeName }}
+NODE_LABELS={{ shellQuote (nodeLabels .Labels) }}
+INSTANCE_ID=''
+BOOTSTRAP_PHASE='metadata'
+mkdir -p /etc/kubernetes/pki
+printf '%s\n' {{ shellQuote .CABundle }} > /etc/kubernetes/pki/ca.crt
 
 # Status reporting function
 report_status() {
     local status="$1"
     local phase="$2"
+    BOOTSTRAP_PHASE="$phase"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     echo "$(date): Reporting status: $status, phase: $phase"
@@ -77,6 +85,16 @@ EOF
     # Always log status locally for debugging
     echo "$timestamp|$INSTANCE_ID|$NODE_NAME|$status|$phase" >> /var/log/karpenter-bootstrap-status.log
 
+    if [[ -n "$BOOTSTRAP_STATUS_CONFIGMAP" ]]; then
+        curl --fail --silent --show-error --connect-timeout 2 --max-time 3 \
+            --cacert /etc/kubernetes/pki/ca.crt \
+            -X PATCH -H "Authorization: Bearer $BOOTSTRAP_TOKEN" \
+            -H 'Content-Type: application/merge-patch+json' \
+            --data "{\"data\":{\"status\":\"$status\",\"phase\":\"$phase\",\"instanceID\":\"$INSTANCE_ID\",\"timestamp\":\"$timestamp\"}}" \
+            "${CLUSTER_ENDPOINT%/}/api/v1/namespaces/kube-system/configmaps/$BOOTSTRAP_STATUS_CONFIGMAP" \
+            >/dev/null 2>&1 || true
+    fi
+
     # Enhanced error capture with detailed diagnostics
     if [[ "$status" == "failed" ]]; then
         echo "$(date): BOOTSTRAP FAILURE DIAGNOSTICS" >> /var/log/karpenter-bootstrap-failure.log
@@ -99,6 +117,14 @@ EOF
         nslookup kubernetes.default.svc.cluster.local >> /var/log/karpenter-bootstrap-failure.log 2>&1 || echo "DNS resolution failed" >> /var/log/karpenter-bootstrap-failure.log
     fi
 }
+
+bootstrap_failed() {
+    local exit_code=$?
+    trap - ERR
+    report_status "failed" "$BOOTSTRAP_PHASE" || true
+    exit "$exit_code"
+}
+trap bootstrap_failed ERR
 
 # Instance metadata
 PRIVATE_IP=$(hostname -I | awk '{print $1}')
@@ -131,36 +157,39 @@ else
     echo "$(date): Metadata service is accessible"
 fi
 
-# Get instance identity token for metadata service authentication
-echo "$(date): Getting instance identity token..."
-# Use IP address instead of DNS hostname to avoid DNS resolution issues
-INSTANCE_IDENTITY_TOKEN=$(curl -s -f --max-time 10 -X PUT "http://169.254.169.254/instance_identity/v1/token?version=2022-03-29" -H "Metadata-Flavor: ibm" | grep -o "\"access_token\":\"[^\"]*" | cut -d"\"" -f4)
+metadata_value() {
+    local method="$1" path="$2" key="$3" token="${4:-}"
+    local response value attempt
+    local headers=(-H 'Metadata-Flavor: ibm')
+    if [[ -n "$token" ]]; then
+        headers+=(-H "Authorization: Bearer $token")
+    fi
+    for attempt in {1..6}; do
+        if response=$(curl --fail --silent --show-error --noproxy '*' --connect-timeout 5 --max-time 10 \
+            -X "$method" "${headers[@]}" "http://169.254.169.254/$path" 2>/dev/null); then
+            if value=$(printf '%s' "$response" | python3 -c 'import json,sys; value=json.load(sys.stdin).get(sys.argv[1]); assert isinstance(value,str) and value; print(value)' "$key" 2>/dev/null); then
+                if [[ "$key" == access_token && "$value" =~ ^[a-zA-Z0-9._~+/=-]+$ ]] || \
+                    [[ "$key" == id && "$value" =~ ^[a-z0-9]{4}_[a-f0-9-]{36}$ ]]; then
+                    printf '%s' "$value"
+                    return 0
+                fi
+            fi
+        fi
+        echo "$(date): Metadata $key unavailable (attempt $attempt/6)" >&2
+        if [[ "$attempt" -lt 6 ]]; then sleep 2; fi
+    done
+    return 1
+}
 
-if [[ -z "$INSTANCE_IDENTITY_TOKEN" ]]; then
-    echo "$(date): ERROR: Could not get instance identity token" | tee -a "$LOG_FILE"
-    echo "$(date): Testing metadata service connectivity..." | tee -a "$LOG_FILE"
-    curl -v -m 5 "http://169.254.169.254" 2>&1 | tee -a "$LOG_FILE" || true
+if ! INSTANCE_IDENTITY_TOKEN=$(metadata_value PUT 'instance_identity/v1/token?version=2022-03-29' access_token); then
     report_status "failed" "instance-identity-token-failed"
     exit 1
 fi
-
-echo "$(date): Successfully obtained instance identity token"
-
-# Get instance ID using IBM Cloud metadata service
-echo "$(date): Retrieving instance ID from IBM Cloud metadata service..."
-# Use IP address instead of DNS hostname to avoid DNS resolution issues
-INSTANCE_ID=$(curl -s -f --max-time 10 -H "Authorization: Bearer $INSTANCE_IDENTITY_TOKEN" "http://169.254.169.254/metadata/v1/instance?version=2022-03-29" | grep -o "\"id\":\"[0-9a-z]\{4\}_[^\"]*" | head -1 | cut -d"\"" -f4)
-
-# Validate instance ID
-if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "unknown" ]]; then
-    echo "$(date): ERROR: Could not retrieve instance ID from metadata service" | tee -a "$LOG_FILE"
-    echo "$(date): This is required for proper provider ID configuration" | tee -a "$LOG_FILE"
-    echo "$(date): Token available: $([[ -n \"$INSTANCE_IDENTITY_TOKEN\" ]] && echo \"yes\" || echo \"no\")" | tee -a "$LOG_FILE"
-    echo "$(date): Testing metadata endpoint with token..." | tee -a "$LOG_FILE"
-    curl -v -H "Authorization: Bearer $INSTANCE_IDENTITY_TOKEN" "http://169.254.169.254/metadata/v1/instance?version=2022-03-29" 2>&1 | tee -a "$LOG_FILE" || true
+if ! INSTANCE_ID=$(metadata_value GET 'metadata/v1/instance?version=2022-03-29' id "$INSTANCE_IDENTITY_TOKEN"); then
     report_status "failed" "instance-id-metadata-failed"
     exit 1
 fi
+unset INSTANCE_IDENTITY_TOKEN
 
 echo "$(date): Successfully retrieved instance ID: $INSTANCE_ID"
 
@@ -214,13 +243,13 @@ echo "$(date): Prerequisites installed"
 report_status "configuring" "packages-installed"
 
 # Install container runtime based on configuration
-CONTAINER_RUNTIME="{{ .ContainerRuntime }}"
+CONTAINER_RUNTIME={{ shellQuote .ContainerRuntime }}
 echo "$(date): Installing container runtime: $CONTAINER_RUNTIME"
 
 install_containerd() {
     echo "$(date): Installing containerd..."
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    add-apt-repository "deb [arch={{ .Architecture }}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
     apt-get update
     apt-get install -y containerd.io
     echo "$(date): Containerd installed"
@@ -359,7 +388,7 @@ report_status "configuring" "container-runtime-ready"
 
 # Install Kubernetes components
 echo "$(date): Installing Kubernetes components..."
-K8S_VERSION="{{ .KubernetesVersion }}"
+K8S_VERSION={{ shellQuote .KubernetesVersion }}
 K8S_MAJOR_MINOR=$(echo $K8S_VERSION | sed 's/v\([0-9]*\.[0-9]*\).*/v\1/')
 echo "$(date): Installing Kubernetes $K8S_VERSION (using repo $K8S_MAJOR_MINOR)"
 
@@ -377,28 +406,20 @@ report_status "configuring" "kubelet-installed"
 mkdir -p /etc/kubernetes/pki /var/lib/kubelet /etc/systemd/system/kubelet.service.d
 
 # Write primary CA certificate
-cat > /etc/kubernetes/pki/ca.crt << 'EOF'
-{{ .CABundle }}
-EOF
+printf '%s\n' {{ shellQuote .CABundle }} > /etc/kubernetes/pki/ca.crt
 echo "$(date): Primary CA certificate created"
 
 # Create combined CA bundle for kubelet client authentication
-cat > /etc/kubernetes/pki/kubelet-client-ca.crt << 'EOF'
-{{ .CABundle }}
-EOF
+printf '%s\n' {{ shellQuote .CABundle }} > /etc/kubernetes/pki/kubelet-client-ca.crt
 
 {{ if .AdditionalCAs }}{{ range .AdditionalCAs }}
 # Add additional CA
-cat >> /etc/kubernetes/pki/kubelet-client-ca.crt << 'EOF'
-{{ . }}
-EOF
+printf '%s\n' {{ shellQuote . }} >> /etc/kubernetes/pki/kubelet-client-ca.crt
 {{ end }}{{ end }}
 
 {{ if .KubeletClientCAs }}{{ range .KubeletClientCAs }}
 # Add kubelet-specific CA
-cat >> /etc/kubernetes/pki/kubelet-client-ca.crt << 'EOF'
-{{ . }}
-EOF
+printf '%s\n' {{ shellQuote . }} >> /etc/kubernetes/pki/kubelet-client-ca.crt
 {{ end }}{{ end }}
 
 echo "$(date): Combined CA certificate created for kubelet client authentication"
@@ -418,13 +439,13 @@ fi
 
 # Create bootstrap kubeconfig
 install -m 0600 /dev/null /var/lib/kubelet/bootstrap-kubeconfig
-cat > /var/lib/kubelet/bootstrap-kubeconfig << EOF
+cat > /var/lib/kubelet/bootstrap-kubeconfig << 'EOF'
 apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     certificate-authority: /etc/kubernetes/pki/ca.crt
-    server: ${CLUSTER_ENDPOINT}
+    server: {{ yamlQuote .ClusterEndpoint }}
   name: default
 contexts:
 - context:
@@ -435,12 +456,12 @@ current-context: default
 users:
 - name: kubelet-bootstrap
   user:
-    token: ${BOOTSTRAP_TOKEN}
+    token: {{ yamlQuote .BootstrapToken }}
 EOF
 echo "$(date): Bootstrap kubeconfig created"
 
 # Create kubelet configuration
-cat > /var/lib/kubelet/config.yaml << EOF
+cat > /var/lib/kubelet/config.yaml << 'EOF'
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 authentication:
@@ -457,13 +478,13 @@ clusterDNS:
 {{- if .KubeletConfig }}
   {{- if .KubeletConfig.ClusterDNS }}
     {{- range .KubeletConfig.ClusterDNS }}
-  - {{ . }}
+  - {{ yamlQuote . }}
     {{- end }}
   {{- else }}
-  - ${CLUSTER_DNS}
+  - {{ yamlQuote .DNSClusterIP }}
   {{- end }}
 {{- else }}
-  - ${CLUSTER_DNS}
+  - {{ yamlQuote .DNSClusterIP }}
 {{- end }}
 rotateCertificates: true
 serverTLSBootstrap: true
@@ -479,31 +500,31 @@ podsPerCore: {{ .KubeletConfig.PodsPerCore }}
   {{- if .KubeletConfig.KubeReserved }}
 kubeReserved:
     {{- range $k, $v := .KubeletConfig.KubeReserved }}
-  "{{ $k }}": "{{ $v }}"
+  {{ yamlQuote $k }}: {{ yamlQuote $v }}
     {{- end }}
   {{- end }}
   {{- if .KubeletConfig.SystemReserved }}
 systemReserved:
     {{- range $k, $v := .KubeletConfig.SystemReserved }}
-  "{{ $k }}": "{{ $v }}"
+  {{ yamlQuote $k }}: {{ yamlQuote $v }}
     {{- end }}
   {{- end }}
   {{- if .KubeletConfig.EvictionHard }}
 evictionHard:
     {{- range $k, $v := .KubeletConfig.EvictionHard }}
-  "{{ $k }}": "{{ $v }}"
+  {{ yamlQuote $k }}: {{ yamlQuote $v }}
     {{- end }}
   {{- end }}
   {{- if .KubeletConfig.EvictionSoft }}
 evictionSoft:
     {{- range $k, $v := .KubeletConfig.EvictionSoft }}
-  "{{ $k }}": "{{ $v }}"
+  {{ yamlQuote $k }}: {{ yamlQuote $v }}
     {{- end }}
   {{- end }}
   {{- if .KubeletConfig.EvictionSoftGracePeriod }}
 evictionSoftGracePeriod:
     {{- range $k, $v := .KubeletConfig.EvictionSoftGracePeriod }}
-  "{{ $k }}": "{{ $v.Duration }}"
+  {{ yamlQuote $k }}: {{ yamlQuote $v.Duration.String }}
     {{- end }}
   {{- end }}
   {{- if .KubeletConfig.EvictionMaxPodGracePeriod }}
@@ -521,18 +542,14 @@ cpuCFSQuota: {{ .KubeletConfig.CPUCFSQuota }}
 {{- end }}
 registerWithTaints:
 {{ range .Taints }}
-- key: {{ .Key }}
-  value: "{{ .Value }}"
+- key: {{ yamlQuote .Key }}
+  value: {{ yamlQuote .Value }}
   effect: {{ .Effect }}
 {{ end }}
 {{ if eq .CNIPlugin "cilium" }}
 - key: node.cilium.io/agent-not-ready
   value: "true"
   effect: PreferNoSchedule
-{{ end }}
-nodeLabels:
-{{ range $key, $value := .Labels }}
-  {{ $key }}: "{{ $value }}"
 {{ end }}
 EOF
 echo "$(date): Kubelet configuration created"
@@ -544,13 +561,13 @@ echo "$(date): Instance ID: $INSTANCE_ID, Provider ID: $PROVIDER_ID"
 # Create bootstrap kubeconfig with correct API server endpoint
 mkdir -p /etc/kubernetes
 install -m 0600 /dev/null /etc/kubernetes/bootstrap-kubeconfig
-cat > /etc/kubernetes/bootstrap-kubeconfig << EOF
+cat > /etc/kubernetes/bootstrap-kubeconfig << 'EOF'
 apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     certificate-authority: /etc/kubernetes/pki/ca.crt
-    server: {{ .ClusterEndpoint }}
+    server: {{ yamlQuote .ClusterEndpoint }}
   name: bootstrap-cluster
 contexts:
 - context:
@@ -561,13 +578,13 @@ current-context: bootstrap
 users:
 - name: bootstrap-user
   user:
-    token: {{ .BootstrapToken }}
+    token: {{ yamlQuote .BootstrapToken }}
 EOF
 
 # Configure kubelet service with bootstrap kubeconfig
 cat > /etc/systemd/system/kubelet.service.d/10-karpenter.conf << EOF
 [Service]
-Environment="KUBELET_EXTRA_ARGS=--hostname-override=${HOSTNAME} --node-ip=${PRIVATE_IP} --provider-id=${PROVIDER_ID} --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubeconfig --sync-frequency=30s"
+Environment="KUBELET_EXTRA_ARGS=--hostname-override=${HOSTNAME} --node-ip=${PRIVATE_IP} --provider-id=${PROVIDER_ID} --node-labels=${NODE_LABELS} --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubeconfig --sync-frequency=30s"
 EOF
 
 # Create kubelet service override
@@ -611,7 +628,7 @@ done
 # Wait for API server to be available before starting kubelet
 echo "$(date): Testing API server connectivity before starting kubelet..."
 for i in {1..60}; do
-  if curl -k --connect-timeout 5 -m 5 {{ .ClusterEndpoint }}/healthz >/dev/null 2>&1; then
+  if curl --cacert /etc/kubernetes/pki/ca.crt --connect-timeout 5 -m 5 "${CLUSTER_ENDPOINT%/}/healthz" >/dev/null 2>&1; then
     echo "$(date): API server is ready"
     break
   fi
@@ -620,8 +637,8 @@ for i in {1..60}; do
 done
 
 # Install CNI binaries and configuration
-CNI_PLUGIN="{{ .CNIPlugin }}"
-CNI_VERSION="{{ .CNIVersion }}"
+CNI_PLUGIN={{ shellQuote .CNIPlugin }}
+CNI_VERSION={{ shellQuote .CNIVersion }}
 echo "$(date): Installing $CNI_PLUGIN CNI binaries and configuration..."
 mkdir -p /etc/cni/net.d
 
@@ -629,16 +646,24 @@ mkdir -p /etc/cni/net.d
 echo "$(date): Downloading CNI binaries..."
 CNI_PLUGINS_VERSION="v1.4.0"
 
-# Download standard CNI plugins
-curl -L "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/cni-plugins-linux-{{ .Architecture }}-${CNI_PLUGINS_VERSION}.tgz" | tar -C /opt/cni/bin -xz
+# Checksums pinned from the upstream v1.4.0 release assets.
+CNI_PLUGINS_SHA256={{ shellQuote .CNIPluginsSHA256 }}
+CNI_ARCHIVE=$(mktemp)
+if ! curl --fail --location --silent --show-error --retry 5 --retry-delay 2 --retry-max-time 120 \
+    --connect-timeout 10 --max-time 90 \
+    "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/cni-plugins-linux-{{ .Architecture }}-${CNI_PLUGINS_VERSION}.tgz" \
+    -o "$CNI_ARCHIVE" || ! printf '%s  %s\n' "$CNI_PLUGINS_SHA256" "$CNI_ARCHIVE" | sha256sum --check --status; then
+    rm -f "$CNI_ARCHIVE"
+    report_status "failed" "cni-integrity-verification"
+    exit 1
+fi
+tar -C /opt/cni/bin -xzf "$CNI_ARCHIVE"
+rm -f "$CNI_ARCHIVE"
 
 # Download plugin-specific CNI binaries using detected version
 case "$CNI_PLUGIN" in
   "calico")
-    echo "$(date): Downloading Calico CNI binaries version $CNI_VERSION..."
-    curl -L -o /opt/cni/bin/calico "https://github.com/projectcalico/cni-plugin/releases/download/${CNI_VERSION}/calico-{{ .Architecture }}"
-    curl -L -o /opt/cni/bin/calico-ipam "https://github.com/projectcalico/cni-plugin/releases/download/${CNI_VERSION}/calico-ipam-{{ .Architecture }}"
-    chmod +x /opt/cni/bin/calico /opt/cni/bin/calico-ipam
+    echo "$(date): Calico binaries and credentials will be installed by the cluster DaemonSet"
     mkdir -p /var/log/calico/cni
     ;;
   "cilium")
@@ -649,9 +674,7 @@ case "$CNI_PLUGIN" in
     echo "$(date): Cilium CNI setup prepared (plugin will be installed by DaemonSet)"
     ;;
   "flannel")
-    echo "$(date): Downloading Flannel CNI binaries version $CNI_VERSION..."
-    curl -L -o /opt/cni/bin/flannel "https://github.com/flannel-io/cni-plugin/releases/download/${CNI_VERSION}/flannel-amd64"
-    chmod +x /opt/cni/bin/flannel
+    echo "$(date): Flannel binaries will be installed by the cluster DaemonSet"
     mkdir -p /var/log/flannel
     ;;
 esac
@@ -966,7 +989,9 @@ func InjectBootstrapEnvVars(ctx context.Context, script string) string {
 			if len(parts) == 2 {
 				varName := parts[0]
 				varValue := parts[1]
-				fmt.Fprintf(&bootstrapVars, "export %s=%q\n", varName, varValue)
+				if environmentNamePattern.MatchString(varName) {
+					fmt.Fprintf(&bootstrapVars, "export %s=%s\n", varName, shellQuote(varValue))
+				}
 			}
 		}
 	}
@@ -975,9 +1000,9 @@ func InjectBootstrapEnvVars(ctx context.Context, script string) string {
 		logger.V(1).Info("Injecting bootstrap environment variables", "count", strings.Count(bootstrapVars.String(), "\n"))
 
 		// Handle different shebang styles
-		if strings.HasPrefix(script, "#!/bin/bash\nset -euo pipefail\n") {
-			script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n",
-				"#!/bin/bash\nset -euo pipefail\n\n"+bootstrapVars.String(), 1)
+		if strings.HasPrefix(script, "#!/bin/bash\nset -Eeuo pipefail\n") {
+			script = strings.Replace(script, "#!/bin/bash\nset -Eeuo pipefail\n",
+				"#!/bin/bash\nset -Eeuo pipefail\n\n"+bootstrapVars.String(), 1)
 		} else if strings.HasPrefix(script, "#!/bin/bash\n") {
 			script = strings.Replace(script, "#!/bin/bash\n",
 				"#!/bin/bash\n\n"+bootstrapVars.String(), 1)
@@ -992,8 +1017,21 @@ func InjectBootstrapEnvVars(ctx context.Context, script string) string {
 
 // generateCloudInitScript generates a cloud-init script for node bootstrapping
 func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, options types.Options) (string, error) {
-	// Create template
-	tmpl, err := template.New("cloudinit").Parse(cloudInitTemplate)
+	if err := validateBootstrapOptions(options); err != nil {
+		return "", err
+	}
+	if options.KubeletConfig == nil {
+		options.KubeletConfig = &v1alpha1.KubeletConfiguration{}
+	} else {
+		options.KubeletConfig = options.KubeletConfig.DeepCopy()
+	}
+	if options.KubeletConfig.MaxPods == nil {
+		maxPods := int32(types.EffectiveMaxPods(nil, 0))
+		options.KubeletConfig.MaxPods = &maxPods
+	}
+	tmpl, err := template.New("cloudinit").Funcs(template.FuncMap{
+		"shellQuote": shellQuote, "yamlQuote": yamlQuote, "nodeLabels": nodeLabels,
+	}).Parse(cloudInitTemplate)
 	if err != nil {
 		return "", fmt.Errorf("parsing cloud-init template: %w", err)
 	}
@@ -1001,8 +1039,16 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	// Build template data
 	data := struct {
 		types.Options
+		CNIPluginsSHA256 string
 	}{
 		Options: options,
+	}
+	switch options.Architecture {
+	case "", "amd64":
+		data.Architecture = "amd64"
+		data.CNIPluginsSHA256 = "c2485ddb3ffc176578ae30ae58137f0b88e50f7c7f2af7d53a569276b2949a33"
+	case "arm64":
+		data.CNIPluginsSHA256 = "304d4389d5b732b7a73513d002c4895f731d030682d40653f411e10e39114194"
 	}
 
 	// Execute template
@@ -1019,8 +1065,8 @@ func (p *VPCBootstrapProvider) generateCloudInitScript(ctx context.Context, opti
 	if additionalCA := os.Getenv("ca_crt"); additionalCA != "" {
 		logger.V(1).Info("Found ca_crt environment variable", "length", len(additionalCA))
 		// Inject KARPENTER_ADDITIONAL_CA environment variable at the beginning of the script
-		envVar := fmt.Sprintf("export KARPENTER_ADDITIONAL_CA=\"%s\"\n", additionalCA)
-		script = strings.Replace(script, "#!/bin/bash\nset -euo pipefail\n", "#!/bin/bash\nset -euo pipefail\n\n"+envVar, 1)
+		envVar := fmt.Sprintf("export KARPENTER_ADDITIONAL_CA=%s\n", shellQuote(additionalCA))
+		script = strings.Replace(script, "#!/bin/bash\nset -Eeuo pipefail\n", "#!/bin/bash\nset -Eeuo pipefail\n\n"+envVar, 1)
 		logger.V(1).Info("Injected KARPENTER_ADDITIONAL_CA into cloud-init script")
 	}
 

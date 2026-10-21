@@ -51,6 +51,18 @@ def verify(release, namespace, overrides):
             if subject["kind"] == "ServiceAccount":
                 target = "ServiceAccount", subject.get("namespace", namespace), subject["name"]
                 assert target in identities, f"unresolved ServiceAccount for {release}: {target}"
+    cluster = next(obj for obj in objects if obj["kind"] == "ClusterRole")
+    assert all("secrets" not in rule.get("resources", []) for rule in cluster["rules"])
+    event_rules = [rule for rule in cluster["rules"] if "events" in rule.get("resources", [])]
+    assert {group for rule in event_rules for group in rule["apiGroups"]} == {"", "events.k8s.io"}
+    assert all(rule["resources"] == ["events"] and set(rule["verbs"]) == {"create", "patch"} for rule in event_rules)
+    system = next(obj for obj in objects if obj["kind"] == "Role" and obj["metadata"]["namespace"] == "kube-system")
+    assert {"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete", "get", "list"]} in system["rules"]
+    signers = next(rule for rule in cluster["rules"] if "signers" in rule.get("resources", []))
+    assert set(signers["resourceNames"]) == {"kubernetes.io/kubelet-serving", "kubernetes.io/kube-apiserver-client-kubelet"}
+    assert signers["verbs"] == ["approve"]
+    assert any("subjectaccessreviews" in rule.get("resources", []) and "create" in rule["verbs"] for rule in cluster["rules"])
+    assert all(subject.get("name") != "system:nodes" for binding in bindings for subject in binding["subjects"])
     print(f"RBAC references resolved: {release}, namespace={namespace}, overrides={overrides}")
 
 

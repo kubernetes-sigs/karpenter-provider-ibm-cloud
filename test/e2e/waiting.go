@@ -248,7 +248,7 @@ func (s *E2ETestSuite) waitForPodsToBeScheduled(t *testing.T, deploymentName, na
 			return false, err
 		}
 		// Check if deployment has desired replicas ready
-		if deployment.Status.ReadyReplicas == *deployment.Spec.Replicas {
+		if deployment.Status.ObservedGeneration >= deployment.Generation && deployment.Status.UpdatedReplicas == *deployment.Spec.Replicas && deployment.Status.ReadyReplicas == *deployment.Spec.Replicas && deployment.Status.AvailableReplicas == *deployment.Spec.Replicas && deployment.Status.Replicas == *deployment.Spec.Replicas {
 			t.Logf("[OK] All %d replicas are ready for deployment %s after %d checks",
 				deployment.Status.ReadyReplicas, deploymentName, checkCount)
 			return true, nil

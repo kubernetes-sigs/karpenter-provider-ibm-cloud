@@ -18,10 +18,7 @@ The provider aims to automatically detect your cluster configuration and generat
 - **Simplified configuration** without manual bootstrap decisions
 
 ### How It Works
-Auto Bootstrap should select the right bootstrap method based on your configuration:
-
-1. **IKS Detection**: If `iksClusterID` is provided and accessible → Uses IKS Bootstrap
-2. **VPC Fallback**: Otherwise → Uses VPC Bootstrap with automatic cluster discovery
+An explicit class `bootstrapMode` overrides the controller default. An omitted/`auto` class with `iksClusterID` selects IKS; otherwise `BOOTSTRAP_MODE` supplies `cloud-init`, `iks-api`, or `auto`. An invalid global mode prevents startup. With `auto`, `IKS_CLUSTER_ID` selects IKS; otherwise the provider uses VPC cloud-init. IKS failures do not switch to VPC. Explicit class `cloud-init` takes precedence over an IKS cluster ID.
 
 ### Configuration
 ```yaml
@@ -30,6 +27,11 @@ kind: IBMNodeClass
 metadata:
   name: auto-bootstrap-nodeclass
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
+  subnet: 0717-replace-with-subnet-id
+  iksDynamicPools:
+    enabled: true
   region: us-south
   zone: us-south-1
   vpc: vpc-12345678
@@ -44,16 +46,16 @@ spec:
 
 ### Automatic Features
 - **Cluster Discovery**: Automatically detects cluster API endpoint and CA certificate
-- **Token Management**: Generates and refreshes bootstrap tokens automatically with generic RBAC
+- **Token Management**: Issues a claim-bound token with a one-hour lifetime and revokes it after registration
 - **Network Detection**: Discovers cluster CIDR and DNS configuration
 - **System Configuration**: Enables IP forwarding, disables swap, configures hostname
 - **Runtime Selection**: Auto-detects and configures container runtime (containerd/crio)
 
 ### Bootstrap Token RBAC Design
 
-The provider uses a **generic RBAC approach** for bootstrap tokens:
+Bootstrap requests use the group below. Each NodeClaim receives its own token and a named ConfigMap status Role. Client and serving CSR approval verifies the claim, launch, cloud ownership, and requested node identity; serving approval is not granted to `system:nodes`. Generic `nodeclient` autoapproval for provider tokens must be disabled before provisioning.
 
-#### **Single Role for All NodePools**
+#### Bootstrap request group
 ```yaml
 # All bootstrap tokens use the same generic group
 group: "system:bootstrappers:karpenter:ibm-cloud"
@@ -78,19 +80,20 @@ kind: IBMNodeClass
 metadata:
   name: vpc-bootstrap-nodeclass
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   region: us-south
   zone: us-south-1
   vpc: vpc-12345678
   image: r006-ubuntu-20-04
 
   # Explicit VPC bootstrap mode (optional - auto-detected)
-  bootstrapMode: vpc
+  bootstrapMode: cloud-init
 
   # Optional custom pre-bootstrap setup
-  userData: |
+  userDataAppend: |
     #!/bin/bash
-    echo "Custom pre-bootstrap configuration"
-    # Bootstrap script automatically appended
+    echo "Custom bootstrap extension"
 ```
 
 ### Automatic Features
@@ -114,10 +117,10 @@ spec:
 
 #### **Complete Kubernetes Setup**
 - **System Preparation**: Configures system requirements (swap, IP forwarding, hostname)
-- **Package Installation**: Installs kubelet, kubeadm, kubectl with correct versions
+- **Package Installation**: Installs kubelet and kubectl with the cluster's Kubernetes version
 - **Service Configuration**: Sets up systemd services and startup scripts
 - **Node Labeling**: Applies proper Karpenter and workload labels
-- **Bootstrap Process**: Executes kubeadm join with proper configuration
+- **Bootstrap Process**: Starts kubelet with a claim-bound bootstrap kubeconfig
 
 ### Customization Options
 
@@ -131,6 +134,7 @@ kind: IBMNodeClass
 metadata:
   name: vpc-bootstrap-kubelet
 spec:
+  resourceGroup: replace-with-resource-group-id
   region: us-south
   zone: us-south-1
   vpc: "r006-a8efb117-fd5e-4f63-ae16-4fb9faafa4ff"
@@ -196,9 +200,9 @@ For a complete reference, see `examples/kubelet-configuration.yaml`.
 #### **Custom User Data**
 ```yaml
 spec:
-  userData: |
+  userDataAppend: |
     #!/bin/bash
-    # Your custom pre-bootstrap configuration
+    # Your custom bootstrap extension
     echo "Installing custom packages..."
     apt-get update && apt-get install -y htop vim
 
@@ -209,17 +213,7 @@ spec:
     systemctl enable my-custom-service
 ```
 
-#### **Environment Variables**
-```bash
-# Override container runtime
-export CONTAINER_RUNTIME=crio
-
-# Custom CNI configuration
-export CNI_PLUGIN=cilium
-
-# Debug mode
-export DEBUG=true
-```
+Runtime and CNI are discovered from the cluster.
 
 ## IKS Bootstrap (Experimental)
 
@@ -234,6 +228,8 @@ kind: IBMNodeClass
 metadata:
   name: iks-bootstrap-nodeclass
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   region: us-south
   zone: us-south-1
   vpc: vpc-iks-12345
@@ -241,19 +237,16 @@ spec:
 
   # IKS-specific configuration
   iksClusterID: "cluster-12345678"        # Required: Your IKS cluster ID
-  iksWorkerPoolID: "pool-default"         # Optional: specific worker pool
-
-  # Optional: Custom post-registration setup
-  userData: |
-    #!/bin/bash
-    echo "Post-IKS registration customization"
-    # Custom configuration after node joins IKS cluster
+  iksWorkerPoolID: "pool-default"         # Optional: flavor template
+  subnet: 0717-replace-with-subnet-id
+  iksDynamicPools:
+    enabled: true
 ```
 
 ### Features
 
 #### **Native IKS Integration**
-- **Worker Pool API**: Uses IBM Kubernetes Service worker pool resize APIs
+- **Worker Pool API**: Creates a dedicated worker pool for each NodeClaim; shared pools are not resized
 - **Automatic Registration**: Nodes automatically join IKS cluster through worker pools
 
 ### Important Constraints
@@ -272,6 +265,14 @@ kind: IBMNodeClass
 metadata:
   name: iks-small-instances
 spec:
+  region: us-south
+  vpc: replace-with-vpc-id
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
+  zone: us-south-1
+  subnet: 0717-replace-with-subnet-id
+  iksDynamicPools:
+    enabled: true
   iksClusterID: "cluster-12345678"
   iksWorkerPoolID: "pool-small"     # Pre-configured with bx2-2x8
 ---
@@ -280,6 +281,14 @@ kind: IBMNodeClass
 metadata:
   name: iks-large-instances
 spec:
+  region: us-south
+  vpc: replace-with-vpc-id
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
+  zone: us-south-1
+  subnet: 0717-replace-with-subnet-id
+  iksDynamicPools:
+    enabled: true
   iksClusterID: "cluster-12345678"
   iksWorkerPoolID: "pool-large"     # Pre-configured with bx2-8x32
 ```
@@ -294,26 +303,11 @@ spec:
 ## Advanced Configuration
 
 ### Environment Variables
-All bootstrap modes support environment variable customization:
+`BOOTSTRAP_MODE` selects the controller default; a class can override it. Kubelet settings belong in `spec.kubelet`.
 
-```bash
-# Bootstrap behavior
-export LOG_LEVEL=debug                   # Enhanced logging
-export BOOTSTRAP_TIMEOUT=600             # Bootstrap timeout in seconds
+Kubelet pod capacity defaults to 110. `maxPods` and `podsPerCore` constrain both advertised capacity and the guest configuration. Treat `userData` and `userDataAppend` as privileged root scripts; restrict NodeClass writes to trusted administrators.
 
-# Container runtime preferences
-export CONTAINER_RUNTIME=containerd      # or crio
-export CONTAINERD_VERSION=1.7.22         # Specific version
-
-# CNI plugin preferences
-export CNI_PLUGIN=calico                 # or cilium, flannel
-export CNI_VERSION=v3.29.0               # Specific CNI version
-
-# System configuration
-export ENABLE_IP_FORWARDING=true         # Enable IP forwarding
-export DISABLE_SWAP=true                 # Disable swap
-export HOSTNAME_STRATEGY=ibm-cloud       # Hostname configuration strategy
-```
+Bootstrap failures appear as `BootstrapFailed` claim Events and in `kube-system/karpenter-bootstrap-<claim UID>`. The guest can get/patch only its named status ConfigMap.
 
 ## Troubleshooting Bootstrap Issues
 
@@ -369,7 +363,7 @@ ssh ubuntu@<instance-ip> "sudo systemctl status kubelet"
 ssh ubuntu@<instance-ip> "sudo journalctl -u kubelet --no-pager -n 50"
 
 # Verify cluster connectivity (use INTERNAL endpoint)
-ssh ubuntu@<instance-ip> "curl -k https://<INTERNAL-IP>:6443/healthz"
+ssh ubuntu@<instance-ip> "curl --cacert /etc/kubernetes/pki/ca.crt https://<INTERNAL-IP>:6443/healthz"
 
 # For direct kubelet bootstrap (not kubeadm)
 ssh ubuntu@<instance-ip> "sudo journalctl -u kubelet | grep -E '(bootstrap|token|certificate)'"

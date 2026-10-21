@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/nodeclass"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -426,5 +427,25 @@ func TestController_ConcurrentReconciliation(t *testing.T) {
 		}, &nc)
 		require.NoError(t, err)
 		assert.NotEmpty(t, nc.Annotations[v1alpha1.AnnotationIBMNodeClassHash])
+	}
+}
+
+func TestFutureHashFormatsRetainAnnotations(t *testing.T) {
+	for _, annotations := range []map[string]string{
+		{v1alpha1.AnnotationIBMNodeClassHashVersion: "99", v1alpha1.AnnotationIBMNodeClassHash: "future"},
+		{v1alpha1.AnnotationIBMNodeClassHashVersion: v1alpha1.IBMNodeClassHashVersion, nodeclass.HashMigrationAnnotation: `{"Version":2,"MinimumWriterVersion":2,"LegacyHash":"old","ProvisioningHash":"new"}`},
+	} {
+		scheme := runtime.NewScheme()
+		require.NoError(t, v1alpha1.AddToScheme(scheme))
+		scheme.AddKnownTypes(schema.GroupVersion{Group: "karpenter.sh", Version: "v1"}, &karpv1.NodeClaim{}, &karpv1.NodeClaimList{})
+		class := &v1alpha1.IBMNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "class", UID: "class-uid", Annotations: annotations}}
+		kube := fake.NewClientBuilder().WithScheme(scheme).WithObjects(class).Build()
+		controller, err := NewController(kube)
+		require.NoError(t, err)
+		_, err = controller.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(class)})
+		require.Error(t, err)
+		fresh := &v1alpha1.IBMNodeClass{}
+		require.NoError(t, kube.Get(context.Background(), client.ObjectKeyFromObject(class), fresh))
+		require.Equal(t, annotations, fresh.Annotations)
 	}
 }

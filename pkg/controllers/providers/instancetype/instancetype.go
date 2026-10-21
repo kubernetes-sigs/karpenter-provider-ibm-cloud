@@ -26,39 +26,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	ibmcache "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
-	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/instancetype"
-	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing"
 )
 
 type Controller struct {
 	instanceTypeProvider instancetype.Provider
 }
 
-func NewController(ctx context.Context, unavailableOfferings *ibmcache.UnavailableOfferings) (*Controller, error) {
-	// Create IBM client
-	client, err := ibm.NewClient()
-	if err != nil {
-		return nil, fmt.Errorf("creating IBM client: %w", err)
+func NewController(provider instancetype.Provider) (*Controller, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("instance type provider is required")
 	}
-
-	// Create pricing provider
-	pricingProvider := pricing.NewIBMPricingProvider(ctx, client, client.GetRegion())
-
-	// Create instance type provider
-	provider := instancetype.NewProvider(client, pricingProvider, unavailableOfferings)
-
-	return &Controller{
-		instanceTypeProvider: provider,
-	}, nil
+	return &Controller{instanceTypeProvider: provider}, nil
 }
 
 func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	ctx = injection.WithControllerName(ctx, "providers.instancetype")
 
 	// Refresh instance types by listing them
-	if _, err := c.instanceTypeProvider.List(ctx, nil); err != nil {
+	if err := c.instanceTypeProvider.Refresh(ctx); err != nil {
 		return reconciler.Result{}, fmt.Errorf("refreshing instance types: %w", err)
 	}
 
