@@ -116,7 +116,7 @@ func TestCreateDoesNotRetryUncertainSubmission(t *testing.T) {
 	require.Contains(t, fresh.Finalizers, LaunchFinalizer)
 }
 
-func TestCreateRejectsProfileMismatchBeforeCloudOrCheckpoint(t *testing.T) {
+func TestCreateRejectsInvalidProfileBeforeCloudOrCheckpoint(t *testing.T) {
 	provider, claim, _, _, _ := launchFixture(t)
 	ctx := context.Background()
 	require.NoError(t, v1alpha1.AddToScheme(provider.kubeClient.Scheme()))
@@ -130,7 +130,9 @@ func TestCreateRejectsProfileMismatchBeforeCloudOrCheckpoint(t *testing.T) {
 	claim.Annotations = nil
 	claim.Finalizers = nil
 	require.NoError(t, provider.kubeClient.Update(ctx, claim))
-	_, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{{Name: "bx4-2x8", Overhead: &cloudprovider.InstanceTypeOverhead{}}})
+	_, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{{Overhead: &cloudprovider.InstanceTypeOverhead{}}})
+	require.EqualError(t, err, "selected instance type has empty name")
+	_, err = provider.Create(ctx, claim, []*cloudprovider.InstanceType{{Name: "bx4-2x8", Overhead: &cloudprovider.InstanceTypeOverhead{}}})
 	require.EqualError(t, err, "selected instance profile bx4-2x8 differs from the current NodeClass profile bx2-2x8")
 	fresh := &karpv1.NodeClaim{}
 	require.NoError(t, provider.kubeClient.Get(ctx, client.ObjectKeyFromObject(claim), fresh))
@@ -417,6 +419,10 @@ func TestCreateValidatesCloudTagsBeforeCheckpointAndPersistsRemoteRejection(t *t
 				return
 			}
 			require.Equal(t, 1, posts)
+			var ibmErr *ibm.IBMError
+			require.ErrorAs(t, err, &ibmErr)
+			require.Equal(t, "validation_failed", ibmErr.Code)
+			require.Equal(t, http.StatusBadRequest, ibmErr.StatusCode)
 			checkpoint, checkpointErr := decodeLaunch(fresh.Annotations[LaunchAnnotation])
 			require.NoError(t, checkpointErr)
 			require.True(t, checkpoint.Submitted)
@@ -424,6 +430,59 @@ func TestCreateValidatesCloudTagsBeforeCheckpointAndPersistsRemoteRejection(t *t
 			completed, cleanupErr := provider.CleanupPending(ctx, fresh)
 			require.NoError(t, cleanupErr)
 			require.True(t, completed)
+		})
+	}
+}
+
+func TestCreateHandlesIncompleteInstanceResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{name: "nil instance", wantErr: "create returned no instance identity"},
+		{name: "missing ID", body: `{}`, wantErr: "create returned no instance identity"},
+		{name: "missing name", body: `{"id":"instance"}`, wantErr: "instance has no CRN to verify its account"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, claim, _, _, _ := launchFixture(t)
+			ctx := context.Background()
+			require.NoError(t, v1alpha1.AddToScheme(provider.kubeClient.Scheme()))
+			class := &v1alpha1.IBMNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: claim.Spec.NodeClassRef.Name, UID: "class-uid", Generation: 1},
+				Spec: v1alpha1.IBMNodeClassSpec{
+					Region: "us-south", Zone: "us-south-1", Subnet: "subnet", VPC: "vpc",
+					ResourceGroup: strings.Repeat("a", 32), SecurityGroups: []string{"security-group"},
+					Image: "image", UserData: "#!/bin/sh\ntrue",
+				},
+				Status: v1alpha1.IBMNodeClassStatus{ResolvedImageID: "image", Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue, ObservedGeneration: 1}}},
+			}
+			require.NoError(t, provider.kubeClient.Create(ctx, class))
+			delete(claim.Annotations, LaunchAnnotation)
+			require.NoError(t, provider.kubeClient.Update(ctx, claim))
+			sdk, sdkErr := vpcv1.NewVpcV1(&vpcv1.VpcV1Options{URL: "https://test.iaas.cloud.ibm.com/v1", Authenticator: &core.NoAuthAuthenticator{}})
+			require.NoError(t, sdkErr)
+			posts := 0
+			sdk.Service.SetHTTPClient(&http.Client{Transport: launchTransport(func(request *http.Request) (*http.Response, error) {
+				require.Equal(t, "/v1/instances", request.URL.Path)
+				status, body := http.StatusOK, `{"instances":[]}`
+				if request.Method == http.MethodPost {
+					posts++
+					body = tc.body
+					if body == "" {
+						status = http.StatusNoContent
+					}
+				} else {
+					require.Equal(t, http.MethodGet, request.Method)
+				}
+				return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})})
+			provider.vpcClientManager = vpcclient.NewManagerWithMockClient(ibm.NewVPCClientWithMock(sdk))
+
+			node, err := provider.Create(ctx, claim, []*cloudprovider.InstanceType{{Name: "bx2-2x8", Overhead: &cloudprovider.InstanceTypeOverhead{}}})
+			require.EqualError(t, err, tc.wantErr)
+			require.Nil(t, node)
+			require.Equal(t, 1, posts)
 		})
 	}
 }
