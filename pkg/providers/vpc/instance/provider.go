@@ -18,7 +18,6 @@ package instance
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -27,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cache"
 	corev1 "k8s.io/api/core/v1"
@@ -294,15 +292,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 
 	instanceProfile := selectedInstanceType.Name
 	if instanceProfile == "" {
-		return nil, fmt.Errorf("selected instance type has empty name: %+v, available types: %d. "+
-			"This will cause IBM VPC oneOf constraint errors. "+
-			"Ensure IBMNodeClass has a valid instanceProfile specified", selectedInstanceType, len(instanceTypes))
-	}
-
-	// Additional validation for oneOf constraint compliance
-	if strings.TrimSpace(instanceProfile) == "" {
-		return nil, fmt.Errorf("instance profile is empty or whitespace-only: '%s'. "+
-			"This will cause IBM VPC oneOf constraint validation to fail", instanceProfile)
+		return nil, fmt.Errorf("selected instance type has empty name")
 	}
 	if nodeClass.Spec.InstanceProfile != "" && instanceProfile != nodeClass.Spec.InstanceProfile {
 		return nil, fmt.Errorf("selected instance profile %s differs from the current NodeClass profile %s", instanceProfile, nodeClass.Spec.InstanceProfile)
@@ -314,7 +304,6 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		"instanceType", instanceProfile,
 		"capacityType", capacityType,
 		"availableTypes", len(instanceTypes),
-		"selectedInstanceTypeDetails", fmt.Sprintf("%+v", selectedInstanceType),
 		"nodeClaim", nodeClaim.Name)
 
 	// Determine zone and subnet - support both explicit and dynamic selection
@@ -697,44 +686,13 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		return nil, validationErr
 	}
 
-	// Debug logging: COMPREHENSIVE struct validation
-	logger.Info("Validated VPC instance prototype",
-		"instance_name", nodeClaim.Name,
-		"instanceProfile", instanceProfile,
-		"imageID", imageID,
-		"zone", zone,
-		"subnet", subnet,
-		"vpc", nodeClass.Spec.VPC,
-		"PlacementTarget", nodeClass.Spec.PlacementTarget,
-		// Check all required and optional fields
-		"hasImage", instancePrototype.Image != nil,
-		"hasZone", instancePrototype.Zone != nil,
-		"hasProfile", instancePrototype.Profile != nil,
-		"hasPrimaryNetworkAttachment", instancePrototype.PrimaryNetworkAttachment != nil,
-		"hasVPC", instancePrototype.VPC != nil,
-		"hasBootVolumeAttachment", instancePrototype.BootVolumeAttachment != nil,
-		"hasPlacementTarget", instancePrototype.PlacementTarget != nil,
-		"hasName", instancePrototype.Name != nil,
-		"hasAvailabilityPolicy", instancePrototype.AvailabilityPolicy != nil)
-
-	// Pre-API call validation to prevent oneOf constraint errors
 	if instancePrototype.Profile == nil {
-		return nil, fmt.Errorf("CRITICAL: instance prototype Profile field is nil - this violates IBM VPC oneOf constraint requirements")
+		return nil, fmt.Errorf("instance prototype profile is nil")
 	}
-
-	// Validate the profile name in the prototype
 	if profileIdentity, ok := instancePrototype.Profile.(*vpcv1.InstanceProfileIdentityByName); ok {
 		if profileIdentity.Name == nil || *profileIdentity.Name == "" {
-			return nil, fmt.Errorf("CRITICAL: instance profile Name is nil or empty in prototype - this violates IBM VPC oneOf constraint requirements")
+			return nil, fmt.Errorf("instance profile name is nil or empty")
 		}
-		logger.Info("Profile validation passed for oneOf compliance",
-			"profileName", *profileIdentity.Name,
-			"profileType", fmt.Sprintf("%T", instancePrototype.Profile))
-	} else {
-		logger.Info("Logged profile field details for oneOf debugging",
-			"profileType", fmt.Sprintf("%T", instancePrototype.Profile),
-			"profileName", instanceProfile,
-			"profilePtr", fmt.Sprintf("%p", instancePrototype.Profile))
 	}
 
 	hash, err := nodeclass.ProvisioningHash(nodeClass)
@@ -766,69 +724,6 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		"instance_profile", instanceProfile,
 		"zone", zone)
 
-	// DETAILED REQUEST LOGGING: Log the full instance prototype details
-	logger.Info("Logged VPC CreateInstance request details",
-		"prototype_type", fmt.Sprintf("%T", instancePrototype),
-		"name", instancePrototype.Name,
-		"image_id", instancePrototype.Image,
-		"zone", instancePrototype.Zone,
-		"profile", instancePrototype.Profile,
-		"vpc", instancePrototype.VPC,
-		"primary_network_attachment", instancePrototype.PrimaryNetworkAttachment != nil,
-		"boot_volume_attachment", instancePrototype.BootVolumeAttachment != nil,
-		"volume_attachments_count", len(instancePrototype.VolumeAttachments),
-		"availability_policy", instancePrototype.AvailabilityPolicy != nil,
-		"metadata_service", instancePrototype.MetadataService != nil,
-		"placement_target", instancePrototype.PlacementTarget,
-		"resource_group", instancePrototype.ResourceGroup,
-		"user_data_length", len(*instancePrototype.UserData))
-
-	// DEBUG: Marshal the entire instancePrototype to JSON to see exactly what will be sent to the API
-	// This helps debug oneOf constraint violations
-	prototypeJSON, jsonErr := json.MarshalIndent(instancePrototype, "", "  ")
-	if jsonErr != nil {
-		logger.Info("Warning: Failed to marshal instancePrototype for debugging", "error", jsonErr)
-	} else {
-		// Sanitize user data before logging (it contains sensitive bootstrap tokens)
-		var prototypeMap map[string]interface{}
-		if unmarshalErr := json.Unmarshal(prototypeJSON, &prototypeMap); unmarshalErr == nil {
-			if prototypeMap["user_data"] != nil {
-				prototypeMap["user_data"] = "[REDACTED - contains bootstrap token]"
-			}
-			sanitizedJSON, _ := json.MarshalIndent(prototypeMap, "", "  ")
-			logger.V(1).Info("Logged InstancePrototype JSON payload", "json", string(sanitizedJSON))
-		} else {
-			logger.V(1).Info("Logged InstancePrototype JSON payload (raw)", "json", string(prototypeJSON))
-		}
-	}
-
-	// Log volume attachments details for block device troubleshooting
-	if len(instancePrototype.VolumeAttachments) > 0 {
-		for i, va := range instancePrototype.VolumeAttachments {
-			logger.Info("Logged VolumeAttachment details",
-				"index", i,
-				"name", va.Name,
-				"volume_type", fmt.Sprintf("%T", va.Volume),
-				"delete_on_termination", va.DeleteVolumeOnInstanceDelete)
-
-			// Log detailed volume fields for oneOf debugging
-			if volumeByCapacity, ok := va.Volume.(*vpcv1.VolumeAttachmentPrototypeVolumeVolumePrototypeInstanceContextVolumePrototypeInstanceContextVolumeByCapacity); ok {
-				logger.Info("Logged volume by capacity details",
-					"index", i,
-					"volume_name", volumeByCapacity.Name,
-					"volume_capacity", volumeByCapacity.Capacity,
-					"volume_profile", volumeByCapacity.Profile,
-					"has_name", volumeByCapacity.Name != nil,
-					"has_capacity", volumeByCapacity.Capacity != nil,
-					"has_profile", volumeByCapacity.Profile != nil,
-					"has_iops", volumeByCapacity.Iops != nil,
-					"has_bandwidth", volumeByCapacity.Bandwidth != nil,
-					"has_user_tags", volumeByCapacity.UserTags != nil,
-					"has_encryption_key", volumeByCapacity.EncryptionKey != nil)
-			}
-		}
-	}
-
 	// Create the instance
 	instance, err := vpcClient.CreateInstance(ctx, instancePrototype)
 	if err != nil {
@@ -851,39 +746,10 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 			metrics.ErrorsByType.WithLabelValues("api_error", "instance_provider", nodeClass.Spec.Region).Inc()
 		}
 
-		// Enhanced error logging with FULL error details for oneOf debugging
-		logger.Error(err, "VPC instance creation error - FULL ERROR MESSAGE",
+		logger.Error(err, "creating VPC instance",
 			"status_code", ibmErr.StatusCode,
 			"error_code", ibmErr.Code,
-			"retryable", ibmErr.Retryable,
-			"full_error_string", fmt.Sprintf("%s", err),
-			"full_error_details", fmt.Sprintf("%+v", err),
-			"error_type", fmt.Sprintf("%T", err),
-			"instance_prototype_type", fmt.Sprintf("%T", instancePrototype),
-			"ibm_error_message", ibmErr.Message,
-			"ibm_error_more_info", ibmErr.MoreInfo,
-			"raw_error", err.Error())
-
-		// ENHANCED DEBUGGING: Try to extract full HTTP response for oneOf errors
-		if detailedErr, ok := err.(*core.SDKProblem); ok {
-			logger.Error(err, "IBM VPC SDK detailed error response",
-				"instance_name", nodeClaim.Name,
-				"sdk_problem", fmt.Sprintf("%+v", detailedErr),
-				"problem_summary", detailedErr.Summary)
-		}
-
-		// Log specific oneOf error pattern analysis
-		errorString := err.Error()
-		isOneOfError := strings.Contains(errorString, "oneOf") || strings.Contains(errorString, "Expected only one")
-		logger.Info("Analyzed OneOf error",
-			"instance_name", nodeClaim.Name,
-			"is_oneof_error", isOneOfError,
-			"error_contains_oneof", strings.Contains(errorString, "oneOf"),
-			"error_contains_expected_only_one", strings.Contains(errorString, "Expected only one"),
-			"selected_instance_type", instanceProfile,
-			"zone", zone,
-			"nodeclass_instance_profile", nodeClass.Spec.InstanceProfile,
-			"is_dynamic_selection", nodeClass.Spec.InstanceProfile == "")
+			"retryable", ibmErr.Retryable)
 
 		if ibm.IsCreateInstanceNotSent(err) || rejectedCreate(ibmErr) {
 			if checkpointErr := p.markLaunchRejected(ctx, freshClaim, config); checkpointErr != nil {
@@ -894,57 +760,17 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 			return recovered, nil
 		}
 
-		// Create detailed error message for better debugging in NodeClaim conditions
-		detailedErr := fmt.Errorf("creating VPC instance failed: %s (code: %s, status: %d, instance_profile: %s, zone: %s, resolvedImageID: %s)",
-			err.Error(), ibmErr.Code, ibmErr.StatusCode, instanceProfile, zone, imageID)
-
-		// Still use HandleVPCError for consistent logging but return our detailed error
-		_ = vpcclient.HandleVPCError(err, logger, "creating VPC instance",
-			"instance_profile", instanceProfile, "zone", zone, "resolvedImageID", imageID)
-		return nil, detailedErr
+		return nil, fmt.Errorf("creating VPC instance (code: %s, status: %d, profile: %s, zone: %s, image: %s): %w",
+			ibmErr.Code, ibmErr.StatusCode, instanceProfile, zone, imageID, err)
 	}
 
-	// DETAILED RESPONSE LOGGING: Log the full VPC response details
 	logger.Info("VPC instance created successfully",
 		"instance_id", *instance.ID,
 		"name", *instance.Name,
 		"status", instance.Status,
 		"lifecycle_state", instance.LifecycleState,
 		"zone", instance.Zone,
-		"vpc", instance.VPC,
-		"image", instance.Image,
 		"profile", instance.Profile)
-
-	// Log network attachment details
-	if len(instance.NetworkAttachments) > 0 {
-		for i, na := range instance.NetworkAttachments {
-			logger.Info("Logged network attachment in response",
-				"index", i,
-				"attachment_id", na.ID,
-				"attachment_type", fmt.Sprintf("%T", na))
-		}
-	}
-
-	// Log volume attachment details in response
-	if len(instance.VolumeAttachments) > 0 {
-		for i, va := range instance.VolumeAttachments {
-			logger.Info("Logged volume attachment in response",
-				"index", i,
-				"attachment_id", va.ID,
-				"volume_id", va.Volume,
-				"attachment_name", va.Name,
-				"device_name", va.Device)
-		}
-	}
-
-	// Verify network attachment was applied correctly
-	if len(instance.NetworkAttachments) > 0 && instance.NetworkAttachments[0].ID != nil {
-		logger.Info("Instance created with VNI network attachment", "attachment_id", *instance.NetworkAttachments[0].ID)
-		// Note: Security groups information may not be available in the instance creation response
-		// This would require a separate GetInstance call to verify security groups
-	} else {
-		logger.Info("Instance created but network attachment information not available in response")
-	}
 
 	if instance == nil || instance.ID == nil {
 		return nil, fmt.Errorf("create returned no instance identity")
