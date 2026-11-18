@@ -77,6 +77,21 @@ type allocationCloud struct {
 	createError error
 	getError    error
 	keepWorker  bool
+	account     string
+}
+
+func (c *allocationCloud) GetAccountID() string {
+	if c.account != "" {
+		return c.account
+	}
+	return testAccount
+}
+func (c *allocationCloud) GetRegion() string { return "us-south" }
+func (c *allocationCloud) RemoveWorker(context.Context, string, string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.worker = nil
+	return nil
 }
 
 func (c *allocationCloud) GetWorkerPool(_ context.Context, clusterID, pool string) (*ibm.WorkerPool, error) {
@@ -146,7 +161,7 @@ func allocationFixture(t *testing.T) (*IKSWorkerPoolProvider, client.Client, *al
 	require.NoError(t, v1alpha1.AddToScheme(scheme))
 	scheme.AddKnownTypes(schema.GroupVersion{Group: "karpenter.sh", Version: "v1"}, &v1.NodeClaim{}, &v1.NodeClaimList{})
 	claim := &v1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: "claim", UID: "claim-uid", Labels: map[string]string{v1.NodePoolLabelKey: "pool"}},
-		Spec: v1.NodeClaimSpec{NodeClassRef: &v1.NodeClassReference{Name: "class"}}}
+		Spec: v1.NodeClaimSpec{NodeClassRef: &v1.NodeClassReference{Group: v1alpha1.Group, Kind: "IBMNodeClass", Name: "class"}}}
 	nodeClass := &v1alpha1.IBMNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "class", UID: "class-uid", Generation: 1},
 		Spec:   v1alpha1.IBMNodeClassSpec{IKSClusterID: "cluster", Region: "us-south", Zone: "us-south-1", VPC: "vpc", Subnet: "subnet", InstanceProfile: "bx2-4x16", IKSDynamicPools: &v1alpha1.IKSDynamicPoolConfig{Enabled: true}},
 		Status: v1alpha1.IBMNodeClassStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue, ObservedGeneration: 1}}}}
@@ -241,10 +256,11 @@ func TestAllocationRejectsForeignPoolOwnership(t *testing.T) {
 
 func TestExactPoolDeletionWaitsForWorkerAbsence(t *testing.T) {
 	provider, kubeClient, cloud, claim := allocationFixture(t)
-	registerAllocatedNode(t, kubeClient)
+	registered := registerAllocatedNode(t, kubeClient)
 	node, err := provider.Create(context.Background(), claim, nil)
 	require.NoError(t, err)
 	node.UID = claim.UID
+	require.NoError(t, kubeClient.Delete(context.Background(), registered))
 	cloud.keepWorker = true
 	require.NoError(t, provider.Delete(context.Background(), node))
 	require.Equal(t, []string{"real-pool"}, cloud.deleteCalls)
@@ -416,6 +432,7 @@ func TestAllocationQuarantinesAccountDriftAndWrongSubnet(t *testing.T) {
 		require.NoError(t, err)
 		fresh := &v1.NodeClaim{}
 		require.NoError(t, kubeClient.Get(context.Background(), client.ObjectKeyFromObject(claim), fresh))
+		cloud.account = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		t.Setenv("IBM_ACCOUNT_ID", "ffffffffffffffffffffffffffffffff")
 		require.ErrorContains(t, provider.Cleanup(context.Background(), fresh), "immutable allocation")
 		require.Empty(t, cloud.deleteCalls)
@@ -435,17 +452,19 @@ func TestAllocationQuarantinesAccountDriftAndWrongSubnet(t *testing.T) {
 	})
 }
 
-func TestPendingCleanupQuarantinesNodeWithoutDrainOwnership(t *testing.T) {
+func TestPendingCleanupEstablishesDrainOwnership(t *testing.T) {
 	provider, kubeClient, cloud, claim := allocationFixture(t)
 	_, err := provider.Create(context.Background(), claim, nil)
 	require.NoError(t, err)
 	node := registerAllocatedNode(t, kubeClient)
 	fresh := &v1.NodeClaim{}
 	require.NoError(t, kubeClient.Get(context.Background(), client.ObjectKeyFromObject(claim), fresh))
-	require.ErrorContains(t, provider.Cleanup(context.Background(), fresh), "graceful termination ownership")
+	require.NoError(t, provider.Cleanup(context.Background(), fresh))
 	require.Empty(t, cloud.deleteCalls)
 	require.NoError(t, kubeClient.Get(context.Background(), client.ObjectKeyFromObject(node), node))
-	require.True(t, node.DeletionTimestamp.IsZero())
+	require.False(t, node.DeletionTimestamp.IsZero())
+	require.Contains(t, node.Finalizers, v1.TerminationFinalizer)
+	require.Equal(t, claim.UID, node.OwnerReferences[0].UID)
 }
 
 func TestBoundAllocationCleanupOnlyConfirmsCoreDeletion(t *testing.T) {

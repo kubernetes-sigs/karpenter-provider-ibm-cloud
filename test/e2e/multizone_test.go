@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -142,6 +144,10 @@ func TestE2EZoneAntiAffinity(t *testing.T) {
 					// Zone anti-affinity - prefer different zones
 					Affinity: &corev1.Affinity{
 						PodAntiAffinity: &corev1.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+								LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": testName + "-app"}},
+								TopologyKey:   corev1.LabelHostname,
+							}},
 							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
 								{
 									Weight: 100,
@@ -171,7 +177,7 @@ func TestE2EZoneAntiAffinity(t *testing.T) {
 
 	// Verify that pods are distributed across zones
 	podZones := suite.getPodZoneDistribution(t, fmt.Sprintf("%s-app", testName), "default")
-	require.Greater(t, len(podZones), 1, "Pods should be distributed across multiple zones")
+	require.Greater(t, len(podZones), 1, "NodeClass requests Balanced placement; preferred zone affinity alone does not guarantee spread")
 	t.Logf("Verified pods are distributed across %d zones", len(podZones))
 
 	// List zones for debugging
@@ -265,7 +271,7 @@ func TestE2ETopologySpreadConstraints(t *testing.T) {
 
 	// Verify topology spread
 	podZones := suite.getPodZoneDistribution(t, fmt.Sprintf("%s-app", testName), "default")
-	require.Greater(t, len(podZones), 1, "Pods should be distributed across multiple zones")
+	require.Greater(t, len(podZones), 1, "NodeClass requests Balanced placement; preferred zone affinity alone does not guarantee spread")
 
 	// Check that distribution is relatively even (within maxSkew of 1)
 	var counts []int
@@ -313,69 +319,20 @@ func TestE2EPlacementStrategyValidation(t *testing.T) {
 		t.Logf("NodeClass with placement strategy validated successfully")
 	})
 
-	// Test 2: NodeClass without zone/subnet AND without placement strategy should fail
-	// Note: This test may be skipped if the current implementation doesn't enforce this validation
-	t.Run("MissingPlacementStrategy", func(t *testing.T) {
+	t.Run("InvalidPlacementStrategy", func(t *testing.T) {
+		invalidName := testName + "-invalid"
+		t.Cleanup(func() { suite.cleanupTestResources(t, invalidName) })
 		invalidNodeClass := &v1alpha1.IBMNodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: fmt.Sprintf("%s-invalid-nodeclass", testName),
-				Labels: map[string]string{
-					"test":      "e2e",
-					"test-name": testName + "-invalid",
-				},
-			},
+			ObjectMeta: metav1.ObjectMeta{Name: invalidName + "-nodeclass", Labels: map[string]string{"test": "e2e", "test-name": invalidName, "created-by": "karpenter-e2e"}},
 			Spec: v1alpha1.IBMNodeClassSpec{
-				Region: suite.testRegion,
-				// No Zone specified
-				VPC:   suite.testVPC,
-				Image: suite.testImage,
-				// No Subnet specified
-				SecurityGroups:    []string{suite.testSecurityGroup},
-				SSHKeys:           []string{suite.testSshKeyId},
-				ResourceGroup:     suite.testResourceGroup,
-				APIServerEndpoint: suite.APIServerEndpoint,
-				InstanceProfile:   "bx2-2x8",
-				BootstrapMode:     stringPtr("cloud-init"),
-				// No PlacementStrategy specified - should cause validation error
-				Tags: map[string]string{
-					"test":      "e2e",
-					"test-name": testName + "-invalid",
-				},
+				Region: suite.testRegion, VPC: suite.testVPC, Image: suite.testImage,
+				SecurityGroups: []string{suite.testSecurityGroup}, ResourceGroup: suite.testResourceGroup,
+				APIServerEndpoint: suite.APIServerEndpoint, BootstrapMode: stringPtr("cloud-init"),
+				PlacementStrategy: &v1alpha1.PlacementStrategy{ZoneBalance: "Unsupported"},
 			},
 		}
-
 		err := suite.kubeClient.Create(ctx, invalidNodeClass)
-		if err != nil {
-			// Expected: validation should fail at creation
-			t.Logf("NodeClass creation failed as expected due to missing placement strategy: %v", err)
-		} else {
-			// If creation succeeds, wait and check if controller marks it as invalid
-			t.Logf("NodeClass created, checking if validation fails...")
-			time.Sleep(5 * time.Second)
-
-			var updatedNodeClass v1alpha1.IBMNodeClass
-			err = suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(invalidNodeClass), &updatedNodeClass)
-			if err != nil {
-				t.Logf("NodeClass was deleted or became inaccessible (expected)")
-			} else {
-				// Check status conditions for validation failure
-				hasValidationError := false
-				for _, condition := range updatedNodeClass.Status.Conditions {
-					if condition.Type == "Ready" && condition.Status == "False" {
-						hasValidationError = true
-						t.Logf("NodeClass marked as not ready due to validation: %s", condition.Message)
-						break
-					}
-				}
-
-				if !hasValidationError {
-					t.Logf("Warning: NodeClass validation should have failed but didn't - this may indicate missing validation logic")
-				}
-			}
-
-			// Clean up
-			_ = suite.kubeClient.Delete(ctx, invalidNodeClass)
-		}
+		require.True(t, apierrors.IsInvalid(err), "Invalid zoneBalance must fail admission; got %v", err)
 	})
 
 	t.Logf("Placement strategy validation test completed: %s", testName)
@@ -385,49 +342,94 @@ func TestE2EPlacementStrategyValidation(t *testing.T) {
 func TestE2EZoneFailover(t *testing.T) {
 	suite := SetupE2ETestSuite(t)
 	testName := fmt.Sprintf("zone-failover-%d", time.Now().Unix())
-	t.Logf("Starting zone failover test: %s", testName)
-
-	// Note: This test is more conceptual as we can't actually make zones unavailable in E2E
-	// Instead, we test that workloads can be distributed and rescheduled properly
-
-	// Create infrastructure
-	nodeClass := suite.createMultiZoneNodeClass(t, testName)
-	suite.waitForNodeClassReady(t, nodeClass.Name)
-	nodePool := suite.createMultiZoneNodePool(t, testName, nodeClass.Name)
-
-	// Create deployment with zone spread preferences
-	deployment := suite.createZoneSpreadDeployment(t, testName, nodePool.Name, 4)
-
-	// Wait for initial placement
-	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
-	initialZones := suite.getPodZoneDistribution(t, fmt.Sprintf("%s-app", testName), "default")
-
-	t.Logf("Initial zone distribution:")
-	for zone, count := range initialZones {
-		t.Logf("  Zone %s: %d pods", zone, count)
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
+	ctx := context.Background()
+	class := suite.createMultiZoneNodeClass(t, testName)
+	suite.waitForNodeClassReady(t, class.Name)
+	pool := suite.createMultiZoneNodePool(t, testName, class.Name)
+	deployment := suite.createZoneSpreadDeployment(t, testName, pool.Name, 4)
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
+	initial := suite.getPodZoneDistribution(t, testName+"-app", deployment.Namespace)
+	require.Greater(t, len(initial), 1, "Balanced placement should initially use multiple zones")
+	used := make([]string, 0, len(initial))
+	for zone := range initial {
+		used = append(used, zone)
 	}
-
-	// Scale up to test additional zone utilization
-	deployment.Spec.Replicas = &[]int32{8}[0]
-	err := suite.kubeClient.Update(context.Background(), deployment)
+	sort.Strings(used)
+	excluded := used[0]
+	var readyClass v1alpha1.IBMNodeClass
+	require.NoError(t, suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(class), &readyClass))
+	remainingSet := map[string]bool{}
+	cloud, err := suite.vpcClient()
 	require.NoError(t, err)
-
-	// Wait for scale-up (use existing waiting function)
-	suite.waitForPodsToBeScheduled(t, deployment.Name, "default")
-
-	finalZones := suite.getPodZoneDistribution(t, fmt.Sprintf("%s-app", testName), "default")
-	t.Logf("Final zone distribution after scale-up:")
-	for zone, count := range finalZones {
-		t.Logf("  Zone %s: %d pods", zone, count)
+	require.NotEmpty(t, readyClass.Status.SelectedSubnets)
+	for _, subnetID := range readyClass.Status.SelectedSubnets {
+		subnet, subnetErr := cloud.GetSubnet(ctx, subnetID)
+		require.NoError(t, subnetErr)
+		require.NotNil(t, subnet.Zone)
+		require.NotNil(t, subnet.Zone.Name)
+		zone := *subnet.Zone.Name
+		if zone != excluded {
+			remainingSet[zone] = true
+		}
 	}
-
-	// Verify we're still using multiple zones
-	require.Greater(t, len(finalZones), 1, "Should maintain multi-zone distribution after scaling")
-
-	// Cleanup
-	suite.cleanupTestWorkload(t, deployment.Name, "default")
-	suite.cleanupTestResources(t, testName)
-	t.Logf("Zone failover test completed: %s", testName)
+	remaining := make([]string, 0, len(remainingSet))
+	for zone := range remainingSet {
+		remaining = append(remaining, zone)
+	}
+	sort.Strings(remaining)
+	require.GreaterOrEqual(t, len(remaining), 2, "Failover with retained spread assertion requires two remaining eligible zones")
+	var original karpv1.NodeClaimList
+	require.NoError(t, suite.kubeClient.List(ctx, &original, client.MatchingLabels{karpv1.NodePoolLabelKey: pool.Name}))
+	require.NotEmpty(t, original.Items)
+	require.NoError(t, suite.mutateOwnedTestObject(ctx, pool, testName, func(object client.Object) error {
+		current := object.(*karpv1.NodePool)
+		for i := range current.Spec.Template.Spec.Requirements {
+			if current.Spec.Template.Spec.Requirements[i].Key == corev1.LabelTopologyZone {
+				current.Spec.Template.Spec.Requirements[i].Values = remaining
+				return nil
+			}
+		}
+		return fmt.Errorf("test pool has no zone requirement")
+	}))
+	require.NoError(t, suite.mutateOwnedTestObject(ctx, deployment, testName, func(object client.Object) error {
+		current := object.(*appsv1.Deployment)
+		if current.Spec.Template.Spec.Affinity == nil {
+			current.Spec.Template.Spec.Affinity = &corev1.Affinity{}
+		}
+		current.Spec.Template.Spec.Affinity.NodeAffinity = &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+				MatchExpressions: []corev1.NodeSelectorRequirement{{Key: corev1.LabelTopologyZone, Operator: corev1.NodeSelectorOpIn, Values: remaining}},
+			}}},
+		}
+		return nil
+	}))
+	scope, err := suite.newCleanupScope(ctx, testName)
+	require.NoError(t, err)
+	retired := 0
+	for i := range original.Items {
+		claim := &original.Items[i]
+		if claim.Labels[corev1.LabelTopologyZone] != excluded {
+			continue
+		}
+		require.NoError(t, suite.deleteCleanupObject(ctx, claim, scope))
+		suite.waitForNodeClaimCleanedUp(t, claim.Name, testTimeout)
+		retired++
+	}
+	require.Greater(t, retired, 0, "Failover must retire an allocated claim in the excluded zone")
+	require.NoError(t, suite.scaleTestDeployment(ctx, deployment, 8))
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
+	final := suite.getPodZoneDistribution(t, testName+"-app", deployment.Namespace)
+	require.Zero(t, final[excluded], "Evacuated zone must have no ready workload pods")
+	require.Greater(t, len(final), 1, "Should maintain multi-zone distribution after failover and scaling")
+	for zone := range final {
+		require.True(t, remainingSet[zone], "Replacement must use a remaining allowed zone")
+	}
+	total := 0
+	for _, count := range final {
+		total += count
+	}
+	require.Equal(t, 8, total)
 }
 
 // Helper function to create a multi-zone NodeClass with placement strategy
@@ -449,7 +451,7 @@ func (s *E2ETestSuite) createMultiZoneNodeClass(t *testing.T, testName string) *
 			SSHKeys:           []string{s.testSshKeyId},
 			ResourceGroup:     s.testResourceGroup,
 			APIServerEndpoint: s.APIServerEndpoint,
-			InstanceProfile:   "bx2-4x16",
+			InstanceProfile:   s.GetAvailableInstanceType(t),
 			BootstrapMode:     stringPtr("cloud-init"),
 			PlacementStrategy: &v1alpha1.PlacementStrategy{
 				ZoneBalance: "Balanced", // Request balanced zone distribution
@@ -494,7 +496,7 @@ func (s *E2ETestSuite) createMultiZoneNodePool(t *testing.T, testName, nodeClass
 						{
 							Key:      corev1.LabelInstanceTypeStable,
 							Operator: corev1.NodeSelectorOpIn,
-							Values:   []string{"bx2-4x16", "bx2-2x8"},
+							Values:   []string{s.GetAvailableInstanceType(t)},
 						},
 						// Allow any zone in the region (multi-zone)
 						{
@@ -701,7 +703,13 @@ func (s *E2ETestSuite) getPodZoneDistribution(t *testing.T, appLabel, namespace 
 	require.NoError(t, err, "Failed to get pods for zone distribution")
 
 	for _, pod := range podList.Items {
-		if pod.Spec.NodeName == "" {
+		ready := false
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+				ready = true
+			}
+		}
+		if pod.Spec.NodeName == "" || !pod.DeletionTimestamp.IsZero() || !ready {
 			continue // Skip unscheduled pods
 		}
 

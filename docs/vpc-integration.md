@@ -39,21 +39,15 @@ ibmcloud is images --visibility public --status available | grep ubuntu
 
 ### Step 1: Install Karpenter
 ```bash
-# Create namespace and secrets
-kubectl create namespace karpenter
-
-kubectl create secret generic karpenter-ibm-credentials \
-  --from-literal=ibmApiKey="your-general-api-key" \
-  --from-literal=vpcApiKey="your-vpc-api-key" \
-  --namespace karpenter
-
 # Install via Helm
 helm repo add karpenter-ibm https://karpenter-ibm.sh
 helm repo update
 helm install karpenter karpenter-ibm/karpenter-ibm \
   --namespace karpenter \
   --create-namespace \
-  --set controller.env.IBM_REGION="us-south"
+  --set credentials.region="us-south" \
+  --set credentials.ibmApiKey="your-general-api-key" \
+  --set credentials.vpcApiKey="your-vpc-api-key"
 ```
 
 ### Step 2: Create VPC NodeClass
@@ -81,7 +75,7 @@ spec:
   apiServerEndpoint: "https://10.240.0.1:6443"           # Your cluster's INTERNAL API endpoint
 
   # REQUIRED: Bootstrap mode for VPC clusters
-  bootstrapMode: cloud-init                               # Valid: cloud-init, iks, user-data
+  bootstrapMode: cloud-init                               # Valid: cloud-init, iks-api, auto
 
   # REQUIRED: Security groups (must be IDs, not names!)
   securityGroups:
@@ -122,7 +116,7 @@ spec:
   resourceGroup: my-resource-group       # Resource group name (automatically resolved to ID)
   # OR:
   # resourceGroup: rg-12345678          # Resource group ID (used directly)
-  # If omitted, instances are created in the account's default resource group
+  # Required: provide a resource group name or ID
 
   # Optional: Placement target (dedicated host or placement group)
   placementTarget: ph-12345678
@@ -131,18 +125,6 @@ spec:
   tags:
     environment: production
     team: devops
-
-  # Optional: Bootstrap mode (cloud-init, iks-api, or auto)
-  bootstrapMode: cloud-init
-
-  # REQUIRED: Internal API server endpoint (find with: kubectl get endpointslice -n default -l kubernetes.io/service-name=kubernetes)
-  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
-
-  # Optional: IKS cluster ID (required when bootstrapMode is "iks-api")
-  iksClusterID: bng6n48d0t6vj7b33kag
-
-  # Optional: IKS worker pool ID (for IKS API bootstrapping)
-  iksWorkerPoolID: bng6n48d0t6vj7b33kag-pool1
 
   # Optional: Load balancer integration
   loadBalancerIntegration:
@@ -172,7 +154,7 @@ spec:
         cluster-type: self-managed
     spec:
       nodeClassRef:
-        apiVersion: karpenter-ibm.sh/v1alpha1
+        group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: vpc-nodeclass
 
@@ -230,6 +212,7 @@ kind: IBMNodeClass
 metadata:
   name: vpc-nodeclass
 spec:
+  resourceGroup: replace-with-resource-group-id
   # CRITICAL: Use INTERNAL endpoint from discovery above
   apiServerEndpoint: "https://<INTERNAL-IP>:6443"
 
@@ -255,6 +238,8 @@ kind: IBMNodeClass
 metadata:
   name: minimal-vpc
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   region: us-south
   zone: us-south-1
   vpc: vpc-12345678
@@ -282,6 +267,7 @@ metadata:
   annotations:
     karpenter-ibm.sh/description: "Production multi-zone with intelligent placement"
 spec:
+  resourceGroup: replace-with-resource-group-id
   region: us-south
   vpc: "r006-4225852b-4846-4a4a-88c4-9966471337c6"
   image: "r006-dd3c20fa-71d3-4dc0-913f-2f097bf3e500"
@@ -311,7 +297,7 @@ spec:
   template:
     spec:
       nodeClassRef:
-        apiVersion: karpenter-ibm.sh/v1alpha1
+        group: karpenter-ibm.sh
         kind: IBMNodeClass
         name: production-multizone
 
@@ -373,6 +359,7 @@ kind: IBMNodeClass
 metadata:
   name: vpc-us-south-1
 spec:
+  resourceGroup: replace-with-resource-group-id
   region: us-south
   zone: us-south-1                    # Explicit zone
   vpc: "r006-vpc-id"
@@ -388,6 +375,7 @@ kind: IBMNodeClass
 metadata:
   name: vpc-us-south-2
 spec:
+  resourceGroup: replace-with-resource-group-id
   region: us-south
   zone: us-south-2                    # Explicit zone
   vpc: "r006-vpc-id"
@@ -406,6 +394,8 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter-ibm.sh
+        kind: IBMNodeClass
         name: vpc-us-south-1
       requirements:
       - key: "topology.kubernetes.io/zone"
@@ -420,6 +410,8 @@ kind: IBMNodeClass
 metadata:
   name: vpc-gpu
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   region: us-south
   zone: us-south-1
   vpc: vpc-gpu-12345
@@ -452,6 +444,8 @@ kind: IBMNodeClass
 metadata:
   name: vpc-hpc
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   region: us-south
   zone: us-south-1
   vpc: vpc-hpc-12345
@@ -485,6 +479,8 @@ kind: IBMNodeClass
 metadata:
   name: vpc-custom-cni
 spec:
+  resourceGroup: replace-with-resource-group-id
+  apiServerEndpoint: "https://<INTERNAL-API-SERVER-IP>:6443"
   region: us-south
   zone: us-south-1
   vpc: vpc-custom-12345
@@ -533,6 +529,7 @@ kind: IBMNodeClass
 metadata:
   name: flexible-nodeclass
 spec:
+  resourceGroup: replace-with-resource-group-id
   region: us-south
   vpc: "r006-your-vpc-id"
   image: "r006-your-image-id"
@@ -549,6 +546,8 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter-ibm.sh
+        kind: IBMNodeClass
         name: flexible-nodeclass
       requirements:
       # Karpenter will choose the best instance type based on pod requirements

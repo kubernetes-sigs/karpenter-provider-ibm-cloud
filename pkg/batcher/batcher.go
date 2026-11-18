@@ -23,10 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/metrics"
 )
 
 // Options allows for configuration of the Batcher
@@ -36,6 +37,7 @@ type Options[T input, U output] struct {
 	MaxTimeout        time.Duration
 	MaxItems          int
 	MaxRequestWorkers int
+	ExecutionTimeout  time.Duration
 	RequestHasher     RequestHasher[T]
 	BatchExecutor     BatchExecutor[T, U]
 }
@@ -99,6 +101,12 @@ func NewBatcher[T input, U output](ctx context.Context, options Options[T, U]) *
 
 // Add will add an input to the batcher using the batcher's hashing function
 func (b *Batcher[T, U]) Add(ctx context.Context, input *T) Result[U] {
+	if err := ctx.Err(); err != nil {
+		return Result[U]{Err: err}
+	}
+	if err := b.ctx.Err(); err != nil {
+		return Result[U]{Err: err}
+	}
 	hash, err := b.options.RequestHasher(ctx, input)
 	if err != nil {
 		return Result[U]{Err: fmt.Errorf("hashing request: %w", err)}
@@ -115,8 +123,18 @@ func (b *Batcher[T, U]) Add(ctx context.Context, input *T) Result[U] {
 	b.mu.Lock()
 	b.requests[request.hash] = append(b.requests[request.hash], request)
 	b.mu.Unlock()
-	b.trigger <- struct{}{}
-	return <-request.requestor
+	select {
+	case b.trigger <- struct{}{}:
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		return Result[U]{Err: ctx.Err()}
+	case <-b.ctx.Done():
+		return Result[U]{Err: b.ctx.Err()}
+	case result := <-request.requestor:
+		return result
+	}
 }
 
 // DefaultHasher will hash the entire input
@@ -176,15 +194,27 @@ func (b *Batcher[T, U]) waitForIdle() {
 		timeout.Stop()
 		idle.Stop()
 	}()
-	count := 1 // we already got a single trigger
-	for b.options.MaxItems == 0 || count < b.options.MaxItems {
+	for {
+		if b.options.MaxItems > 0 {
+			b.mu.Lock()
+			count := 0
+			for _, requests := range b.requests {
+				count += len(requests)
+			}
+			b.mu.Unlock()
+			if count >= b.options.MaxItems {
+				return
+			}
+		}
 		select {
 		case <-b.ctx.Done():
 			return
 		case <-b.trigger:
-			count++
 			if !idle.Stop() {
-				<-idle.C
+				select {
+				case <-idle.C:
+				default:
+				}
 			}
 			idle.Reset(b.options.IdleTimeout)
 		case <-timeout.C:
@@ -200,13 +230,29 @@ func (b *Batcher[T, U]) runCalls(requests []*request[T, U]) {
 	metrics.BatcherBatchSize.
 		WithLabelValues(b.options.Name).
 		Observe(float64(len(requests)))
-	requestIdx := 0
-	for _, result := range b.options.BatchExecutor(requests[0].ctx, lo.Map(requests, func(req *request[T, U], _ int) *T { return req.input })) {
-		requests[requestIdx].requestor <- result
-		requestIdx++
+	active := make([]*request[T, U], 0, len(requests))
+	for _, req := range requests {
+		if err := req.ctx.Err(); err != nil {
+			req.requestor <- Result[U]{Err: err}
+		} else {
+			active = append(active, req)
+		}
 	}
-	// any unmapped outputs should return an error to the caller
-	for ; requestIdx < len(requests); requestIdx++ {
-		requests[requestIdx].requestor <- Result[U]{Err: fmt.Errorf("batch executor returned fewer results than requests: got %d, expected %d", requestIdx, len(requests))}
+	if len(active) == 0 {
+		return
+	}
+	timeout := b.options.ExecutionTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	execCtx, cancel := context.WithTimeout(b.ctx, timeout)
+	defer cancel()
+	outputs := b.options.BatchExecutor(execCtx, lo.Map(active, func(req *request[T, U], _ int) *T { return req.input }))
+	for i, req := range active {
+		if i < len(outputs) {
+			req.requestor <- outputs[i]
+		} else {
+			req.requestor <- Result[U]{Err: fmt.Errorf("batch executor returned fewer results than requests: got %d, expected %d", len(outputs), len(active))}
+		}
 	}
 }

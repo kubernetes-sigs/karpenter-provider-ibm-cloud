@@ -28,6 +28,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const DefaultTimeout = 30 * time.Second
+
+func BoundedHTTPClient(original *http.Client, region string) *http.Client {
+	client := InstrumentHTTPClient(original, region)
+	if client.Timeout <= 0 || client.Timeout > DefaultTimeout {
+		client.Timeout = DefaultTimeout
+	}
+	return client
+}
+
 // IBMCloudHTTPClient provides a centralized HTTP client for IBM Cloud API operations
 type IBMCloudHTTPClient struct {
 	client     *http.Client
@@ -87,7 +97,7 @@ func (e *IBMCloudError) IsUnauthorized() bool {
 func NewIBMCloudHTTPClient(baseURL string, setHeaders func(*http.Request, string)) *IBMCloudHTTPClient {
 	return &IBMCloudHTTPClient{
 		client: InstrumentHTTPClient(&http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: DefaultTimeout,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -102,7 +112,7 @@ func NewIBMCloudHTTPClient(baseURL string, setHeaders func(*http.Request, string
 // NewIBMCloudHTTPClientWithClient creates a new HTTP client wrapper with custom http.Client
 func NewIBMCloudHTTPClientWithClient(httpClient *http.Client, baseURL string, setHeaders func(*http.Request, string)) *IBMCloudHTTPClient {
 	return &IBMCloudHTTPClient{
-		client:     InstrumentHTTPClient(httpClient, ""),
+		client:     BoundedHTTPClient(httpClient, ""),
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
 		setHeaders: setHeaders,
 	}

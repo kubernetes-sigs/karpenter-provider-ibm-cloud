@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -64,9 +65,8 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 		emptyNodeClaim := types.NamespacedName{}
 
 		_, err := provider.GetUserData(ctx, nodeClass, emptyNodeClaim)
-		// Will fail due to missing CA certificate in fake client setup
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "ca.crt not found")
+		assert.True(t, apierrors.IsNotFound(err))
 	})
 
 	t.Run("Kubernetes API server discovery failure", func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 		assert.Contains(t, err.Error(), "getting internal API server endpoint")
 	})
 
-	t.Run("Bootstrap token creation failure", func(t *testing.T) {
+	t.Run("Missing claim cannot create bootstrap credentials", func(t *testing.T) {
 		//nolint:staticcheck // SA1019: NewSimpleClientset is deprecated but NewClientset requires generated apply configurations
 		k8sClient := fake.NewSimpleClientset()
 		kubeClient := fakeClient.NewClientBuilder().Build()
@@ -113,9 +113,11 @@ func TestVPCBootstrapProvider_GetUserData_ErrorHandling(t *testing.T) {
 		nodeClaim := types.NamespacedName{Name: "test-node", Namespace: "default"}
 
 		_, err := provider.GetUserData(ctx, nodeClass, nodeClaim)
-		// Will fail due to missing CA certificate in fake client setup
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "ca.crt not found")
+		assert.True(t, apierrors.IsNotFound(err))
+		secrets, listErr := k8sClient.CoreV1().Secrets("kube-system").List(ctx, metav1.ListOptions{})
+		assert.NoError(t, listErr)
+		assert.Empty(t, secrets.Items)
 	})
 }
 

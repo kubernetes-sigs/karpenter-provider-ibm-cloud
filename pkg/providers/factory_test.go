@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -297,8 +298,8 @@ func TestProviderFactory_DetermineProviderMode(t *testing.T) {
 			// Create provider factory with nil client for testing
 			factory := NewProviderFactory(context.Background(), nil, fakeClient, nil, nil)
 
-			// Test determineProviderMode method
-			result := factory.determineProviderMode(tt.nodeClass)
+			result, err := factory.GetProviderMode(tt.nodeClass)
+			require.NoError(t, err)
 
 			// Validate result
 			assert.Equal(t, tt.expectedMode, result)
@@ -426,7 +427,8 @@ func TestProviderFactory_BootstrapModePrecedence(t *testing.T) {
 			}
 
 			// Test mode determination using public method
-			mode := factory.GetProviderMode(tt.nodeClass)
+			mode, err := factory.GetProviderMode(tt.nodeClass)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedMode, mode)
 
 			// Skip provider creation test since IBM client is nil

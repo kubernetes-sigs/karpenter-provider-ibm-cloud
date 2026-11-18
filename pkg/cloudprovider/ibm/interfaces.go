@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate go run go.uber.org/mock/mockgen@latest -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
+//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
 
 package ibm
 
@@ -24,6 +24,9 @@ import "context"
 // This interface allows for proper mocking in tests while maintaining
 // type safety and clear contracts for IKS API operations.
 type IKSClientInterface interface {
+	GetAccountID() string
+	GetRegion() string
+	RemoveWorker(context.Context, string, string) error
 	// GetClusterConfig retrieves the kubeconfig for the specified cluster
 	GetClusterConfig(ctx context.Context, clusterID string) (string, error)
 

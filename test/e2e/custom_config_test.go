@@ -88,12 +88,12 @@ func TestE2ECustomConfig(t *testing.T) {
 	t.Logf("Created NodePool: %s", nodePool.Name)
 
 	// Create workload from config
-	suite.CreateWorkloadFromConfig(t, config.Workload)
-	t.Logf("Created workload: %s", config.Workload.Name)
+	deployment := suite.CreateWorkloadFromConfig(t, config.Workload)
+	t.Logf("Created workload: %s", deployment.Name)
 
 	// Wait for pods to be scheduled
-	suite.waitForPodsToBeScheduled(t, config.Workload.Name, config.Workload.Namespace)
-	t.Logf("Workload deployment is ready: %s/%s", config.Workload.Namespace, config.Workload.Name)
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
+	t.Logf("Workload deployment is ready: %s/%s", deployment.Namespace, deployment.Name)
 
 	// Verify nodes were provisioned
 	nodes := suite.getKarpenterNodes(t, nodePool.Name)
@@ -102,7 +102,7 @@ func TestE2ECustomConfig(t *testing.T) {
 
 	// Cleanup
 	t.Log("Cleaning up test resources...")
-	suite.cleanupTestWorkload(t, config.Workload.Name, config.Workload.Namespace)
+	suite.cleanupTestWorkload(t, deployment.Name, deployment.Namespace)
 	suite.cleanupTestResources(t, nodePool.Name)
 
 	// Only cleanup NodeClass if we created it
@@ -152,16 +152,16 @@ func TestE2ECustomConfigFromEnv(t *testing.T) {
 	suite.waitForNodeClassReady(t, nodeClass.Name)
 
 	nodePool := suite.CreateNodePoolFromConfig(t, config.NodePool, nodeClass.Name)
-	suite.CreateWorkloadFromConfig(t, config.Workload)
+	deployment := suite.CreateWorkloadFromConfig(t, config.Workload)
 
 	// Wait and verify
-	suite.waitForPodsToBeScheduled(t, config.Workload.Name, config.Workload.Namespace)
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
 	nodes := suite.getKarpenterNodes(t, nodePool.Name)
 	require.NotEmpty(t, nodes, "No nodes were provisioned")
 	t.Logf("Successfully provisioned %d nodes from environment config", len(nodes))
 
 	// Cleanup
-	suite.cleanupTestWorkload(t, config.Workload.Name, config.Workload.Namespace)
+	suite.cleanupTestWorkload(t, deployment.Name, deployment.Namespace)
 	suite.cleanupTestResources(t, nodePool.Name)
 }
 
@@ -218,11 +218,11 @@ func TestE2EProgrammaticConfig(t *testing.T) {
 	nodePool := suite.CreateNodePoolFromConfig(t, config.NodePool, nodeClass.Name)
 	t.Logf("Created memory-intensive NodePool: %s", nodePool.Name)
 
-	suite.CreateWorkloadFromConfig(t, config.Workload)
-	t.Logf("Created high-memory workload: %s", config.Workload.Name)
+	deployment := suite.CreateWorkloadFromConfig(t, config.Workload)
+	t.Logf("Created high-memory workload: %s", deployment.Name)
 
 	// Wait and verify
-	suite.waitForPodsToBeScheduled(t, config.Workload.Name, config.Workload.Namespace)
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
 	nodes := suite.getKarpenterNodes(t, nodePool.Name)
 	require.NotEmpty(t, nodes, "No nodes were provisioned")
 
@@ -235,7 +235,7 @@ func TestE2EProgrammaticConfig(t *testing.T) {
 	}
 
 	// Cleanup
-	suite.cleanupTestWorkload(t, config.Workload.Name, config.Workload.Namespace)
+	suite.cleanupTestWorkload(t, deployment.Name, deployment.Namespace)
 	suite.cleanupTestResources(t, nodePool.Name)
 }
 

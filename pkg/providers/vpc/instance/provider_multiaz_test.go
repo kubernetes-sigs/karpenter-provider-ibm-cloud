@@ -318,7 +318,7 @@ func (m *mockSubnetProvider) GetSubnetInfo(ctx context.Context, subnetID string)
 	}, nil
 }
 
-func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string) ([]subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string, regions ...string) ([]subnet.SubnetInfo, error) {
 	var result []subnet.SubnetInfo
 	for _, sub := range m.subnets {
 		result = append(result, subnet.SubnetInfo{
@@ -332,7 +332,7 @@ func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string) ([]s
 	return result, nil
 }
 
-func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy, regions ...string) ([]subnet.SubnetInfo, error) {
 	subnets, err := m.ListSubnets(ctx, vpcID)
 	if err != nil {
 		return nil, err
@@ -358,7 +358,7 @@ func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, st
 	return subnets, nil
 }
 
-func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string, regions ...string) (*subnet.SubnetInfo, error) {
 	return m.GetSubnetInfo(ctx, subnetID)
 }
 

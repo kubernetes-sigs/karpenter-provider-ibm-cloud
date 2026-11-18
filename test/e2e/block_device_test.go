@@ -19,17 +19,19 @@ limitations under the License.
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	utilsptr "k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -50,6 +52,7 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 	suite := SetupE2ETestSuite(t)
 	ctx := context.Background()
 	testName := fmt.Sprintf("block-device-test-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 
 	// Add test label for proper cleanup
 	testLabels := map[string]string{
@@ -77,23 +80,20 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 			BootstrapMode:     stringPtr("cloud-init"),
 			BlockDeviceMappings: []v1alpha1.BlockDeviceMapping{
 				{
-					DeviceName: stringPtr("/dev/vda"), // Root device
 					RootVolume: true,
 					VolumeSpec: &v1alpha1.VolumeSpec{
-						Capacity:            int64Ptr(50), // 50GB root volume
+						Capacity:            int64Ptr(100), // 100GB root volume
 						Profile:             stringPtr("general-purpose"),
 						DeleteOnTermination: &[]bool{true}[0],
 						Tags:                []string{"test:root-volume", "environment:e2e-test"},
 					},
 				},
 				{
-					DeviceName: stringPtr("/dev/vdb"), // Additional data volume
 					RootVolume: false,
 					VolumeSpec: &v1alpha1.VolumeSpec{
 						Capacity:            int64Ptr(100), // 100GB data volume
 						Profile:             stringPtr("custom"),
 						IOPS:                int64Ptr(1000),
-						Bandwidth:           int64Ptr(500),
 						DeleteOnTermination: &[]bool{true}[0],
 						Tags:                []string{"test:data-volume", "environment:e2e-test"},
 					},
@@ -173,7 +173,7 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 
 			# Install required tools
 			echo "Installing required tools..."
-			apt-get update -qq && apt-get install -y -qq util-linux lsblk fdisk > /dev/null 2>&1
+			apt-get update -qq && apt-get install -y -qq util-linux fdisk > /dev/null 2>&1
 
 			echo "=== System Information ==="
 			echo "Kernel: $(uname -r)"
@@ -208,8 +208,8 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 
 			echo "=== Expected Configuration Verification ==="
 			echo "Expected from IBMNodeClass:"
-			echo "  - Root volume (/dev/vda): ~50GB, general-purpose profile"
-			echo "  - Data volume (/dev/vdb): ~100GB, 5iops-tier profile"
+			echo "  - Root volume (/dev/vda): ~100GB, general-purpose profile"
+			echo "  - Data volume (/dev/vdb): ~100GB, custom profile"
 			echo ""
 
 			# Check root volume size
@@ -218,10 +218,10 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 				ROOT_SIZE_GB=$((ROOT_SIZE_BYTES / 1024 / 1024 / 1024))
 				echo "Root volume (/dev/vda) size: ${ROOT_SIZE_GB}GB"
 
-				if [ "$ROOT_SIZE_GB" -ge 45 ] && [ "$ROOT_SIZE_GB" -le 55 ]; then
-					echo "Root volume size is within expected range (45-55GB)"
+				if [ "$ROOT_SIZE_GB" -ge 95 ] && [ "$ROOT_SIZE_GB" -le 105 ]; then
+					echo "Root volume size is within expected range (95-105GB)"
 				else
-					echo "Root volume size is outside expected range (45-55GB)"
+					echo "Root volume size is outside expected range (95-105GB)"
 					exit 1
 				fi
 			else
@@ -251,7 +251,7 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 			echo "=== IBM Cloud Volume Information ==="
 			echo "Note: Volume profiles and tags are configured at IBM Cloud level:"
 			echo "- Root volume configured with 'general-purpose' profile"
-			echo "- Data volume configured with '5iops-tier' profile with 1000 IOPS and 500 Mbps bandwidth"
+			echo "- Data volume configured with 'custom' profile with 1000 IOPS and dependent bandwidth"
 			echo "- Both volumes set to delete on instance termination"
 			echo "- Volumes tagged with 'test:root-volume' and 'test:data-volume'"
 			echo ""
@@ -259,7 +259,7 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 			echo "=== Test Summary ==="
 			echo "Block device inspection completed successfully!"
 			echo "Root volume is ~${ROOT_SIZE_GB}GB (configured as general-purpose)"
-			echo "Data volume is ~${DATA_SIZE_GB}GB (configured as 5iops-tier)"
+			echo "Data volume is ~${DATA_SIZE_GB}GB (configured as custom)"
 			echo "Both volumes match the IBMNodeClass block device mapping specification"
 			echo ""
 			echo "=== Block Device Inspector Completed ==="
@@ -268,16 +268,35 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 			echo "Test completed successfully. Sleeping briefly for log collection..."
 			sleep 60`,
 					},
+					TerminationMessagePath: "/tmp/termination-log",
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("100m"),
 							corev1.ResourceMemory: resource.MustParse("256Mi"),
 						},
 					},
+					SecurityContext: &corev1.SecurityContext{
+						Privileged: utilsptr.To(true),
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "host-dev", MountPath: "/dev", ReadOnly: true},
+					},
 				},
 			},
 			NodeSelector: map[string]string{
-				"test-name": testName,
+				"test-name":             testName,
+				"karpenter.sh/nodepool": nodePool.Name,
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "host-dev",
+					VolumeSource: corev1.VolumeSource{
+						HostPath: &corev1.HostPathVolumeSource{
+							Path: "/dev",
+							Type: utilsptr.To(corev1.HostPathDirectory),
+						},
+					},
+				},
 			},
 			Tolerations: []corev1.Toleration{
 				{
@@ -354,66 +373,33 @@ func TestE2EBlockDeviceMapping(t *testing.T) {
 		require.Fail(t, "Pod failed - block device configuration verification failed")
 	}
 
-	// Try to get pod logs for additional verification (best effort)
 	podLogs, err := suite.getPodLogs(ctx, testPod.Name, testPod.Namespace)
-	if err == nil && podLogs != "Pod logs not available in this test setup" {
-		t.Logf("Pod logs:\n%s", podLogs)
-
-		// Verify key indicators that the test ran and passed
-		require.Contains(t, podLogs, "Block Device Inspector Starting", "Pod should have started block device inspection")
-		require.Contains(t, podLogs, "Root volume size is within expected range", "Root volume should be correct size")
-		require.Contains(t, podLogs, "Data volume size is within expected range", "Data volume should be correct size")
-		require.Contains(t, podLogs, "Block device inspection completed successfully", "Test should complete successfully")
-	} else {
-		t.Logf("Pod logs not available for detailed verification, but pod exit status indicates success")
-	}
-
-	// Clean up test resources
-	t.Logf("Cleaning up test resources...")
-
-	// Delete test pod
-	err = suite.kubeClient.Delete(ctx, testPod)
-	if err != nil {
-		t.Logf("Warning: Failed to delete test pod: %v", err)
-	}
-
-	// Wait for node to be cleaned up by Karpenter (due to pod deletion)
-	t.Logf("Waiting for node cleanup...")
-	suite.waitForNodeCleanup(t, nodeName, 5*time.Minute)
-
-	// Delete NodePool
-	err = suite.kubeClient.Delete(ctx, nodePool)
-	if err != nil {
-		t.Logf("Warning: Failed to delete NodePool: %v", err)
-	}
-
-	// Delete NodeClass
-	err = suite.kubeClient.Delete(ctx, nodeClass)
-	if err != nil {
-		t.Logf("Warning: Failed to delete NodeClass: %v", err)
-	}
+	require.NoError(t, err, "Inspector logs must be readable through verified kubelet serving TLS")
+	require.NotEmpty(t, podLogs)
+	suite.cleanupTestResources(t, testName)
+	suite.waitForNodeCleanup(t, nodeName, time.Minute)
 
 	t.Logf("Block device mapping test completed successfully")
 }
 
-// getPodLogs retrieves logs from a pod using kubectl
 func (s *E2ETestSuite) getPodLogs(ctx context.Context, podName, namespace string) (string, error) {
 	if namespace == "" {
 		namespace = "default"
 	}
 
-	// Use kubectl to get pod logs
-	cmd := exec.CommandContext(ctx, "kubectl", "logs", podName, "-n", namespace)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	stream, err := s.coreClient.Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{}).Stream(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get pod logs: %v, stderr: %s", err, stderr.String())
+		return "", fmt.Errorf("failed to get pod logs: %w", err)
 	}
+	defer func() { _ = stream.Close() }()
 
-	return stdout.String(), nil
+	logs, err := io.ReadAll(stream)
+	if err != nil {
+		return "", fmt.Errorf("failed to read pod logs: %w", err)
+	}
+	return string(logs), nil
 }
 
 // waitForPodCompletion waits for a pod to complete (either succeed or fail)
@@ -445,6 +431,7 @@ func (s *E2ETestSuite) waitForPodCompletion(t *testing.T, podName, namespace str
 
 // waitForPodReady waits for a pod to be ready
 func (s *E2ETestSuite) waitForPodReady(t *testing.T, podName, namespace string) {
+	t.Helper()
 	if namespace == "" {
 		namespace = "default"
 	}
@@ -457,6 +444,28 @@ func (s *E2ETestSuite) waitForPodReady(t *testing.T, podName, namespace string) 
 		if err != nil {
 			time.Sleep(pollInterval)
 			continue
+		}
+
+		if pod.Status.Phase == corev1.PodSucceeded {
+			t.Logf("Pod %s completed successfully", podName)
+			return
+		}
+		if pod.Status.Phase == corev1.PodFailed {
+			for _, status := range pod.Status.ContainerStatuses {
+				if status.State.Terminated != nil {
+					t.Logf("Container %s failed with exit code %d: %s", status.Name,
+						status.State.Terminated.ExitCode, status.State.Terminated.Reason)
+				}
+			}
+			logCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			podLogs, logErr := s.getPodLogs(logCtx, podName, namespace)
+			cancel()
+			if logErr != nil {
+				t.Logf("Failed to collect logs for pod %s: %v", podName, logErr)
+			} else {
+				t.Logf("Pod logs:\n%s", podLogs)
+			}
+			t.Fatalf("Pod %s failed before becoming ready: %s: %s", podName, pod.Status.Reason, pod.Status.Message)
 		}
 
 		if pod.Status.Phase == corev1.PodRunning {
@@ -482,19 +491,19 @@ func (s *E2ETestSuite) waitForPodReady(t *testing.T, podName, namespace string) 
 
 // waitForNodeCleanup waits for a node to be deleted
 func (s *E2ETestSuite) waitForNodeCleanup(t *testing.T, nodeName string, timeout time.Duration) {
-	ctx := context.Background()
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	require.NoError(t, s.waitForNodeAbsent(ctx, nodeName), "Storage node must disappear after scoped cleanup")
+}
 
-	for i := 0; i < int(timeout/pollInterval); i++ {
+func (s *E2ETestSuite) waitForNodeAbsent(ctx context.Context, nodeName string) error {
+	return wait.PollUntilContextCancel(ctx, pollInterval, true, func(ctx context.Context) (bool, error) {
 		var node corev1.Node
 		err := s.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, &node)
-		if err != nil {
-			// Node not found, cleanup successful
-			t.Logf("Node %s has been cleaned up", nodeName)
-			return
+		if apierrors.IsNotFound(err) {
+			return true, nil
 		}
-
-		time.Sleep(pollInterval)
-	}
-
-	t.Logf("Warning: Node %s was not cleaned up within timeout", nodeName)
+		return false, err
+	})
 }

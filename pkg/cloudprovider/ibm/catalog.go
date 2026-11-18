@@ -32,6 +32,8 @@ type iamClientInterface interface {
 type globalCatalogClientInterface interface {
 	GetCatalogEntryWithContext(context.Context, *globalcatalogv1.GetCatalogEntryOptions) (*globalcatalogv1.CatalogEntry, *core.DetailedResponse, error)
 	ListCatalogEntriesWithContext(context.Context, *globalcatalogv1.ListCatalogEntriesOptions) (*globalcatalogv1.EntrySearchResult, *core.DetailedResponse, error)
+	GetChildObjectsWithContext(context.Context, *globalcatalogv1.GetChildObjectsOptions) (*globalcatalogv1.EntrySearchResult, *core.DetailedResponse, error)
+	GetPricingWithContext(context.Context, *globalcatalogv1.GetPricingOptions) (*globalcatalogv1.PricingGet, *core.DetailedResponse, error)
 }
 
 type GlobalCatalogClient struct {
@@ -61,7 +63,7 @@ func (c *GlobalCatalogClient) ensureClient(ctx context.Context) (globalCatalogCl
 	if err != nil {
 		return nil, fmt.Errorf("initializing Global Catalog client: %w", err)
 	}
-	client.Service.SetHTTPClient(httpclient.InstrumentHTTPClient(client.Service.GetHTTPClient(), "global"))
+	client.Service.SetHTTPClient(httpclient.BoundedHTTPClient(client.Service.GetHTTPClient(), "global"))
 	c.client = client
 	c.currentToken = token
 	return c.client, nil
@@ -92,7 +94,7 @@ func (c *GlobalCatalogClient) ListInstanceTypes(ctx context.Context) ([]globalca
 	offset := int64(0)
 	limit := int64(100)
 	for {
-		q := "kind:vpc-instance-profile active:true"
+		q := "kind:instance.profile"
 		options := &globalcatalogv1.ListCatalogEntriesOptions{
 			Q: &q, Include: core.StringPtr("*"), Complete: core.BoolPtr(true),
 			Offset: &offset, Limit: &limit,
@@ -118,18 +120,43 @@ func (c *GlobalCatalogClient) GetPricing(ctx context.Context, catalogEntryID str
 	if err != nil {
 		return nil, err
 	}
-	if sdkClient, ok := cl.(*globalcatalogv1.GlobalCatalogV1); ok {
-		pricingOptions := &globalcatalogv1.GetPricingOptions{ID: &catalogEntryID}
-		if region != "" {
-			pricingOptions.DeploymentRegion = &region
-		}
-		pricingData, err := DoWithRateLimitRetry(ctx, func() (*globalcatalogv1.PricingGet, *core.DetailedResponse, error) {
-			return sdkClient.GetPricing(pricingOptions)
-		})
-		if err != nil {
-			return nil, fmt.Errorf("calling GetPricing API: %w", err)
-		}
-		return pricingData, nil
+	pricingOptions := &globalcatalogv1.GetPricingOptions{ID: &catalogEntryID}
+	if region != "" {
+		pricingOptions.DeploymentRegion = &region
 	}
-	return nil, fmt.Errorf("invalid client type for GetPricing")
+	pricingData, err := DoWithRateLimitRetry(ctx, func() (*globalcatalogv1.PricingGet, *core.DetailedResponse, error) {
+		return cl.GetPricingWithContext(ctx, pricingOptions)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("calling GetPricing API: %w", err)
+	}
+	return pricingData, nil
+}
+
+func (c *GlobalCatalogClient) ListPricingDeployments(ctx context.Context, planID, region string) ([]globalcatalogv1.CatalogEntry, error) {
+	cl, err := c.ensureClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var deployments []globalcatalogv1.CatalogEntry
+	for offset := int64(0); ; {
+		options := &globalcatalogv1.GetChildObjectsOptions{
+			ID: core.StringPtr(planID), Kind: core.StringPtr("deployment"),
+			Q:       core.StringPtr(region),
+			Include: core.StringPtr("*"), Complete: core.BoolPtr(true),
+			Offset: core.Int64Ptr(offset), Limit: core.Int64Ptr(100),
+		}
+		result, response, listErr := cl.GetChildObjectsWithContext(ctx, options)
+		if listErr != nil {
+			return nil, fmt.Errorf("listing pricing deployments for %s: %w", planID, ParseErrorResponse(listErr, response))
+		}
+		if result == nil || len(result.Resources) == 0 {
+			return deployments, nil
+		}
+		deployments = append(deployments, result.Resources...)
+		offset += int64(len(result.Resources))
+		if result.Count == nil || offset >= *result.Count {
+			return deployments, nil
+		}
+	}
 }

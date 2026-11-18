@@ -36,6 +36,14 @@ type MockVPCSDKClient struct {
 	listImagesFunc func(ctx context.Context, options *vpcv1.ListImagesOptions) (*vpcv1.ImageCollection, *core.DetailedResponse, error)
 }
 
+func (m *MockVPCSDKClient) GetInstanceNetworkInterfaceWithContext(context.Context, *vpcv1.GetInstanceNetworkInterfaceOptions) (*vpcv1.NetworkInterface, *core.DetailedResponse, error) {
+	return nil, nil, fmt.Errorf("unexpected network interface read")
+}
+
+func (m *MockVPCSDKClient) ListInstanceNetworkInterfaceFloatingIpsWithContext(context.Context, *vpcv1.ListInstanceNetworkInterfaceFloatingIpsOptions) (*vpcv1.FloatingIPUnpaginatedCollection, *core.DetailedResponse, error) {
+	return nil, nil, fmt.Errorf("unexpected floating IP inventory read")
+}
+
 func (m *MockVPCSDKClient) GetImageWithContext(ctx context.Context, options *vpcv1.GetImageOptions) (*vpcv1.Image, *core.DetailedResponse, error) {
 	if m.getImageFunc != nil {
 		return m.getImageFunc(ctx, options)

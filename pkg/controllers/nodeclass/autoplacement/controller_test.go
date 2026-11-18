@@ -103,7 +103,7 @@ func (m *mockInstanceTypeProvider) RankInstanceTypes(instanceTypes []*cloudprovi
 // mockSubnetProvider implements subnet.Provider interface
 type mockSubnetProvider struct{}
 
-func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string) ([]subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string, regions ...string) ([]subnet.SubnetInfo, error) {
 	return []subnet.SubnetInfo{
 		{
 			ID:           "test-subnet",
@@ -113,7 +113,7 @@ func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string) ([]s
 	}, nil
 }
 
-func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string, regions ...string) (*subnet.SubnetInfo, error) {
 	return &subnet.SubnetInfo{
 		ID:           "test-subnet",
 		Zone:         "test-zone",
@@ -121,7 +121,7 @@ func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*s
 	}, nil
 }
 
-func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy, regions ...string) ([]subnet.SubnetInfo, error) {
 	// Return multiple subnets for multi-zone testing
 	if strategy != nil && strategy.ZoneBalance == "Balanced" {
 		return []subnet.SubnetInfo{
@@ -482,4 +482,9 @@ func TestReconcileSubnetSelectionClearOnExplicitSubnet(t *testing.T) {
 	// Verify selectedSubnets was cleared
 	assert.Empty(t, updatedNodeClass.Status.SelectedSubnets,
 		"SelectedSubnets should be cleared when explicit subnet is specified")
+}
+
+func (m *mockInstanceTypeProvider) Refresh(ctx context.Context) error {
+	_, err := m.List(ctx, nil)
+	return err
 }

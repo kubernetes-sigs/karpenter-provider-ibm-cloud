@@ -19,20 +19,22 @@ Nightly builds are published with two tags:
 ### Pull the latest nightly build
 
 ```bash
-podman pull ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller:nightly
+podman pull quay.io/karpenter-provider-ibm-cloud/controller:nightly
 ```
 
 ### Pull a specific nightly build
 
 ```bash
-podman pull ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/controller:v0.5.0-2024-01-15-a1b2c3d-nightly
+podman pull quay.io/karpenter-provider-ibm-cloud/controller:v0.5.0-2024-01-15-a1b2c3d-nightly
 ```
 
 ### Deploy with Helm using nightly builds
 
 ```bash
-helm upgrade --install karpenter-ibm oci://ghcr.io/kubernetes-sigs/karpenter-provider-ibm-cloud/charts/karpenter-provider-ibm-cloud \
-  --set controller.image.tag=nightly \
+helm repo add karpenter-ibm https://karpenter-ibm.sh
+helm repo update
+helm upgrade --install karpenter-ibm karpenter-ibm/karpenter-ibm \
+  --set image.tag=nightly \
   --namespace karpenter \
   --create-namespace
 ```
@@ -42,6 +44,8 @@ helm upgrade --install karpenter-ibm oci://ghcr.io/kubernetes-sigs/karpenter-pro
 - **Daily builds**: Every day at 2 AM UTC
 - **Manual builds**: Can be triggered manually through GitHub Actions
 - **Retention**: Nightly builds older than 7 days are automatically cleaned up
+
+Use `image.digest=sha256:...` to pin a build. Before rolling back, follow the [cleanup and recovery checks](troubleshooting.md#upgrade-and-cleanup-recovery).
 
 ## Stability Notice
 

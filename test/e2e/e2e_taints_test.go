@@ -31,8 +31,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -46,6 +48,7 @@ func TestE2EStartupTaints(t *testing.T) {
 
 	// Create unique names for this test
 	testName := fmt.Sprintf("startup-taints-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	nodePoolName := fmt.Sprintf("test-nodepool-%s", testName)
 	nodeClassName := fmt.Sprintf("test-nodeclass-%s", testName)
 	deploymentName := fmt.Sprintf("test-deployment-%s", testName)
@@ -53,7 +56,8 @@ func TestE2EStartupTaints(t *testing.T) {
 	// Create NodeClass
 	nodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClassName,
+			Name:   nodeClassName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:            suite.testRegion,
@@ -72,20 +76,20 @@ func TestE2EStartupTaints(t *testing.T) {
 
 	err := suite.kubeClient.Create(ctx, nodeClass)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodeClass)
-	}()
 
 	// Create NodePool with startup taints
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodePoolName,
+			Name:   nodePoolName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				ObjectMeta: karpv1.ObjectMeta{
 					Labels: map[string]string{
-						"test": testName,
+						"test":       testName,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -104,7 +108,7 @@ func TestE2EStartupTaints(t *testing.T) {
 					},
 					StartupTaints: []corev1.Taint{
 						{
-							Key:    "node.kubernetes.io/not-ready",
+							Key:    "example.com/startup",
 							Effect: corev1.TaintEffectNoSchedule,
 						},
 						{
@@ -120,15 +124,12 @@ func TestE2EStartupTaints(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, nodePool)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodePool)
-	}()
 
 	// Create deployment that forces node creation with nodeSelector
 	// This ensures the pod is only scheduled on nodes from the specific NodePool with startup taints
 	deployment := createResourceIntensiveWorkload(deploymentName, testName, []corev1.Toleration{
 		{
-			Key:    "node.kubernetes.io/not-ready",
+			Key:    "example.com/startup",
 			Effect: corev1.TaintEffectNoSchedule,
 		},
 		{
@@ -142,9 +143,6 @@ func TestE2EStartupTaints(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, deployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, deployment)
-	}()
 
 	// Wait for NodeClaim to be created
 	var nodeClaim karpv1.NodeClaim
@@ -186,11 +184,11 @@ func TestE2EStartupTaints(t *testing.T) {
 	// Verify NodeClaim has startup taints
 	assert.Len(t, nodeClaim.Spec.StartupTaints, 2, "NodeClaim should have 2 startup taints")
 
-	foundNotReady := false
+	foundStartup := false
 	foundInitializing := false
 	for _, taint := range nodeClaim.Spec.StartupTaints {
-		if taint.Key == "node.kubernetes.io/not-ready" {
-			foundNotReady = true
+		if taint.Key == "example.com/startup" {
+			foundStartup = true
 			assert.Equal(t, corev1.TaintEffectNoSchedule, taint.Effect)
 		}
 		if taint.Key == "example.com/initializing" {
@@ -199,7 +197,7 @@ func TestE2EStartupTaints(t *testing.T) {
 			assert.Equal(t, corev1.TaintEffectNoSchedule, taint.Effect)
 		}
 	}
-	assert.True(t, foundNotReady, "NodeClaim should have 'not-ready' startup taint")
+	assert.True(t, foundStartup, "NodeClaim should have 'startup' startup taint")
 	assert.True(t, foundInitializing, "NodeClaim should have 'initializing' startup taint")
 
 	// Wait for Node to be created and registered
@@ -223,11 +221,11 @@ func TestE2EStartupTaints(t *testing.T) {
 	require.NoError(t, err, "Node should be created and registered")
 
 	// Verify startup taints are applied to the Node
-	foundNotReadyOnNode := false
+	foundStartupOnNode := false
 	foundInitializingOnNode := false
 	for _, taint := range node.Spec.Taints {
-		if taint.Key == "node.kubernetes.io/not-ready" {
-			foundNotReadyOnNode = true
+		if taint.Key == "example.com/startup" {
+			foundStartupOnNode = true
 			assert.Equal(t, corev1.TaintEffectNoSchedule, taint.Effect)
 		}
 		if taint.Key == "example.com/initializing" {
@@ -236,7 +234,7 @@ func TestE2EStartupTaints(t *testing.T) {
 			assert.Equal(t, corev1.TaintEffectNoSchedule, taint.Effect)
 		}
 	}
-	assert.True(t, foundNotReadyOnNode, "Node should have 'not-ready' startup taint applied")
+	assert.True(t, foundStartupOnNode, "Node should have 'startup' startup taint applied")
 	assert.True(t, foundInitializingOnNode, "Node should have 'initializing' startup taint applied")
 
 	// Verify pods can schedule despite startup taints (ignored for provisioning)
@@ -263,15 +261,16 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 
 	// Create unique names for this test
 	testName := fmt.Sprintf("startup-taint-removal-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	nodePoolName := fmt.Sprintf("test-nodepool-%s", testName)
 	nodeClassName := fmt.Sprintf("test-nodeclass-%s", testName)
-	daemonSetName := fmt.Sprintf("taint-remover-%s", testName)
 	deploymentName := fmt.Sprintf("test-deployment-%s", testName)
 
 	// Create NodeClass
 	nodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClassName,
+			Name:   nodeClassName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:            suite.testRegion,
@@ -290,20 +289,20 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 
 	err := suite.kubeClient.Create(ctx, nodeClass)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodeClass)
-	}()
 
 	// Create NodePool with startup taints
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodePoolName,
+			Name:   nodePoolName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				ObjectMeta: karpv1.ObjectMeta{
 					Labels: map[string]string{
-						"test": testName,
+						"test":       testName,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -334,92 +333,12 @@ func TestE2EStartupTaintsRemoval(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, nodePool)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodePool)
-	}()
-
-	// Create DaemonSet that tolerates and removes startup taints
-	daemonSet := &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      daemonSetName,
-			Namespace: "default",
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": daemonSetName},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": daemonSetName},
-				},
-				Spec: corev1.PodSpec{
-					Tolerations: []corev1.Toleration{
-						{
-							Key:    "example.com/startup-init",
-							Value:  "pending",
-							Effect: corev1.TaintEffectNoSchedule,
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name:  "taint-remover",
-							Image: "quay.io/isovalent/busybox:1.37.0",
-							Command: []string{
-								"/bin/sh",
-								"-c",
-								`
-# Wait for node to be ready, then remove startup taint
-NODE_NAME=${MY_NODE_NAME}
-echo "Waiting for node $NODE_NAME to be ready..."
-sleep 30
-
-# Use kubectl to remove the startup taint
-kubectl patch node $NODE_NAME --type=json -p='[{"op": "remove", "path": "/spec/taints", "value": {"key": "example.com/startup-init", "value": "pending", "effect": "NoSchedule"}}]'
-
-# Keep container running
-sleep 3600
-								`,
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
-									},
-								},
-							},
-						},
-					},
-					ServiceAccountName: "default", // In practice, would use proper RBAC
-				},
-			},
-		},
-	}
-
-	err = suite.kubeClient.Create(ctx, daemonSet)
-	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, daemonSet)
-	}()
 
 	// Create deployment to force node creation
-	deployment := createResourceIntensiveWorkload(deploymentName, testName, []corev1.Toleration{
-		{
-			Key:    "example.com/startup-init",
-			Value:  "pending",
-			Effect: corev1.TaintEffectNoSchedule,
-		},
-	}, map[string]string{
-		"test": testName, // Force scheduling on nodes from our NodePool
-	})
+	deployment := createResourceIntensiveWorkload(deploymentName, testName, nil, map[string]string{"test": testName})
 
 	err = suite.kubeClient.Create(ctx, deployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, deployment)
-	}()
 
 	// Wait for Node to be created
 	var node corev1.Node
@@ -441,17 +360,22 @@ sleep 3600
 	// Verify startup taint is initially present
 	foundStartupTaint := false
 	for _, taint := range node.Spec.Taints {
-		if taint.Key == "example.com/startup-init" && taint.Value == "pending" {
+		if taint.Key == "example.com/startup-init" && taint.Value == "pending" && taint.Effect == corev1.TaintEffectNoSchedule {
 			foundStartupTaint = true
 			break
 		}
 	}
-	assert.True(t, foundStartupTaint, "Node should initially have startup taint")
 
-	// NOTE: For a complete implementation, the DaemonSet would need proper RBAC permissions
-	// to patch nodes and remove taints. This test verifies the taint is initially applied correctly.
-
-	t.Logf("PASS: StartupTaints removal test setup complete - startup taint properly applied")
+	require.True(t, foundStartupTaint, "Startup taint must be present before removal")
+	startup := corev1.Taint{Key: "example.com/startup-init", Value: "pending", Effect: corev1.TaintEffectNoSchedule}
+	require.NoError(t, suite.removeTestStartupTaint(ctx, &node, testName, startup))
+	suite.waitForPodsToBeScheduled(t, deployment.Name, deployment.Namespace)
+	var current corev1.Node
+	require.NoError(t, suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(&node), &current))
+	require.Equal(t, node.UID, current.UID)
+	for _, taint := range current.Spec.Taints {
+		require.False(t, sameTestTaint(startup, taint), "Application startup taint must remain removed")
+	}
 }
 
 // TestE2ETaintsBasicScheduling tests basic taint/toleration scheduling
@@ -461,6 +385,7 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 
 	// Create unique names for this test
 	testName := fmt.Sprintf("basic-taints-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	nodePoolName := fmt.Sprintf("test-nodepool-%s", testName)
 	nodeClassName := fmt.Sprintf("test-nodeclass-%s", testName)
 	tolerantDeploymentName := fmt.Sprintf("tolerant-deployment-%s", testName)
@@ -469,7 +394,8 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 	// Create NodeClass
 	nodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClassName,
+			Name:   nodeClassName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:            suite.testRegion,
@@ -488,20 +414,20 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 
 	err := suite.kubeClient.Create(ctx, nodeClass)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodeClass)
-	}()
 
 	// Create NodePool with regular taints
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodePoolName,
+			Name:   nodePoolName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				ObjectMeta: karpv1.ObjectMeta{
 					Labels: map[string]string{
-						"test": testName,
+						"test":       testName,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -532,9 +458,6 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, nodePool)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodePool)
-	}()
 
 	// Create deployment that tolerates the taint
 	tolerantDeployment := createResourceIntensiveWorkload(tolerantDeploymentName, testName, []corev1.Toleration{
@@ -550,9 +473,6 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, tolerantDeployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, tolerantDeployment)
-	}()
 
 	// Wait for tolerant deployment to schedule and become ready
 	err = wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
@@ -596,13 +516,10 @@ func TestE2ETaintsBasicScheduling(t *testing.T) {
 	assert.True(t, foundTaint, "Node should have 'dedicated=gpu-workload' taint")
 
 	// Create deployment that does NOT tolerate the taint (should remain pending)
-	intolerantDeployment := createResourceIntensiveWorkload(intolerantDeploymentName, testName+"intolerant", nil, nil)
+	intolerantDeployment := createResourceIntensiveWorkload(intolerantDeploymentName, testName+"intolerant", nil, map[string]string{"test": testName})
 
 	err = suite.kubeClient.Create(ctx, intolerantDeployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, intolerantDeployment)
-	}()
 
 	// Verify intolerant deployment does NOT become ready (check multiple times to ensure stability)
 	suite.verifyDeploymentNotReady(t, intolerantDeployment.Name, intolerantDeployment.Namespace, 30*time.Second)
@@ -617,6 +534,7 @@ func TestE2ETaintValues(t *testing.T) {
 
 	// Create unique names for this test
 	testName := fmt.Sprintf("taint-values-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	nodePoolName := fmt.Sprintf("test-nodepool-%s", testName)
 	nodeClassName := fmt.Sprintf("test-nodeclass-%s", testName)
 	deploymentName := fmt.Sprintf("test-deployment-%s", testName)
@@ -624,7 +542,8 @@ func TestE2ETaintValues(t *testing.T) {
 	// Create NodeClass
 	nodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClassName,
+			Name:   nodeClassName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:            suite.testRegion,
@@ -643,20 +562,20 @@ func TestE2ETaintValues(t *testing.T) {
 
 	err := suite.kubeClient.Create(ctx, nodeClass)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodeClass)
-	}()
 
 	// Create NodePool with specific taint values
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodePoolName,
+			Name:   nodePoolName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				ObjectMeta: karpv1.ObjectMeta{
 					Labels: map[string]string{
-						"test": testName,
+						"test":       testName,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -692,9 +611,6 @@ func TestE2ETaintValues(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, nodePool)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodePool)
-	}()
 
 	// Create deployment that tolerates the taints with exact values
 	deployment := createResourceIntensiveWorkload(deploymentName, testName, []corev1.Toleration{
@@ -716,9 +632,6 @@ func TestE2ETaintValues(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, deployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, deployment)
-	}()
 
 	// Wait for deployment to become ready
 	err = wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
@@ -782,6 +695,7 @@ func TestE2ETaintSync(t *testing.T) {
 
 	// Create unique names for this test
 	testName := fmt.Sprintf("taint-sync-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	nodePoolName := fmt.Sprintf("test-nodepool-%s", testName)
 	nodeClassName := fmt.Sprintf("test-nodeclass-%s", testName)
 	deploymentName := fmt.Sprintf("test-deployment-%s", testName)
@@ -789,7 +703,8 @@ func TestE2ETaintSync(t *testing.T) {
 	// Create NodeClass
 	nodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClassName,
+			Name:   nodeClassName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:            suite.testRegion,
@@ -808,20 +723,20 @@ func TestE2ETaintSync(t *testing.T) {
 
 	err := suite.kubeClient.Create(ctx, nodeClass)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodeClass)
-	}()
 
 	// Create NodePool with both regular and startup taints
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodePoolName,
+			Name:   nodePoolName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				ObjectMeta: karpv1.ObjectMeta{
 					Labels: map[string]string{
-						"test": testName,
+						"test":       testName,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -859,9 +774,6 @@ func TestE2ETaintSync(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, nodePool)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodePool)
-	}()
 
 	// Create deployment that tolerates all taints
 	deployment := createResourceIntensiveWorkload(deploymentName, testName, []corev1.Toleration{
@@ -883,9 +795,6 @@ func TestE2ETaintSync(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, deployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, deployment)
-	}()
 
 	// Wait for NodeClaim to be created
 	var nodeClaim karpv1.NodeClaim
@@ -952,6 +861,7 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 
 	// Create unique names for this test
 	testName := fmt.Sprintf("unregistered-taint-%d", time.Now().Unix())
+	t.Cleanup(func() { suite.cleanupTestResources(t, testName) })
 	nodePoolName := fmt.Sprintf("test-nodepool-%s", testName)
 	nodeClassName := fmt.Sprintf("test-nodeclass-%s", testName)
 	deploymentName := fmt.Sprintf("test-deployment-%s", testName)
@@ -959,7 +869,8 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 	// Create NodeClass
 	nodeClass := &v1alpha1.IBMNodeClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeClassName,
+			Name:   nodeClassName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
 			Region:            suite.testRegion,
@@ -978,20 +889,20 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 
 	err := suite.kubeClient.Create(ctx, nodeClass)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodeClass)
-	}()
 
 	// Create NodePool
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodePoolName,
+			Name:   nodePoolName,
+			Labels: taintTestLabels(testName),
 		},
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				ObjectMeta: karpv1.ObjectMeta{
 					Labels: map[string]string{
-						"test": testName,
+						"test":       testName,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -1015,9 +926,18 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, nodePool)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, nodePool)
-	}()
+
+	selector := labels.Set{"test": testName}.String()
+	initialNodes, err := suite.coreClient.Nodes().List(ctx, metav1.ListOptions{LabelSelector: selector})
+	require.NoError(t, err)
+	require.Empty(t, initialNodes.Items, "The new fixture must not have pre-existing Nodes")
+	observeCtx, cancel := context.WithTimeout(ctx, testTimeout)
+	defer cancel()
+	nodeEvents, err := suite.coreClient.Nodes().Watch(observeCtx, metav1.ListOptions{
+		LabelSelector: selector, ResourceVersion: initialNodes.ResourceVersion,
+	})
+	require.NoError(t, err)
+	defer nodeEvents.Stop()
 
 	// Create deployment to force node creation
 	deployment := createResourceIntensiveWorkload(deploymentName, testName, nil, map[string]string{
@@ -1026,56 +946,107 @@ func TestE2EUnregisteredTaintHandling(t *testing.T) {
 
 	err = suite.kubeClient.Create(ctx, deployment)
 	require.NoError(t, err)
-	defer func() {
-		_ = suite.kubeClient.Delete(ctx, deployment)
-	}()
 
-	// Wait for Node to be created and registered
+	initialNode, initialClaim, err := suite.waitForUnregisteredTestNode(observeCtx, nodeEvents, nodePool, testName)
+	require.NoError(t, err, "Must observe the unregistered taint on this fixture's initial Node")
 	var node corev1.Node
 	err = wait.PollUntilContextTimeout(ctx, pollInterval, testTimeout, true, func(ctx context.Context) (bool, error) {
-		nodeClaimList := &karpv1.NodeClaimList{}
-		listErr := suite.kubeClient.List(ctx, nodeClaimList, client.MatchingLabels{"test": testName})
-		if listErr != nil {
-			return false, listErr
+		var claim karpv1.NodeClaim
+		if getErr := suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(initialClaim), &claim); getErr != nil {
+			return false, getErr
 		}
-		if len(nodeClaimList.Items) == 0 {
-			return false, nil
+		if getErr := suite.kubeClient.Get(ctx, client.ObjectKeyFromObject(initialNode), &node); getErr != nil {
+			return false, getErr
 		}
-
-		nodeClaim := nodeClaimList.Items[0]
-		if nodeClaim.Status.NodeName == "" {
-			return false, nil
-		}
-
-		getErr := suite.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Status.NodeName}, &node)
-		if getErr != nil {
-			return false, client.IgnoreNotFound(getErr)
-		}
-
-		// Check if node is registered (unregistered taint should be removed)
-		return nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue(), nil
+		return registeredTestNodeMatches(initialNode, initialClaim, &node, &claim)
 	})
-	require.NoError(t, err, "Node should be registered")
-
-	// Verify unregistered taint has been removed after registration
-	foundUnregisteredTaint := false
-	for _, taint := range node.Spec.Taints {
-		if taint.Key == karpv1.UnregisteredTaintKey {
-			foundUnregisteredTaint = true
-			break
-		}
-	}
-	assert.False(t, foundUnregisteredTaint, "Unregistered taint should be removed after node registration")
+	require.NoError(t, err, "The same Node and NodeClaim must register and remove the observed taint")
 
 	t.Logf("PASS: Unregistered taint handling E2E test passed - unregistered taint properly removed after registration")
 }
 
-// Helper function to create resource-intensive workloads that force new node creation
+func (s *E2ETestSuite) waitForUnregisteredTestNode(ctx context.Context, events watch.Interface, pool *karpv1.NodePool, testName string) (*corev1.Node, *karpv1.NodeClaim, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case event, ok := <-events.ResultChan():
+			if !ok {
+				return nil, nil, fmt.Errorf("Node watch ended before unregistered-taint evidence")
+			}
+			if event.Type == watch.Error {
+				return nil, nil, fmt.Errorf("Node watch failed before unregistered-taint evidence: %v", event.Object)
+			}
+			if event.Type != watch.Added && event.Type != watch.Modified {
+				continue
+			}
+			node, ok := event.Object.(*corev1.Node)
+			if !ok || node.Labels["test"] != testName || node.Labels[karpv1.NodePoolLabelKey] != pool.Name {
+				continue
+			}
+			present := false
+			for _, taint := range node.Spec.Taints {
+				present = present || (taint.MatchTaint(&karpv1.UnregisteredNoExecuteTaint) && taint.Value == karpv1.UnregisteredNoExecuteTaint.Value)
+			}
+			if !present {
+				continue
+			}
+			var claim karpv1.NodeClaim
+			if err := s.kubeClient.Get(ctx, client.ObjectKey{Name: node.Name}, &claim); err != nil {
+				return nil, nil, err
+			}
+			owned := false
+			for _, owner := range claim.OwnerReferences {
+				owned = owned || (owner.APIVersion == "karpenter.sh/v1" && owner.Kind == "NodePool" && owner.Name == pool.Name && owner.UID == pool.UID)
+			}
+			if node.UID == "" || claim.UID == "" || pool.UID == "" || !owned || claim.Labels["test"] != testName ||
+				claim.Labels[karpv1.NodePoolLabelKey] != pool.Name || claim.Status.ProviderID == "" || node.Spec.ProviderID != claim.Status.ProviderID ||
+				!node.DeletionTimestamp.IsZero() || !claim.DeletionTimestamp.IsZero() {
+				return nil, nil, fmt.Errorf("observed unregistered Node does not match the live owned claim")
+			}
+			return node.DeepCopy(), claim.DeepCopy(), nil
+		}
+	}
+}
+
+func registeredTestNodeMatches(initialNode *corev1.Node, initialClaim *karpv1.NodeClaim, node *corev1.Node, claim *karpv1.NodeClaim) (bool, error) {
+	if node.UID != initialNode.UID || claim.UID != initialClaim.UID || node.Spec.ProviderID != initialNode.Spec.ProviderID ||
+		claim.Status.ProviderID != initialClaim.Status.ProviderID || !node.DeletionTimestamp.IsZero() || !claim.DeletionTimestamp.IsZero() {
+		return false, fmt.Errorf("observed Node or NodeClaim identity changed before registration")
+	}
+	if !claim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue() {
+		return false, nil
+	}
+	if claim.Status.NodeName != node.Name || len(node.OwnerReferences) != 1 || node.OwnerReferences[0].UID != claim.UID ||
+		node.OwnerReferences[0].APIVersion != "karpenter.sh/v1" || node.OwnerReferences[0].Kind != "NodeClaim" || node.OwnerReferences[0].Name != claim.Name {
+		return false, fmt.Errorf("registered Node is not owned by the observed NodeClaim")
+	}
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == karpv1.UnregisteredTaintKey {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func taintTestLabels(testName string) map[string]string {
+	return map[string]string{
+		"test":       "e2e",
+		"test-name":  testName,
+		"created-by": "karpenter-e2e",
+	}
+}
+
 func createResourceIntensiveWorkload(name, testLabel string, tolerations []corev1.Toleration, nodeSelector map[string]string) *appsv1.Deployment {
+	testName := nodeSelector["test"]
+	if testName == "" {
+		testName = testLabel
+	}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
+			Labels:    taintTestLabels(testName),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: lo.ToPtr(int32(1)),
@@ -1085,8 +1056,10 @@ func createResourceIntensiveWorkload(name, testLabel string, tolerations []corev
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":  name,
-						"test": testLabel,
+						"app":        name,
+						"test":       testLabel,
+						"test-name":  testName,
+						"created-by": "karpenter-e2e",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -1103,11 +1076,8 @@ func createResourceIntensiveWorkload(name, testLabel string, tolerations []corev
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									// Request enough resources to force new node creation
-									// Conservative sizing for bx2a-2x8 (2 CPU total, 250m for calico-node)
-									// Using 1000m to ensure sufficient headroom for provisioning
 									corev1.ResourceCPU:    resource.MustParse("1000m"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
 								},
 							},
 						},

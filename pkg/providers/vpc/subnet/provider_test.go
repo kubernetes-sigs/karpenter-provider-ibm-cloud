@@ -988,7 +988,7 @@ func TestSelectSubnets_NilStrategy(t *testing.T) {
 	_, err := p.SelectSubnets(ctx, "vpc-123", nil)
 	require.Error(t, err)
 	// With nil client, ListSubnets returns an error before strategy is accessed.
-	assert.Contains(t, err.Error(), "failed to list subnets")
+	assert.Contains(t, err.Error(), "placement strategy is required")
 }
 
 // TestSelectSubnets_EmptyVPCID verifies SelectSubnets behavior with an empty VPC ID.

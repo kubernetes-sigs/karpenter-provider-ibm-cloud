@@ -93,8 +93,7 @@ type IKSDynamicPoolConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 
 	// NamePrefix is the prefix used when naming dynamically created worker pools.
-	// Pool names will follow the pattern: {NamePrefix}-{instanceType}-{uniqueID}
-	// Example: With prefix "karp", a pool might be named "karp-bx2-4x16-a1b2c3"
+	// Pool names combine this prefix with a digest of the cluster and NodeClaim UIDs.
 	// +optional
 	// +kubebuilder:validation:MaxLength=20
 	// +kubebuilder:validation:Pattern="^[a-z][a-z0-9-]*$"
@@ -279,7 +278,7 @@ type InstanceTypeRequirements struct {
 	// Must be specified as a decimal string (e.g., "0.50" for 50 cents per hour).
 	// Example: "1.00" limits selection to instance types costing $1.00/hour or less
 	// +optional
-	// +kubebuilder:validation:Pattern=^\\d+\\.?\\d*$
+	// +kubebuilder:validation:Pattern=^[0-9]+([.][0-9]+)?$
 	MaximumHourlyPrice string `json:"maximumHourlyPrice,omitempty"`
 }
 
@@ -303,6 +302,9 @@ type BlockDeviceMapping struct {
 	// DeviceName is the name for this volume attachment
 	// If not specified, a name will be auto-generated
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern="^[a-z]([a-z0-9-]*[a-z0-9])?$"
 	DeviceName *string `json:"deviceName,omitempty"`
 
 	// VolumeSpec contains the volume configuration
@@ -480,7 +482,9 @@ type ImageSelector struct {
 
 // +kubebuilder:validation:XValidation:rule="!has(self.subnet) || self.subnet == \"\" || self.subnet.matches('^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$')", message="subnet must be a valid IBM Cloud subnet ID format"
 // +kubebuilder:validation:XValidation:rule="!has(self.image) || self.image.matches('^[a-z0-9-]+$')", message="image must contain only lowercase letters, numbers, and hyphens"
-// +kubebuilder:validation:XValidation:rule="has(self.image) || has(self.imageSelector)", message="either image or imageSelector must be specified"
+// +kubebuilder:validation:XValidation:rule="(has(self.bootstrapMode) && self.bootstrapMode == 'iks-api') || ((!has(self.bootstrapMode) || self.bootstrapMode != 'cloud-init') && has(self.iksClusterID)) || has(self.image) || has(self.imageSelector)", message="either image or imageSelector must be specified for VPC nodes"
+// +kubebuilder:validation:XValidation:rule="!has(self.blockDeviceMappings) || self.blockDeviceMappings.filter(x, has(x.rootVolume) && x.rootVolume).size() <= 1", message="at most one block device mapping can be a root volume"
+// +kubebuilder:validation:XValidation:rule="!has(self.blockDeviceMappings) || self.blockDeviceMappings.filter(x, has(x.deviceName)).all(x, self.blockDeviceMappings.filter(y, has(y.deviceName) && y.deviceName == x.deviceName).size() == 1)", message="block device attachment names must be unique"
 // +kubebuilder:validation:XValidation:rule="!(has(self.image) && has(self.imageSelector))", message="image and imageSelector are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!(has(self.instanceProfile) && has(self.instanceRequirements))", message="instanceProfile and instanceRequirements are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!has(self.bootstrapMode) || self.bootstrapMode != 'iks-api' || has(self.iksClusterID)", message="iksClusterID is required when bootstrapMode is 'iks-api'"
@@ -645,7 +649,7 @@ type IBMNodeClassSpec struct {
 
 	// BlockDeviceMappings defines custom block device configurations for instances
 	// If not specified, a default 100GB general-purpose boot volume will be used
-	// When specified, at least one mapping must have RootVolume set to true
+	// A missing root mapping uses the default boot volume. At most one mapping can be a root volume.
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	BlockDeviceMappings []BlockDeviceMapping `json:"blockDeviceMappings,omitempty"`

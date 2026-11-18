@@ -50,13 +50,13 @@ type SubnetInfo struct {
 // Provider defines the interface for managing IBM Cloud VPC subnets
 type Provider interface {
 	// ListSubnets returns all subnets in the VPC
-	ListSubnets(ctx context.Context, vpcID string) ([]SubnetInfo, error)
+	ListSubnets(ctx context.Context, vpcID string, regions ...string) ([]SubnetInfo, error)
 
 	// GetSubnet retrieves information about a specific subnet
-	GetSubnet(ctx context.Context, subnetID string) (*SubnetInfo, error)
+	GetSubnet(ctx context.Context, subnetID string, regions ...string) (*SubnetInfo, error)
 
 	// SelectSubnets returns subnets that meet the placement criteria
-	SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]SubnetInfo, error)
+	SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy, regions ...string) ([]SubnetInfo, error)
 
 	// SetKubernetesClient sets the Kubernetes client for cluster-aware subnet selection
 	SetKubernetesClient(kubeClient kubernetes.Interface)
@@ -111,15 +111,18 @@ func calculateSubnetScore(subnet SubnetInfo, criteria *v1alpha1.SubnetSelectionC
 }
 
 // SelectSubnets implements subnet selection based on placement strategy
-func (p *provider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]SubnetInfo, error) {
+func (p *provider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy, regions ...string) ([]SubnetInfo, error) {
 	// Get all subnets in the VPC
-	allSubnets, err := p.ListSubnets(ctx, vpcID)
+	if strategy == nil {
+		return nil, fmt.Errorf("placement strategy is required")
+	}
+	allSubnets, err := p.ListSubnets(ctx, vpcID, regions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list subnets: %w", err)
 	}
 
 	// Get existing cluster subnet preferences
-	clusterSubnets := p.getExistingClusterSubnets(ctx)
+	clusterSubnets := p.getExistingClusterSubnets(ctx, p.region(regions))
 
 	var eligibleSubnets []SubnetInfo
 
@@ -217,7 +220,7 @@ func (p *provider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1
 }
 
 // getExistingClusterSubnets extracts subnet information from existing cluster nodes
-func (p *provider) getExistingClusterSubnets(ctx context.Context) map[string]int {
+func (p *provider) getExistingClusterSubnets(ctx context.Context, regions ...string) map[string]int {
 	clusterSubnets := make(map[string]int)
 
 	// If no Kubernetes client is available, return empty map (fall back to availability-based selection)
@@ -234,6 +237,9 @@ func (p *provider) getExistingClusterSubnets(ctx context.Context) map[string]int
 
 	// Extract subnet information from each node
 	for _, node := range nodes.Items {
+		if len(regions) > 0 && regions[0] != "" && !strings.HasPrefix(node.Spec.ProviderID, "ibm:///"+regions[0]+"/") {
+			continue
+		}
 		subnetID := p.extractSubnetFromNode(ctx, node)
 		if subnetID != "" {
 			clusterSubnets[subnetID]++
@@ -268,16 +274,18 @@ func (p *provider) extractSubnetFromNode(ctx context.Context, node v1.Node) stri
 func (p *provider) parseSubnetFromProviderID(ctx context.Context, providerID string) string {
 	// IBM Cloud provider ID format: "ibm:///region/instance_id"
 	// This doesn't directly contain subnet info, so we'll need to query the instance
-	parts := strings.Split(providerID, "/")
-	if len(parts) >= 4 && parts[0] == "ibm:" {
-		instanceID := parts[len(parts)-1]
-		return p.getSubnetForInstance(ctx, instanceID)
+	if !strings.HasPrefix(providerID, "ibm:///") {
+		return ""
+	}
+	parts := strings.Split(strings.TrimPrefix(providerID, "ibm:///"), "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return p.getSubnetForInstance(ctx, parts[1], parts[0])
 	}
 	return ""
 }
 
 // getSubnetForInstance queries IBM Cloud API to get subnet for an instance
-func (p *provider) getSubnetForInstance(ctx context.Context, instanceID string) string {
+func (p *provider) getSubnetForInstance(ctx context.Context, instanceID string, regions ...string) string {
 	if p.client == nil {
 		return ""
 	}
@@ -287,7 +295,7 @@ func (p *provider) getSubnetForInstance(ctx context.Context, instanceID string) 
 	}
 
 	// Get VPC client
-	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
+	vpcClient, err := p.regionalClient(ctx, p.region(regions))
 	if err != nil {
 		return ""
 	}
@@ -302,7 +310,7 @@ func (p *provider) getSubnetForInstance(ctx context.Context, instanceID string) 
 	}
 
 	// Extract subnet ID from primary network interface
-	if instance.PrimaryNetworkInterface != nil && instance.PrimaryNetworkInterface.Subnet != nil {
+	if instance != nil && instance.PrimaryNetworkInterface != nil && instance.PrimaryNetworkInterface.Subnet != nil && instance.PrimaryNetworkInterface.Subnet.ID != nil {
 		return *instance.PrimaryNetworkInterface.Subnet.ID
 	}
 
@@ -344,19 +352,20 @@ func (p *provider) applyClusterAwareness(subnet SubnetInfo, baseScore float64, c
 }
 
 // ListSubnets returns all subnets in the VPC
-func (p *provider) ListSubnets(ctx context.Context, vpcID string) ([]SubnetInfo, error) {
+func (p *provider) ListSubnets(ctx context.Context, vpcID string, regions ...string) ([]SubnetInfo, error) {
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client is not initialized")
 	}
 
-	cacheKey := fmt.Sprintf("vpc-subnets:%s", vpcID)
+	region := p.region(regions)
+	cacheKey := fmt.Sprintf("vpc-subnets:%s:%s", region, vpcID)
 
 	// Try to get from cache first
 	if cached, exists := p.subnetCache.Get(cacheKey); exists {
 		return cached.([]SubnetInfo), nil
 	}
 
-	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
+	vpcClient, err := p.regionalClient(ctx, region)
 	if err != nil {
 		return nil, err
 	}
@@ -381,12 +390,13 @@ func (p *provider) ListSubnets(ctx context.Context, vpcID string) ([]SubnetInfo,
 }
 
 // GetSubnet retrieves information about a specific subnet
-func (p *provider) GetSubnet(ctx context.Context, subnetID string) (*SubnetInfo, error) {
+func (p *provider) GetSubnet(ctx context.Context, subnetID string, regions ...string) (*SubnetInfo, error) {
 	if p.client == nil {
 		return nil, fmt.Errorf("IBM client is not initialized")
 	}
 
-	cacheKey := fmt.Sprintf("subnet:%s", subnetID)
+	region := p.region(regions)
+	cacheKey := fmt.Sprintf("subnet:%s:%s", region, subnetID)
 
 	// Try to get from cache first
 	if cached, exists := p.subnetCache.Get(cacheKey); exists {
@@ -394,7 +404,7 @@ func (p *provider) GetSubnet(ctx context.Context, subnetID string) (*SubnetInfo,
 		return &result, nil
 	}
 
-	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
+	vpcClient, err := p.regionalClient(ctx, region)
 	if err != nil {
 		return nil, err
 	}
@@ -439,4 +449,21 @@ func convertVPCSubnetToSubnetInfo(vpcSubnet vpcv1.Subnet) SubnetInfo {
 	// Using empty tags map until SDK supports user tags on subnets
 
 	return subnetInfo
+}
+
+func (p *provider) region(regions []string) string {
+	if len(regions) > 0 && regions[0] != "" {
+		return regions[0]
+	}
+	if p.client != nil {
+		return p.client.GetRegion()
+	}
+	return ""
+}
+func (p *provider) regionalClient(ctx context.Context, region string) (*ibm.VPCClient, error) {
+	base, err := p.vpcClientManager.GetVPCClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return base.ForRegion(region)
 }

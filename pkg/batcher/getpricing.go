@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
-	"github.com/mitchellh/hashstructure/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 type pricingClient interface {
@@ -54,16 +54,7 @@ func (p *PricingBatcher) GetPricing(ctx context.Context, catalogEntryID string) 
 	return res.Output, res.Err
 }
 
-func pricingHasher(_ context.Context, catalogEntryID *string) (uint64, error) {
-	if catalogEntryID == nil {
-		return 0, nil
-	}
-	hash, err := hashstructure.Hash(catalogEntryID, hashstructure.FormatV2, nil)
-	if err != nil {
-		return 0, err
-	}
-	return hash, nil
-}
+func pricingHasher(_ context.Context, _ *string) (uint64, error) { return 0, nil }
 
 func (p *PricingBatcher) execPricingBatch() BatchExecutor[string, globalcatalogv1.PricingGet] {
 	return func(ctx context.Context, inputs []*string) []Result[globalcatalogv1.PricingGet] {
@@ -81,12 +72,19 @@ func (p *PricingBatcher) execPricingBatch() BatchExecutor[string, globalcatalogv
 			}
 			groups[*id] = append(groups[*id], i)
 		}
+		var calls errgroup.Group
+		calls.SetLimit(8)
 		for catalogEntryID, indices := range groups {
-			out, err := p.client.GetPricing(ctx, catalogEntryID, p.region)
-			for _, i := range indices {
-				results[i] = Result[globalcatalogv1.PricingGet]{Output: out, Err: err}
-			}
+			calls.Go(func() error {
+				out, err := p.client.GetPricing(ctx, catalogEntryID, p.region)
+				for _, i := range indices {
+					results[i] = Result[globalcatalogv1.PricingGet]{Output: out, Err: err}
+				}
+				return nil
+			})
 		}
+		_ = calls.Wait()
+
 		return results
 	}
 }

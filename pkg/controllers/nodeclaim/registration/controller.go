@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,11 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
+	commonTypes "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/iks/workerpool"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/ownership"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 const (
@@ -50,8 +56,10 @@ const (
 )
 
 type Controller struct {
-	kubeClient client.Client
-	apiReader  client.Reader
+	kubeClient    client.Client
+	apiReader     client.Reader
+	cloudProvider cloudprovider.CloudProvider
+	factory       *providers.ProviderFactory
 }
 
 func NewController(kubeClient client.Client, readers ...client.Reader) (*Controller, error) {
@@ -65,6 +73,18 @@ func NewController(kubeClient client.Client, readers ...client.Reader) (*Control
 	return &Controller{kubeClient: kubeClient, apiReader: reader}, nil
 }
 
+func NewControllerWithLifecycle(kubeClient client.Client, reader client.Reader, cloud cloudprovider.CloudProvider, factory *providers.ProviderFactory) (*Controller, error) {
+	c, err := NewController(kubeClient, reader)
+	if err != nil {
+		return nil, err
+	}
+	if cloud == nil || factory == nil {
+		return nil, fmt.Errorf("legacy lifecycle migration requires cloud provider and factory")
+	}
+	c.cloudProvider, c.factory = cloud, factory
+	return c, nil
+}
+
 func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	nodeClaim := &karpv1.NodeClaim{}
 	if err := c.apiReader.Get(ctx, req.NamespacedName, nodeClaim); err != nil {
@@ -73,8 +93,41 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	if nodeClaim.Spec.NodeClassRef == nil || nodeClaim.Spec.NodeClassRef.Group != v1alpha1.Group || nodeClaim.Spec.NodeClassRef.Kind != "IBMNodeClass" {
 		return reconcile.Result{}, nil
 	}
+	if strings.HasPrefix(nodeClaim.Status.ProviderID, "ibm://") && !strings.HasPrefix(nodeClaim.Status.ProviderID, "ibm:///") && nodeClaim.Annotations[workerpool.AllocationAnnotation] == "" && nodeClaim.Annotations[workerpool.LegacyRetirementAnnotation] == "" && c.factory != nil {
+		provider, err := c.factory.GetInstanceProviderForMode(commonTypes.IKSMode)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if err := provider.(commonTypes.IKSWorkerPoolProvider).PrepareLegacyRetirement(ctx, nodeClaim); err != nil {
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{RequeueAfter: time.Second}, nil
+	}
 	if controllerutil.ContainsFinalizer(nodeClaim, NodeClaimRegistrationFinalizer) {
 		stored := nodeClaim.DeepCopy()
+		if nodeClaim.DeletionTimestamp.IsZero() {
+			controllerutil.AddFinalizer(nodeClaim, karpv1.TerminationFinalizer)
+		} else if !controllerutil.ContainsFinalizer(nodeClaim, karpv1.TerminationFinalizer) {
+			node, err := c.findNodeForNodeClaim(ctx, nodeClaim)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			if node != nil {
+				if node.DeletionTimestamp.IsZero() {
+					if deleteErr := c.kubeClient.Delete(ctx, node, client.Preconditions{UID: &node.UID, ResourceVersion: &node.ResourceVersion}); deleteErr != nil {
+						return reconcile.Result{}, deleteErr
+					}
+				}
+				return reconcile.Result{RequeueAfter: time.Second}, nil
+			}
+			if c.cloudProvider == nil {
+				return reconcile.Result{}, fmt.Errorf("deleting legacy claim requires guarded cloud lifecycle migration")
+			}
+			err = c.cloudProvider.Delete(ctx, nodeClaim)
+			if !cloudprovider.IsNodeClaimNotFoundError(err) {
+				return reconcile.Result{RequeueAfter: time.Second}, err
+			}
+		}
 		controllerutil.RemoveFinalizer(nodeClaim, NodeClaimRegistrationFinalizer)
 		if err := c.kubeClient.Patch(ctx, nodeClaim, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			if apierrors.IsConflict(err) {
@@ -87,6 +140,11 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	node, err := c.findNodeForNodeClaim(ctx, nodeClaim)
 	if err != nil || node == nil {
 		return reconcile.Result{}, err
+	}
+	if controllerutil.ContainsFinalizer(node, NodeClaimRegistrationFinalizer) && node.DeletionTimestamp.IsZero() {
+		if _, ownershipErr := ownership.EstablishTermination(ctx, c.kubeClient, c.apiReader, node, nodeClaim, NodeClaimRegistrationFinalizer); ownershipErr != nil {
+			return reconcile.Result{}, ownershipErr
+		}
 	}
 	node, err = c.removeLegacyNodeFinalizer(ctx, node)
 	if err != nil {
@@ -149,6 +207,47 @@ func (c *Controller) removeLegacyNodeFinalizer(ctx context.Context, node *corev1
 	}
 	if !controllerutil.ContainsFinalizer(current, NodeClaimRegistrationFinalizer) {
 		return current, nil
+	}
+	if !controllerutil.ContainsFinalizer(current, karpv1.TerminationFinalizer) {
+		if current.DeletionTimestamp.IsZero() {
+			claims := &karpv1.NodeClaimList{}
+			if err := c.apiReader.List(ctx, claims); err != nil {
+				return nil, err
+			}
+			var owner *karpv1.NodeClaim
+			for i := range claims.Items {
+				if claims.Items[i].Status.ProviderID == current.Spec.ProviderID {
+					if owner != nil {
+						return nil, fmt.Errorf("multiple claims match legacy Node")
+					}
+					owner = &claims.Items[i]
+				}
+			}
+			if owner == nil {
+				return nil, fmt.Errorf("legacy Node lacks a verified claim for termination handoff")
+			}
+			var err error
+			current, err = ownership.EstablishTermination(ctx, c.kubeClient, c.apiReader, current, owner, NodeClaimRegistrationFinalizer)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			drained, err := ownership.DrainLegacyNode(ctx, c.kubeClient, c.apiReader, current)
+			if err != nil {
+				return nil, err
+			}
+			if !drained {
+				return nil, fmt.Errorf("legacy Node is awaiting graceful drain and volume detachment")
+			}
+			latest := &corev1.Node{}
+			if err := c.apiReader.Get(ctx, client.ObjectKeyFromObject(current), latest); err != nil {
+				return nil, client.IgnoreNotFound(err)
+			}
+			if latest.UID != current.UID || latest.Spec.ProviderID != current.Spec.ProviderID {
+				return nil, fmt.Errorf("legacy Node identity changed after draining")
+			}
+			current = latest
+		}
 	}
 	stored := current.DeepCopy()
 	controllerutil.RemoveFinalizer(current, NodeClaimRegistrationFinalizer)

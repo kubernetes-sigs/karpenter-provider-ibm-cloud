@@ -115,9 +115,6 @@ func TestReconcile_PreemptedInstance(t *testing.T) {
 	mockVPC.EXPECT().
 		ListInstancesWithContext(gomock.Any(), gomock.Any()).
 		Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{instance}}, &core.DetailedResponse{}, nil)
-	mockVPC.EXPECT().
-		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
-		Return(&core.DetailedResponse{}, nil)
 
 	result, err := controller.Reconcile(context.Background())
 	require.NoError(t, err)
@@ -193,10 +190,6 @@ func TestReconcile_MultipleInstances(t *testing.T) {
 	mockVPC.EXPECT().
 		ListInstancesWithContext(gomock.Any(), gomock.Any()).
 		Return(&vpcv1.InstanceCollection{Instances: instances}, &core.DetailedResponse{}, nil)
-	mockVPC.EXPECT().
-		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
-		Return(&core.DetailedResponse{}, nil).
-		Times(2)
 
 	result, err := controller.Reconcile(context.Background())
 	require.NoError(t, err)
@@ -213,7 +206,7 @@ func TestReconcile_MultipleInstances(t *testing.T) {
 	assert.True(t, controller.unavailableOfferings.IsUnavailable("cx2-8x16:us-south-2:spot"))
 }
 
-func TestReconcile_DeleteInstanceError(t *testing.T) {
+func TestReconcile_PreemptionUsesClaimLifecycle(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -225,9 +218,6 @@ func TestReconcile_DeleteInstanceError(t *testing.T) {
 	mockVPC.EXPECT().
 		ListInstancesWithContext(gomock.Any(), gomock.Any()).
 		Return(&vpcv1.InstanceCollection{Instances: []vpcv1.Instance{instance}}, &core.DetailedResponse{}, nil)
-	mockVPC.EXPECT().
-		DeleteInstanceWithContext(gomock.Any(), gomock.Any()).
-		Return(nil, fmt.Errorf("delete failed"))
 
 	result, err := controller.Reconcile(context.Background())
 	require.NoError(t, err)

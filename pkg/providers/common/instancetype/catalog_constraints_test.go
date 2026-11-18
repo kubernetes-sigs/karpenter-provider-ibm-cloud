@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -34,6 +35,14 @@ import (
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	mockpricing "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/pricing/mock"
 )
+
+func TestRankingUsesAvailableOfferingPricesWithoutRemoteReads(t *testing.T) {
+	provider := &IBMInstanceTypeProvider{client: &MockIBMClient{}, pricingProvider: mockpricing.NewMockProvider(gomock.NewController(t))}
+	capacity := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("16Gi")}
+	cheap := &cloudprovider.InstanceType{Name: "regional-cheap", Capacity: capacity, Offerings: cloudprovider.Offerings{{Price: .10, Available: true}}}
+	expensive := &cloudprovider.InstanceType{Name: "regional-expensive", Capacity: capacity, Offerings: cloudprovider.Offerings{{Price: .01, Available: false}, {Price: .20, Available: true}}}
+	require.Equal(t, []*cloudprovider.InstanceType{cheap, expensive}, provider.RankInstanceTypes([]*cloudprovider.InstanceType{expensive, cheap}))
+}
 
 func constrainedCatalog(t *testing.T, quote func(string) (float64, error)) *IBMInstanceTypeProvider {
 	t.Helper()
@@ -140,6 +149,28 @@ func TestPriceCapRequiresValidQuote(t *testing.T) {
 			instanceTypes, err := provider.List(context.Background(), class)
 			require.NoError(t, err)
 			require.Empty(t, instanceTypes)
+		})
+	}
+}
+
+func TestOfferingsRequirePositiveFiniteQuotesWithoutPriceCap(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		price float64
+		err   error
+	}{
+		{name: "unavailable", err: errors.New("quote unavailable")},
+		{name: "zero"}, {name: "negative", price: -1},
+		{name: "NaN", price: math.NaN()}, {name: "infinite", price: math.Inf(1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := constrainedCatalog(t, func(string) (float64, error) { return test.price, test.err })
+			instanceTypes, err := provider.List(context.Background(), nil)
+			require.NoError(t, err)
+			require.Len(t, instanceTypes, 4)
+			for _, instanceType := range instanceTypes {
+				require.Empty(t, instanceType.Offerings.Available())
+			}
 		})
 	}
 }

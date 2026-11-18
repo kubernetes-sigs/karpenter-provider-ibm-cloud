@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -56,6 +57,7 @@ const (
 // E2ETestSuite contains the test environment
 type E2ETestSuite struct {
 	kubeClient client.Client
+	coreClient typedcorev1.CoreV1Interface
 
 	// Test IBM Cloud resources
 	testVPC           string
@@ -164,9 +166,12 @@ func SetupE2ETestSuite(t *testing.T) *E2ETestSuite {
 
 	kubeClient, err := client.New(cfg, client.Options{Scheme: scheme})
 	require.NoError(t, err)
+	coreClient, err := typedcorev1.NewForConfig(cfg)
+	require.NoError(t, err)
 
 	suite := &E2ETestSuite{
 		kubeClient:        kubeClient,
+		coreClient:        coreClient,
 		testVPC:           os.Getenv("TEST_VPC_ID"),
 		testSubnet:        os.Getenv("TEST_SUBNET_ID"),
 		testImage:         os.Getenv("TEST_IMAGE_ID"),

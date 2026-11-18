@@ -439,15 +439,15 @@ func TestCloudProvider_Create_CircuitBreakerEventPublishing(t *testing.T) {
 // mockSubnetProvider for testing
 type mockSubnetProvider struct{}
 
-func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string) ([]subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) ListSubnets(ctx context.Context, vpcID string, regions ...string) ([]subnet.SubnetInfo, error) {
 	return []subnet.SubnetInfo{}, nil
 }
 
-func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) GetSubnet(ctx context.Context, subnetID string, regions ...string) (*subnet.SubnetInfo, error) {
 	return &subnet.SubnetInfo{ID: subnetID, Zone: "us-south-1"}, nil
 }
 
-func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]subnet.SubnetInfo, error) {
+func (m *mockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy, regions ...string) ([]subnet.SubnetInfo, error) {
 	return []subnet.SubnetInfo{}, nil
 }
 
@@ -1840,4 +1840,9 @@ func TestCloudProvider_RepairPolicies_ReturnsFivePolicies(t *testing.T) {
 		assert.Equal(t, exp.conditionStatus, policies[i].ConditionStatus, "policy %d condition status", i)
 		assert.Equal(t, exp.toleration, policies[i].TolerationDuration, "policy %d toleration duration", i)
 	}
+}
+
+func (m *mockInstanceTypeProvider) Refresh(ctx context.Context) error {
+	_, err := m.List(ctx, nil)
+	return err
 }

@@ -199,12 +199,12 @@ func (m *MockInstanceTypeProvider) SetSimulateSlowList(slow bool) {
 func TestController_NewController_Actual(t *testing.T) {
 	// This will fail because it tries to create real IBM client
 	// but we include it to test the actual function path
-	controller, err := NewController(context.Background(), nil)
+	controller, err := NewController(nil)
 
 	// We expect an error due to missing IBM Cloud credentials in test environment
 	assert.Error(t, err)
 	assert.Nil(t, controller)
-	assert.Contains(t, err.Error(), "creating IBM client")
+	assert.Contains(t, err.Error(), "instance type provider is required")
 }
 
 // Test controller registration
@@ -527,4 +527,9 @@ func TestController_Reconcile_RequeueConsistency(t *testing.T) {
 	}
 
 	assert.Equal(t, 5, mockProvider.GetListCallCount())
+}
+
+func (m *MockInstanceTypeProvider) Refresh(ctx context.Context) error {
+	_, err := m.List(ctx, nil)
+	return err
 }

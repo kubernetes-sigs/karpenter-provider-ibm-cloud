@@ -39,6 +39,10 @@ func (m *mockIAMClient) GetToken(ctx context.Context) (string, error) {
 type mockGlobalCatalogClient struct {
 	getEntryResponse    *globalcatalogv1.CatalogEntry
 	listEntriesResponse *globalcatalogv1.EntrySearchResult
+	pricingResponse     *globalcatalogv1.PricingGet
+	listOptions         []*globalcatalogv1.ListCatalogEntriesOptions
+	pricingOptions      *globalcatalogv1.GetPricingOptions
+	childPage           func(*globalcatalogv1.GetChildObjectsOptions) *globalcatalogv1.EntrySearchResult
 	err                 error
 }
 
@@ -49,11 +53,69 @@ func (m *mockGlobalCatalogClient) GetCatalogEntryWithContext(_ context.Context, 
 	return m.getEntryResponse, &core.DetailedResponse{}, nil
 }
 
-func (m *mockGlobalCatalogClient) ListCatalogEntriesWithContext(_ context.Context, _ *globalcatalogv1.ListCatalogEntriesOptions) (*globalcatalogv1.EntrySearchResult, *core.DetailedResponse, error) {
+func (m *mockGlobalCatalogClient) ListCatalogEntriesWithContext(_ context.Context, options *globalcatalogv1.ListCatalogEntriesOptions) (*globalcatalogv1.EntrySearchResult, *core.DetailedResponse, error) {
+	m.listOptions = append(m.listOptions, options)
 	if m.err != nil {
 		return nil, nil, m.err
 	}
 	return m.listEntriesResponse, &core.DetailedResponse{}, nil
+}
+
+func (m *mockGlobalCatalogClient) GetPricingWithContext(_ context.Context, options *globalcatalogv1.GetPricingOptions) (*globalcatalogv1.PricingGet, *core.DetailedResponse, error) {
+	m.pricingOptions = options
+	return m.pricingResponse, &core.DetailedResponse{}, m.err
+}
+
+func (m *mockGlobalCatalogClient) GetChildObjectsWithContext(_ context.Context, options *globalcatalogv1.GetChildObjectsOptions) (*globalcatalogv1.EntrySearchResult, *core.DetailedResponse, error) {
+	if m.childPage != nil {
+		return m.childPage(options), &core.DetailedResponse{}, m.err
+	}
+	return m.listEntriesResponse, &core.DetailedResponse{}, m.err
+}
+
+func TestCatalogPricingDeploymentPaginationStaysWithinPlanAndRegion(t *testing.T) {
+	var offsets []int64
+	mock := &mockGlobalCatalogClient{childPage: func(options *globalcatalogv1.GetChildObjectsOptions) *globalcatalogv1.EntrySearchResult {
+		if *options.ID != "plan" || *options.Q != "eu-de" || *options.Kind != "deployment" || !*options.Complete {
+			t.Fatalf("incorrect child query: %+v", options)
+		}
+		offsets = append(offsets, *options.Offset)
+		count := int64(100)
+		if *options.Offset == 200 {
+			count = 1
+		}
+		return &globalcatalogv1.EntrySearchResult{Count: core.Int64Ptr(201), Resources: make([]globalcatalogv1.CatalogEntry, count)}
+	}}
+	client := &GlobalCatalogClient{iamClient: &mockIAMClient{token: "token"}, client: mock, currentToken: "token"}
+	entries, err := client.ListPricingDeployments(context.Background(), "plan", "eu-de")
+	if err != nil || len(entries) != 201 {
+		t.Fatalf("list: entries=%d, err=%v", len(entries), err)
+	}
+	if len(offsets) != 3 || offsets[0] != 0 || offsets[1] != 100 || offsets[2] != 200 {
+		t.Fatalf("incorrect pagination: %v", offsets)
+	}
+}
+
+func TestCatalogInstanceProfileQueryAndTypedRegionalPricing(t *testing.T) {
+	mock := &mockGlobalCatalogClient{
+		listEntriesResponse: &globalcatalogv1.EntrySearchResult{Resources: []globalcatalogv1.CatalogEntry{{ID: core.StringPtr("bx2-4x16")}}},
+		pricingResponse:     &globalcatalogv1.PricingGet{DeploymentID: core.StringPtr("deployment")},
+	}
+	client := &GlobalCatalogClient{iamClient: &mockIAMClient{token: "token"}, client: mock, currentToken: "token"}
+	entries, err := client.ListInstanceTypes(context.Background())
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("list: entries=%v, err=%v", entries, err)
+	}
+	if *mock.listOptions[0].Q != "kind:instance.profile" || !*mock.listOptions[0].Complete {
+		t.Fatalf("incorrect catalog query: %+v", mock.listOptions[0])
+	}
+	quote, err := client.GetPricing(context.Background(), "deployment", "eu-de")
+	if err != nil || quote != mock.pricingResponse {
+		t.Fatalf("quote=%v, err=%v", quote, err)
+	}
+	if *mock.pricingOptions.ID != "deployment" || *mock.pricingOptions.DeploymentRegion != "eu-de" {
+		t.Fatalf("incorrect regional pricing target: %+v", mock.pricingOptions)
+	}
 }
 
 func TestNewGlobalCatalogClient(t *testing.T) {

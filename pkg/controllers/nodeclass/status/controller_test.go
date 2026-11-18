@@ -69,12 +69,12 @@ func (m *MockIBMClient) GetRegion() string {
 	return args.String(0)
 }
 
-func (m *MockSubnetProvider) ListSubnets(ctx context.Context, vpcID string) ([]subnet.SubnetInfo, error) {
+func (m *MockSubnetProvider) ListSubnets(ctx context.Context, vpcID string, regions ...string) ([]subnet.SubnetInfo, error) {
 	args := m.Called(ctx, vpcID)
 	return args.Get(0).([]subnet.SubnetInfo), args.Error(1)
 }
 
-func (m *MockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*subnet.SubnetInfo, error) {
+func (m *MockSubnetProvider) GetSubnet(ctx context.Context, subnetID string, regions ...string) (*subnet.SubnetInfo, error) {
 	args := m.Called(ctx, subnetID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -82,7 +82,7 @@ func (m *MockSubnetProvider) GetSubnet(ctx context.Context, subnetID string) (*s
 	return args.Get(0).(*subnet.SubnetInfo), args.Error(1)
 }
 
-func (m *MockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy) ([]subnet.SubnetInfo, error) {
+func (m *MockSubnetProvider) SelectSubnets(ctx context.Context, vpcID string, strategy *v1alpha1.PlacementStrategy, regions ...string) ([]subnet.SubnetInfo, error) {
 	args := m.Called(ctx, vpcID, strategy)
 	return args.Get(0).([]subnet.SubnetInfo), args.Error(1)
 }
@@ -1263,7 +1263,7 @@ func TestValidateZoneSubnetCompatibility(t *testing.T) {
 				// Should not be called due to cache hit
 			},
 			setupCache: func(c *cache.Cache) {
-				c.SetWithTTL("subnet-zone-subnet-12345", "us-south-1", 15*time.Minute)
+				c.SetWithTTL("subnet-zone-us-south-subnet-12345", "us-south-1", 15*time.Minute)
 			},
 			expectedError: "",
 		},
@@ -1275,7 +1275,7 @@ func TestValidateZoneSubnetCompatibility(t *testing.T) {
 				// Should not be called due to cache hit
 			},
 			setupCache: func(c *cache.Cache) {
-				c.SetWithTTL("subnet-zone-subnet-12345", "us-south-2", 15*time.Minute)
+				c.SetWithTTL("subnet-zone-us-south-subnet-12345", "us-south-2", 15*time.Minute)
 			},
 			expectedError: "subnet subnet-12345 is in zone us-south-2, but requested zone is us-south-1",
 		},

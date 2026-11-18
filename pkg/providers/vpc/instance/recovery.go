@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider/ibm"
@@ -40,6 +42,7 @@ import (
 )
 
 const (
+	LaunchFormatVersion   = 1
 	LaunchAnnotation      = "karpenter-ibm.sh/vpc-launch"
 	LaunchFinalizer       = "karpenter-ibm.sh/vpc-launch"
 	LaunchImageAnnotation = "karpenter-ibm.sh/launch-image-id"
@@ -53,6 +56,7 @@ const launchResolutionWindow = 15 * time.Minute
 var errLaunchUnresolved = errors.New("launch outcome is not yet resolved")
 
 type launchConfig struct {
+	Version, MinimumWriterVersion             int
 	Name, ClusterUID, ClaimUID, ClassUID      string
 	AccountID, ResourceGroup                  string
 	Region, VPC, Profile, Zone, Subnet, Image string
@@ -131,8 +135,16 @@ func providerRegion(providerID string) string {
 
 func decodeLaunch(value string) (*launchConfig, error) {
 	config := &launchConfig{}
-	if err := json.Unmarshal([]byte(value), config); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(config); err != nil {
 		return nil, fmt.Errorf("invalid launch checkpoint: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("invalid trailing launch checkpoint")
+	}
+	if err := ownership.ValidateStateVersion(config.Version, config.MinimumWriterVersion); err != nil {
+		return nil, err
 	}
 	if config.ClaimUID == "" || config.ClusterUID == "" || config.Region == "" || config.Name != ownership.InstanceName(config.ClusterUID, config.ClaimUID) {
 		return nil, fmt.Errorf("launch checkpoint has invalid ownership")
@@ -247,6 +259,10 @@ func (p *VPCInstanceProvider) checkpointLaunch(ctx context.Context, claim *karpv
 }
 
 func (p *VPCInstanceProvider) updateLaunch(ctx context.Context, claim *karpv1.NodeClaim, config *launchConfig) error {
+	if err := ownership.ValidateStateVersion(config.Version, config.MinimumWriterVersion); err != nil {
+		return err
+	}
+	config.Version, config.MinimumWriterVersion = LaunchFormatVersion, LaunchFormatVersion
 	value, err := json.Marshal(config)
 	if err != nil {
 		return err
@@ -355,7 +371,10 @@ func (p *VPCInstanceProvider) recoverLaunch(ctx context.Context, claim *karpv1.N
 	if err != nil {
 		return nil, err
 	}
-	instance, err := p.findLaunch(ctx, vpc, config)
+	instance, err := p.verifyLaunchInstance(ctx, claim, true)
+	if cloudprovider.IsNodeClaimNotFoundError(err) {
+		return nil, fmt.Errorf("%w: %s", errLaunchUnresolved, config.Name)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -371,8 +390,10 @@ func (p *VPCInstanceProvider) recoverLaunch(ctx context.Context, claim *karpv1.N
 			tags[key] = value
 		}
 	}
-	if err := vpc.UpdateInstanceTags(ctx, *instance.ID, tags); err != nil {
-		return nil, err
+	if len(config.Tags) > 0 {
+		if err := vpc.UpdateInstanceTags(ctx, *instance.ID, tags); err != nil {
+			return nil, err
+		}
 	}
 	return config.node(claim, *instance.ID), nil
 }
@@ -416,6 +437,9 @@ func (p *VPCInstanceProvider) CleanupPending(ctx context.Context, claim *karpv1.
 	if instance == nil {
 		return config.abandoned(time.Now()), nil
 	}
+	if _, verifyErr := p.verifyLaunchInstance(ctx, claim, true); verifyErr != nil {
+		return false, verifyErr
+	}
 	if instance.ID == nil {
 		return false, fmt.Errorf("pending instance has no ID")
 	}
@@ -430,17 +454,21 @@ func (p *VPCInstanceProvider) CleanupPending(ctx context.Context, claim *karpv1.
 			continue
 		}
 		foundNode = true
-		if !controllerutil.ContainsFinalizer(&node, karpv1.TerminationFinalizer) {
-			return false, fmt.Errorf("pending instance has a Node without graceful termination ownership")
+		current, handoffErr := ownership.EstablishTermination(ctx, p.kubeClient, p.reader(), &node, claim)
+		if handoffErr != nil {
+			return false, handoffErr
 		}
 		if node.DeletionTimestamp.IsZero() {
-			if deleteErr := p.kubeClient.Delete(ctx, &node, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &node.UID}}); client.IgnoreNotFound(deleteErr) != nil {
+			if deleteErr := p.kubeClient.Delete(ctx, current, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &current.UID, ResourceVersion: &current.ResourceVersion}}); client.IgnoreNotFound(deleteErr) != nil {
 				return false, deleteErr
 			}
 		}
 	}
 	if foundNode {
 		return false, nil
+	}
+	if _, _, readErr := p.freshLaunchClaim(ctx, claim); readErr != nil {
+		return false, readErr
 	}
 	if deleteErr := vpc.DeleteInstance(ctx, *instance.ID); deleteErr != nil && !isIBMInstanceNotFoundError(deleteErr) {
 		return false, deleteErr

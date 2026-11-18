@@ -172,7 +172,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		c.log.Info("Started subnet selection", "nodeclass", req.Name, "strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance)
 
 		// Select subnets based on placement strategy
-		selectedSubnets, err := c.subnets.SelectSubnets(ctx, nodeClass.Spec.VPC, nodeClass.Spec.PlacementStrategy)
+		selectedSubnets, err := c.subnets.SelectSubnets(ctx, nodeClass.Spec.VPC, nodeClass.Spec.PlacementStrategy, nodeClass.Spec.Region)
 		if err != nil {
 			c.log.Error(err, "failed to select subnets", "nodeclass", req.Name)
 			SubnetSelections.WithLabelValues(nodeClass.Name, "failure").Inc()

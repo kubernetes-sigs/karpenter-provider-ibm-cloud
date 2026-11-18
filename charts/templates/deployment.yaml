@@ -1,3 +1,4 @@
+{{- include "karpenter.cr.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,10 +18,12 @@ spec:
       {{- include "karpenter.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- $annotations := deepCopy (.Values.podAnnotations | default dict) }}
+      {{- $_ := set $annotations "checksum/credentials" (include (print $.Template.BasePath "/secret.yaml") . | sha256sum) }}
+      {{- $_ := set $annotations "checksum/circuit-breaker" (include (print $.Template.BasePath "/configmap-circuitbreaker.yaml") . | sha256sum) }}
+      {{- $_ := set $annotations "checksum/additional-ca" (include (print $.Template.BasePath "/additional-ca-secret.yaml") . | sha256sum) }}
       annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- toYaml $annotations | nindent 8 }}
       labels:
         {{- include "karpenter.selectorLabels" . | nindent 8 }}
     spec:
@@ -109,10 +112,6 @@ spec:
             {{- if .Values.controller.orphanCleanup.enabled }}
             - name: KARPENTER_ENABLE_ORPHAN_CLEANUP
               value: "true"
-            {{- end }}
-            {{- if .Values.customResources.enabled }}
-            {{- include "karpenter.cr.environmentConfig" . | nindent 12 }}
-            {{- include "karpenter.cr.bootstrapConfig" . | nindent 12 }}
             {{- end }}
             {{- if .Values.circuitBreaker.enabled }}
             # Circuit breaker configuration from ConfigMap

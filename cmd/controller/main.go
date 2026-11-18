@@ -16,12 +16,14 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
 	"os"
 
 	ibmcloud "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/cloudprovider"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/controllers"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/operator/options"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
@@ -31,6 +33,10 @@ import (
 )
 
 func main() {
+	if _, err := providers.ResolveProviderMode(nil); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	// Create core operator (handles options context properly)
 	coreCtx, coreOp := coreoperator.NewOperator()
 	ctx, op := operator.NewOperator(coreCtx, coreOp)
@@ -68,7 +74,7 @@ func main() {
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	// Register bootstrap controller
-	if err := controllers.RegisterBootstrapController(op.Manager); err != nil {
+	if err := controllers.RegisterBootstrapController(op.Manager, op.ProviderFactory); err != nil {
 		log.FromContext(ctx).Error(err, "failed to register bootstrap controller")
 		os.Exit(1)
 	}

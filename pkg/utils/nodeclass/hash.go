@@ -20,7 +20,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/utils/ownership"
 	"github.com/mitchellh/hashstructure/v2"
+	"io"
+	"strings"
 )
 
 type provisioningSpec struct {
@@ -104,8 +107,9 @@ func LegacyHash(nodeClass *v1alpha1.IBMNodeClass) (string, error) {
 const HashMigrationAnnotation = "karpenter-ibm.sh/nodeclass-hash-migration"
 
 type HashMigration struct {
-	LegacyHash       string
-	ProvisioningHash string
+	Version, MinimumWriterVersion int
+	LegacyHash                    string
+	ProvisioningHash              string
 }
 
 func ReadHashMigration(nodeClass *v1alpha1.IBMNodeClass) (*HashMigration, error) {
@@ -114,8 +118,16 @@ func ReadHashMigration(nodeClass *v1alpha1.IBMNodeClass) (*HashMigration, error)
 		return nil, nil
 	}
 	migration := &HashMigration{}
-	if err := json.Unmarshal([]byte(value), migration); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(migration); err != nil {
 		return nil, fmt.Errorf("reading hash migration: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("invalid trailing hash migration checkpoint")
+	}
+	if err := ownership.ValidateStateVersion(migration.Version, migration.MinimumWriterVersion); err != nil {
+		return nil, err
 	}
 	if migration.LegacyHash == "" || migration.ProvisioningHash == "" {
 		return nil, fmt.Errorf("invalid hash migration checkpoint")

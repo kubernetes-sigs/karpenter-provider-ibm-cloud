@@ -1,0 +1,1596 @@
+{
+  "quotes": {
+    "child-pricing:a736a57f-0584-474f-8411-55dc7d9dc811:12ad47e6": {
+      "deployment_id": "a736a57f-0584-474f-8411-55dc7d9dc811:12ad47e6",
+      "deployment_location": "us-south",
+      "deployment_region": "us-south",
+      "metrics": [
+        {
+          "charge_unit_name": "WINDOWS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.046
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "MSSQL_CORE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.017
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "WINDOWS_VCPU_HOURS_BYOL",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "SUSESAP_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "block_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.22
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.43
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.51
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "RHELSAPHANA_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "simple_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.023
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.016
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.015
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "RHELSAPAPPS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "simple_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.017
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.011
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.009
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "MEMORY_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.09
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.111
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "SUSE_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "block_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.108
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.215
+                },
+                {
+                  "quantity_tier": 100000,
+                  "price": 0.27
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "REDHAT_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "simple_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.017
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.011
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.009
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "CENTOS_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "DEBIAN_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "UBUNTU_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "ROCKYLINUX__INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "FEDORACORE_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "pricing:a736a57f-0584-474f-8411-55dc7d9dc811:dd7e58a9": {
+      "deployment_id": "a736a57f-0584-474f-8411-55dc7d9dc811:dd7e58a9",
+      "deployment_location": "eu-de",
+      "deployment_region": "eu-de",
+      "metrics": [
+        {
+          "charge_unit_name": "MEMORY_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.104
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "WINDOWS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.046
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "WINDOWS_VCPU_HOURS_BYOL",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "SUSESAP_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "block_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.22
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.43
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.51
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.128
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "MSSQL_CORE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.017
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "SUSE_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "block_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.108
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.215
+                },
+                {
+                  "quantity_tier": 100000,
+                  "price": 0.27
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "REDHAT_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "simple_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.017
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.011
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.009
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "RHELSAPHANA_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "simple_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.023
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.016
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.015
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "RHELSAPAPPS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "simple_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.017
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.011
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.009
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "CENTOS_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "DEBIAN_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "UBUNTU_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "ROCKYLINUX__INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "charge_unit_name": "FEDORACORE_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "linear_tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "gen3-regional": {
+      "deployment_id": "b52c751f-ced8-4314-b80c-303876642a55:us-south22178",
+      "deployment_location": "us-south",
+      "deployment_region": "us-south",
+      "metrics": [
+        {
+          "metric_id": "part-is.redhatOS-SAP-Apps",
+          "charge_unit_name": "RHELSAPAPPS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Simple Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.01717
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.01111
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.00909
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.rhelOS-BYOL",
+          "charge_unit_name": "RHEL_INSTANCE_HOURS_BYOL",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 4,
+                  "price": 0
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.suseOS-SAP",
+          "charge_unit_name": "SUSESAP_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.2222
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.4343
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.52
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.windowsOS-BYOL",
+          "charge_unit_name": "WINDOWS_VCPU_HOURS_BYOL",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.SW.MSSQL-GEN3",
+          "charge_unit_name": "MSSQL_CORE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.01717
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.instance-hours-bx3d-128x640",
+          "charge_unit_name": "INSTANCE_HOURS_MULTI_TENANT",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 7.253
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.redhatOS",
+          "charge_unit_name": "REDHAT_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Simple Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.01717
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.01111
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.00909
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.redhatOS-SAPHANA",
+          "charge_unit_name": "RHELSAPHANA_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Simple Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.02323
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.01616
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.01515
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.rhelOS-SAPHANA",
+          "charge_unit_name": "RHELSAPHANA_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 4,
+                  "price": 0.1414
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.3131
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.suseOS",
+          "charge_unit_name": "SUSE_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.10908
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.21715
+                },
+                {
+                  "quantity_tier": 100000,
+                  "price": 0.2727
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.instance-hours-reservation",
+          "charge_unit_name": "INSTANCE_HOURS_RESERVATION",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.rhelOS-SAP-Apps",
+          "charge_unit_name": "RHELSAPAPPS_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 4,
+                  "price": 0.0606
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.1212
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.instance-hours-dh-bx3d-128x640",
+          "charge_unit_name": "INSTANCE_HOURS_DEDICATED_HOST",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.rhelOS",
+          "charge_unit_name": "RHEL_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 4,
+                  "price": 0.0606
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.1212
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.windowsOS",
+          "charge_unit_name": "WINDOWS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.05151
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "gen4-regional": {
+      "deployment_id": "b2cfd5f2-7227-4f96-a540-1d12e3b60bdf:us-southd9cb8957",
+      "deployment_location": "us-south",
+      "deployment_region": "us-south",
+      "metrics": [
+        {
+          "metric_id": "part-is.instance-hours-bx4-4x16",
+          "charge_unit_name": "INSTANCE_HOURS_MULTI_TENANT",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.2039796
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.instance-hours-reservation",
+          "charge_unit_name": "INSTANCE_HOURS_RESERVATION",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.redhatOS-SAPHANA",
+          "charge_unit_name": "RHELSAPHANA_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Simple Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.02323
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.01616
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.01515
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.suseOS",
+          "charge_unit_name": "SUSE_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.10908
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.21715
+                },
+                {
+                  "quantity_tier": 100000,
+                  "price": 0.2727
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.suseOS-SAP",
+          "charge_unit_name": "SUSESAP_INSTANCE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Block Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 2,
+                  "price": 0.2222
+                },
+                {
+                  "quantity_tier": 4,
+                  "price": 0.4343
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.52
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.instance-hours-dh-bx4-4x16",
+          "charge_unit_name": "INSTANCE_HOURS_DEDICATED_HOST",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.SW.MSSQL-GEN3",
+          "charge_unit_name": "MSSQL_CORE_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.01717
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.redhatOS",
+          "charge_unit_name": "REDHAT_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Simple Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.01717
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.01111
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.00909
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.redhatOS-SAP-Apps",
+          "charge_unit_name": "RHELSAPAPPS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Simple Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 8,
+                  "price": 0.01717
+                },
+                {
+                  "quantity_tier": 127,
+                  "price": 0.01111
+                },
+                {
+                  "quantity_tier": 10000,
+                  "price": 0.00909
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.windowsOS-BYOL",
+          "charge_unit_name": "WINDOWS_VCPU_HOURS_BYOL",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "metric_id": "part-is.windowsOS",
+          "charge_unit_name": "WINDOWS_VCPU_HOURS",
+          "charge_unit_quantity": 1,
+          "tier_model": "Linear Tier",
+          "amounts": [
+            {
+              "country": "USA",
+              "currency": "USD",
+              "prices": [
+                {
+                  "quantity_tier": 1,
+                  "price": 0.05151
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "profiles": {
+    "name:cx2d-4x8": {
+      "id": "cx2d-4x8",
+      "name": "cx2d-4x8",
+      "other": {
+        "profile": {
+          "measures": [
+            {
+              "component": "instance",
+              "deployments": [
+                {
+                  "meters": [
+                    {
+                      "quantity": "4",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "8",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "cx2d-4x8",
+                      "unit": "PROFILE"
+                    },
+                    {
+                      "quantity": "150",
+                      "unit": "IS_STORAGE"
+                    }
+                  ],
+                  "plan": "a736a57f-0584-474f-8411-55dc7d9dc811",
+                  "type": "multi-tenant"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "4",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "8",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "cx2d-4x8",
+                      "unit": "PROFILE"
+                    },
+                    {
+                      "quantity": "150",
+                      "unit": "IS_STORAGE"
+                    }
+                  ],
+                  "plan": "f934872d-678f-4d71-be76-b5ae9453cfdc",
+                  "type": "dedicated"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "4",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "8",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "cx2d-4x8",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "6f2fca60-9281-4ac2-9d60-2e2be366cf61",
+                  "type": "reservation"
+                }
+              ]
+            }
+          ],
+          "resource_type": "instance"
+        }
+      }
+    },
+    "name:gx2-8x64x1v100": {
+      "id": "gx2-8x64x1v100",
+      "name": "gx2-8x64x1v100",
+      "other": {
+        "profile": {
+          "measures": [
+            {
+              "component": "instance",
+              "deployments": [
+                {
+                  "meters": [
+                    {
+                      "quantity": "8",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "64",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "gx2-8x64x1v100",
+                      "unit": "PROFILE"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "GPU"
+                    },
+                    {
+                      "quantity": "V100",
+                      "unit": "GPU_CARD"
+                    }
+                  ],
+                  "plan": "a736a57f-0584-474f-8411-55dc7d9dc811",
+                  "type": "multi-tenant"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "8",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "64",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "gx2-8x64x1v100",
+                      "unit": "PROFILE"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "GPU"
+                    },
+                    {
+                      "quantity": "V100",
+                      "unit": "GPU_CARD"
+                    }
+                  ],
+                  "plan": "f934872d-678f-4d71-be76-b5ae9453cfdc",
+                  "type": "dedicated"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "8",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "64",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "gx2-8x64x1v100",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "6f2fca60-9281-4ac2-9d60-2e2be366cf61",
+                  "type": "reservation"
+                }
+              ]
+            }
+          ],
+          "resource_type": "instance"
+        }
+      }
+    },
+    "name:bx3d-128x640": {
+      "id": "bx3d-128x640",
+      "name": "bx3d-128x640",
+      "other": {
+        "profile": {
+          "resource_type": "instance",
+          "measures": [
+            {
+              "component": "instance",
+              "deployments": [
+                {
+                  "meters": [
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_MULTI_TENANT"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_DEDICATED_HOST"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE"
+                    },
+                    {
+                      "quantity": "128",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "640",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "bx3d-128x640",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "b52c751f-ced8-4314-b80c-303876642a55",
+                  "type": "multi-tenant"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_MULTI_TENANT"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_DEDICATED_HOST"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE"
+                    },
+                    {
+                      "quantity": "128",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "640",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "bx3d-128x640",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "b52c751f-ced8-4314-b80c-303876642a55",
+                  "type": "dedicated"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_MULTI_TENANT"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_DEDICATED_HOST"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE"
+                    },
+                    {
+                      "quantity": "128",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "640",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "bx3d-128x640",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "b52c751f-ced8-4314-b80c-303876642a55",
+                  "type": "reservation"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "name:bx4-4x16": {
+      "id": "bx4-4x16",
+      "name": "bx4-4x16",
+      "other": {
+        "profile": {
+          "resource_type": "instance",
+          "measures": [
+            {
+              "component": "instance",
+              "deployments": [
+                {
+                  "meters": [
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_MULTI_TENANT"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_DEDICATED_HOST"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE"
+                    },
+                    {
+                      "quantity": "4",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "16",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "bx4-4x16",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "b2cfd5f2-7227-4f96-a540-1d12e3b60bdf",
+                  "type": "multi-tenant"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_MULTI_TENANT"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_DEDICATED_HOST"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE"
+                    },
+                    {
+                      "quantity": "4",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "16",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "bx4-4x16",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "b2cfd5f2-7227-4f96-a540-1d12e3b60bdf",
+                  "type": "dedicated"
+                },
+                {
+                  "meters": [
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_MULTI_TENANT"
+                    },
+                    {
+                      "quantity": "0",
+                      "unit": "INSTANCE_DEDICATED_HOST"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE_RESERVATION"
+                    },
+                    {
+                      "quantity": "1",
+                      "unit": "INSTANCE"
+                    },
+                    {
+                      "quantity": "4",
+                      "unit": "VCPU"
+                    },
+                    {
+                      "quantity": "16",
+                      "unit": "MEMORY"
+                    },
+                    {
+                      "quantity": "bx4-4x16",
+                      "unit": "PROFILE"
+                    }
+                  ],
+                  "plan": "b2cfd5f2-7227-4f96-a540-1d12e3b60bdf",
+                  "type": "reservation"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -14,12 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate go run go.uber.org/mock/mockgen@latest -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
+//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -source=./interfaces.go -destination=./mock/interfaces_generated.go -package=mock
 
 package types
 
 import (
 	"context"
+
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -39,6 +41,8 @@ type InstanceProvider interface {
 
 	// Get retrieves information about an existing compute instance
 	Get(ctx context.Context, providerID string) (*corev1.Node, error)
+	GetFresh(ctx context.Context, providerID string) (*corev1.Node, error)
+	ListFresh(ctx context.Context, claims []*v1.NodeClaim, nodes []*corev1.Node) ([]*corev1.Node, error)
 
 	// List returns all compute instances managed by this provider
 	List(ctx context.Context) ([]*corev1.Node, error)
@@ -47,6 +51,10 @@ type InstanceProvider interface {
 // VPCInstanceProvider extends InstanceProvider with VPC-specific operations
 type VPCInstanceProvider interface {
 	InstanceProvider
+	ValidateLaunchTarget(context.Context, *v1.NodeClaim) error
+	VerifyLaunchInstance(context.Context, *v1.NodeClaim) (*vpcv1.Instance, error)
+	VerifyLaunchNetworkAddresses(context.Context, *v1.NodeClaim, *vpcv1.Instance) ([]string, []string, error)
+	CleanupPending(context.Context, *v1.NodeClaim) (bool, error)
 
 	// UpdateTags updates tags on a VPC instance
 	UpdateTags(ctx context.Context, providerID string, tags map[string]string) error
@@ -55,6 +63,9 @@ type VPCInstanceProvider interface {
 // IKSWorkerPoolProvider extends InstanceProvider with IKS-specific operations
 type IKSWorkerPoolProvider interface {
 	InstanceProvider
+	Cleanup(context.Context, *v1.NodeClaim) error
+	ConfirmGone(context.Context, *v1.NodeClaim) error
+	PrepareLegacyRetirement(context.Context, *v1.NodeClaim) error
 
 	// ResizePool resizes a worker pool by the specified amount
 	ResizePool(ctx context.Context, clusterID, poolID string, newSize int) error

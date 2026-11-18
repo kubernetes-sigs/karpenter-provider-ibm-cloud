@@ -1120,7 +1120,7 @@ func TestCloudInitStatusReporting(t *testing.T) {
 		// Create test options
 		options := commonTypes.Options{
 			ClusterEndpoint: "https://test-cluster:6443",
-			BootstrapToken:  "test-token",
+			BootstrapToken:  "abcdef.0123456789abcdef",
 			NodeName:        "test-node",
 			InstanceID:      "test-instance-123",
 			Region:          "us-south",
@@ -1153,8 +1153,8 @@ func TestCloudInitStatusReporting(t *testing.T) {
 		assert.Contains(t, script, `report_status "completed" "bootstrap-finished"`)
 
 		// Verify instance ID is retrieved from metadata service and node name is templated
-		assert.Contains(t, script, "INSTANCE_ID=$(curl -s -f --max-time 10 -H \"Authorization: Bearer $INSTANCE_IDENTITY_TOKEN\" \"http://169.254.169.254/metadata/v1/instance?version=2022-03-29\" | grep -o \"\\\"id\\\":\\\"[0-9a-z]\\{4\\}_[^\\\"]*\" | head -1 | cut -d\"\\\"\" -f4)")
-		assert.Contains(t, script, "NODE_NAME=\"test-node\"")
+		assert.Contains(t, script, "metadata_value GET")
+		assert.Contains(t, script, "NODE_NAME='test-node'")
 
 		// Verify structured JSON status creation
 		assert.Contains(t, script, `"instanceId": "$INSTANCE_ID"`)
@@ -1515,7 +1515,7 @@ func TestCiliumTaintConditionalBehavior(t *testing.T) {
 			// Create minimal test options
 			options := commonTypes.Options{
 				ClusterEndpoint:   "https://test-cluster:6443",
-				BootstrapToken:    "test-token",
+				BootstrapToken:    "abcdef.0123456789abcdef",
 				NodeName:          "test-node",
 				CNIPlugin:         tt.cniPlugin,
 				CNIVersion:        "v1.0.0",
@@ -1632,7 +1632,7 @@ func TestCloudInitScriptWithCustomTaints(t *testing.T) {
 			// Create test options with custom taints
 			options := commonTypes.Options{
 				ClusterEndpoint:   "https://test-cluster:6443",
-				BootstrapToken:    "test-token",
+				BootstrapToken:    "abcdef.0123456789abcdef",
 				NodeName:          "test-node",
 				CNIPlugin:         tt.cniPlugin,
 				CNIVersion:        "v1.0.0",

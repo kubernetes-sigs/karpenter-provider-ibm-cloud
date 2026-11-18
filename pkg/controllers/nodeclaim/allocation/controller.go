@@ -38,6 +38,7 @@ import (
 type pendingProvider interface {
 	CleanupPending(context.Context, *karpv1.NodeClaim) (bool, error)
 	GetFresh(context.Context, string) (*corev1.Node, error)
+	ValidateLaunchTarget(context.Context, *karpv1.NodeClaim) error
 }
 
 type Controller struct {
@@ -71,12 +72,8 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			return reconcile.Result{}, fmt.Errorf("VPC provider cannot recover pending allocations")
 		}
 	}
-	if validator, ok := pending.(interface {
-		ValidateLaunchTarget(context.Context, *karpv1.NodeClaim) error
-	}); ok {
-		if err := validator.ValidateLaunchTarget(ctx, claim); err != nil {
-			return reconcile.Result{}, err
-		}
+	if err := pending.ValidateLaunchTarget(ctx, claim); err != nil {
+		return reconcile.Result{}, err
 	}
 	var err error
 

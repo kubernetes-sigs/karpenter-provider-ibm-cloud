@@ -80,6 +80,8 @@ type Options struct {
 	// BootstrapToken is the token used for node bootstrapping
 	BootstrapToken string
 
+	BootstrapStatusConfigMap string
+
 	// KubeletConfig contains kubelet configuration
 	KubeletConfig *v1alpha1.KubeletConfiguration
 

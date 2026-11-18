@@ -459,5 +459,5 @@ func TestContextCancellation_GracefulShutdown(t *testing.T) {
 	}
 
 	result := receiveWithTimeout(t, done, testTimeout)
-	assert.NoError(t, result.Err)
+	assert.ErrorIs(t, result.Err, context.Canceled)
 }

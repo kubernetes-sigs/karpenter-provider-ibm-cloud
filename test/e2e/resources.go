@@ -28,10 +28,77 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
 )
+
+func (s *E2ETestSuite) mutateOwnedTestObject(ctx context.Context, expected client.Object, testName string, mutate func(client.Object) error) error {
+	if expected.GetUID() == "" {
+		return fmt.Errorf("test mutation requires a saved UID")
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current := expected.DeepCopyObject().(client.Object)
+		if err := s.kubeClient.Get(ctx, client.ObjectKeyFromObject(expected), current); err != nil {
+			return err
+		}
+		if current.GetUID() != expected.GetUID() {
+			return fmt.Errorf("test resource UID changed")
+		}
+		if !current.GetDeletionTimestamp().IsZero() {
+			return fmt.Errorf("test resource is terminating")
+		}
+		scope := cleanupScope{testName: testName}
+		if !scope.directlyOwns(current) {
+			return fmt.Errorf("test resource ownership changed")
+		}
+		stored := current.DeepCopyObject().(client.Object)
+		if err := mutate(current); err != nil {
+			return err
+		}
+		return s.kubeClient.Patch(ctx, current, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
+	})
+}
+
+func (s *E2ETestSuite) removeTestStartupTaint(ctx context.Context, expected *corev1.Node, testName string, startup corev1.Taint) error {
+	return s.mutateOwnedTestObject(ctx, expected, testName, func(object client.Object) error {
+		node := object.(*corev1.Node)
+		if node.Spec.ProviderID != expected.Spec.ProviderID || node.Labels[karpv1.NodePoolLabelKey] != expected.Labels[karpv1.NodePoolLabelKey] {
+			return fmt.Errorf("startup Node allocation identity changed")
+		}
+		taints := make([]corev1.Taint, 0, len(node.Spec.Taints))
+		for _, taint := range node.Spec.Taints {
+			if !sameTestTaint(taint, startup) {
+				taints = append(taints, taint)
+			}
+		}
+		node.Spec.Taints = taints
+		return nil
+	})
+}
+
+func (s *E2ETestSuite) scaleTestDeployment(ctx context.Context, deployment *appsv1.Deployment, replicas int32) error {
+	if deployment.UID == "" {
+		return fmt.Errorf("scale requires deployment UID for %s/%s", deployment.Namespace, deployment.Name)
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current := &appsv1.Deployment{}
+		if err := s.kubeClient.Get(ctx, client.ObjectKeyFromObject(deployment), current); err != nil {
+			return err
+		}
+		if current.UID != deployment.UID {
+			return fmt.Errorf("deployment identity changed while scaling %s/%s", deployment.Namespace, deployment.Name)
+		}
+		stored := current.DeepCopy()
+		current.Spec.Replicas = &replicas
+		return s.kubeClient.Patch(ctx, current, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
+	})
+}
 
 // createTestNodeClass creates a standard test NodeClass
 func (s *E2ETestSuite) createTestNodeClass(t *testing.T, testName string) *v1alpha1.IBMNodeClass {
@@ -230,7 +297,7 @@ func (s *E2ETestSuite) createTestNodeClassWithoutSecurityGroups(t *testing.T, te
 
 // createTestNodePool creates a standard test NodePool
 func (s *E2ETestSuite) createTestNodePool(t *testing.T, testName, nodeClassName string) *karpv1.NodePool {
-	expireAfter := karpv1.MustParseNillableDuration("5m")
+	expireAfter := karpv1.MustParseNillableDuration("Never")
 	instanceTypes := s.GetMultipleInstanceTypes(t, 3)
 
 	nodePool := &karpv1.NodePool{
@@ -271,7 +338,7 @@ func (s *E2ETestSuite) createTestNodePool(t *testing.T, testName, nodeClassName 
 // createTestNodePoolObject creates a NodePool object without persisting it to the cluster
 // This allows for modifications before creation to avoid update conflicts
 func (s *E2ETestSuite) createTestNodePoolObject(t *testing.T, testName, nodeClassName string) *karpv1.NodePool {
-	expireAfter := karpv1.MustParseNillableDuration("5m")
+	expireAfter := karpv1.MustParseNillableDuration("Never")
 	instanceTypes := s.GetMultipleInstanceTypes(t, 3)
 
 	nodePool := &karpv1.NodePool{
@@ -309,7 +376,7 @@ func (s *E2ETestSuite) createTestNodePoolObject(t *testing.T, testName, nodeClas
 
 // createTestNodePoolWithMultipleInstanceTypes creates a NodePool with known-good instance types
 func (s *E2ETestSuite) createTestNodePoolWithMultipleInstanceTypes(t *testing.T, testName string, nodeClassName string) *karpv1.NodePool {
-	expireAfter := karpv1.MustParseNillableDuration("5m")
+	expireAfter := karpv1.MustParseNillableDuration("Never")
 	// Use dynamically detected instance types instead of hardcoded ones
 	instanceTypes := s.GetMultipleInstanceTypes(t, 4)
 	t.Logf("Using multiple instance types: %v", instanceTypes)
@@ -370,6 +437,8 @@ func (s *E2ETestSuite) createTestNodePoolWithMultipleInstanceTypes(t *testing.T,
 // createDriftStabilityNodePool creates a NodePool with requirements for drift testing
 func (s *E2ETestSuite) createDriftStabilityNodePool(t *testing.T, testName, nodeClassName string) *karpv1.NodePool {
 	expireAfter := karpv1.MustParseNillableDuration("20m") // Longer expiration for stability test
+	nodeClass := &v1alpha1.IBMNodeClass{}
+	require.NoError(t, s.kubeClient.Get(context.Background(), client.ObjectKey{Name: nodeClassName}, nodeClass))
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-nodepool", testName),
@@ -398,7 +467,7 @@ func (s *E2ETestSuite) createDriftStabilityNodePool(t *testing.T, testName, node
 						{
 							Key:      corev1.LabelInstanceTypeStable,
 							Operator: corev1.NodeSelectorOpIn,
-							Values:   []string{"bx2-4x16", "mx2-2x16"},
+							Values:   []string{nodeClass.Spec.InstanceProfile},
 						},
 						{
 							Key:      corev1.LabelArchStable,
@@ -425,7 +494,9 @@ func (s *E2ETestSuite) createDriftStabilityNodePool(t *testing.T, testName, node
 
 // createTestNodeClaim creates a test NodeClaim
 func (s *E2ETestSuite) createTestNodeClaim(t *testing.T, testName, nodeClassName string) *karpv1.NodeClaim {
-	expireAfter := karpv1.MustParseNillableDuration("5m")
+	expireAfter := karpv1.MustParseNillableDuration("Never")
+	nodeClass := &v1alpha1.IBMNodeClass{}
+	require.NoError(t, s.kubeClient.Get(context.Background(), client.ObjectKey{Name: nodeClassName}, nodeClass))
 	nodeClaim := &karpv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-nodeclaim", testName),
@@ -444,7 +515,7 @@ func (s *E2ETestSuite) createTestNodeClaim(t *testing.T, testName, nodeClassName
 				{
 					Key:      "node.kubernetes.io/instance-type",
 					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"bx2-2x8"},
+					Values:   []string{nodeClass.Spec.InstanceProfile},
 				},
 			},
 			ExpireAfter: expireAfter,
@@ -582,7 +653,7 @@ func (s *E2ETestSuite) createTestWorkloadWithInstanceTypeRequirements(t *testing
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("1500m"),
-									corev1.ResourceMemory: resource.MustParse("2Gi"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
 								},
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("3000m"),
@@ -620,4 +691,8 @@ func (s *E2ETestSuite) createTestWorkloadWithInstanceTypeRequirements(t *testing
 	require.NoError(t, err)
 
 	return deployment
+}
+
+func sameTestTaint(left, right corev1.Taint) bool {
+	return left.Key == right.Key && left.Value == right.Value && left.Effect == right.Effect
 }

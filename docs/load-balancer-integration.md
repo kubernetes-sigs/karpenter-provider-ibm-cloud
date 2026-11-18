@@ -74,7 +74,7 @@ loadBalancerIntegration:
 |-------|------|----------|---------|-------------|
 | `enabled` | boolean | No | `false` | Enable/disable load balancer integration |
 | `autoDeregister` | boolean | No | `true` | Automatically remove nodes from load balancers when terminated |
-| `registrationTimeout` | int32 | No | `300` | Maximum time in seconds to wait for node registration |
+| `registrationTimeout` | int32 | No | `300` | Maximum time in seconds for backend registration |
 | `targetGroups` | []LoadBalancerTarget | No | `[]` | List of load balancer target groups to register with |
 
 ### LoadBalancerTarget
@@ -199,3 +199,5 @@ The service ID or user used by Karpenter needs the following IAM permissions:
   ]
 }
 ```
+
+Target cleanup uses a UID-bound snapshot of the original load-balancer/pool IDs, even after class edits or deletion. Retries adopt matching partial registrations; cleanup errors retain finalizers. Health-monitor protocol remains independent of the backend protocol. Legacy registrations require independently verified original targets; see [cleanup recovery](troubleshooting.md#upgrade-and-cleanup-recovery).

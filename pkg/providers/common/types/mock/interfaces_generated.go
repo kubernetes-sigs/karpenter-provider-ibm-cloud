@@ -28,6 +28,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	vpcv1 "github.com/IBM/vpc-go-sdk/vpcv1"
 	types "github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/providers/common/types"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
@@ -103,6 +104,21 @@ func (mr *MockInstanceProviderMockRecorder) Get(ctx, providerID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockInstanceProvider)(nil).Get), ctx, providerID)
 }
 
+// GetFresh mocks base method.
+func (m *MockInstanceProvider) GetFresh(ctx context.Context, providerID string) (*v1.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFresh", ctx, providerID)
+	ret0, _ := ret[0].(*v1.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFresh indicates an expected call of GetFresh.
+func (mr *MockInstanceProviderMockRecorder) GetFresh(ctx, providerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFresh", reflect.TypeOf((*MockInstanceProvider)(nil).GetFresh), ctx, providerID)
+}
+
 // List mocks base method.
 func (m *MockInstanceProvider) List(ctx context.Context) ([]*v1.Node, error) {
 	m.ctrl.T.Helper()
@@ -116,6 +132,21 @@ func (m *MockInstanceProvider) List(ctx context.Context) ([]*v1.Node, error) {
 func (mr *MockInstanceProviderMockRecorder) List(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockInstanceProvider)(nil).List), ctx)
+}
+
+// ListFresh mocks base method.
+func (m *MockInstanceProvider) ListFresh(ctx context.Context, claims []*v10.NodeClaim, nodes []*v1.Node) ([]*v1.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListFresh", ctx, claims, nodes)
+	ret0, _ := ret[0].([]*v1.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListFresh indicates an expected call of ListFresh.
+func (mr *MockInstanceProviderMockRecorder) ListFresh(ctx, claims, nodes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFresh", reflect.TypeOf((*MockInstanceProvider)(nil).ListFresh), ctx, claims, nodes)
 }
 
 // MockVPCInstanceProvider is a mock of VPCInstanceProvider interface.
@@ -140,6 +171,21 @@ func NewMockVPCInstanceProvider(ctrl *gomock.Controller) *MockVPCInstanceProvide
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockVPCInstanceProvider) EXPECT() *MockVPCInstanceProviderMockRecorder {
 	return m.recorder
+}
+
+// CleanupPending mocks base method.
+func (m *MockVPCInstanceProvider) CleanupPending(arg0 context.Context, arg1 *v10.NodeClaim) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupPending", arg0, arg1)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupPending indicates an expected call of CleanupPending.
+func (mr *MockVPCInstanceProviderMockRecorder) CleanupPending(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupPending", reflect.TypeOf((*MockVPCInstanceProvider)(nil).CleanupPending), arg0, arg1)
 }
 
 // Create mocks base method.
@@ -186,6 +232,21 @@ func (mr *MockVPCInstanceProviderMockRecorder) Get(ctx, providerID any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockVPCInstanceProvider)(nil).Get), ctx, providerID)
 }
 
+// GetFresh mocks base method.
+func (m *MockVPCInstanceProvider) GetFresh(ctx context.Context, providerID string) (*v1.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFresh", ctx, providerID)
+	ret0, _ := ret[0].(*v1.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFresh indicates an expected call of GetFresh.
+func (mr *MockVPCInstanceProviderMockRecorder) GetFresh(ctx, providerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFresh", reflect.TypeOf((*MockVPCInstanceProvider)(nil).GetFresh), ctx, providerID)
+}
+
 // List mocks base method.
 func (m *MockVPCInstanceProvider) List(ctx context.Context) ([]*v1.Node, error) {
 	m.ctrl.T.Helper()
@@ -201,6 +262,21 @@ func (mr *MockVPCInstanceProviderMockRecorder) List(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockVPCInstanceProvider)(nil).List), ctx)
 }
 
+// ListFresh mocks base method.
+func (m *MockVPCInstanceProvider) ListFresh(ctx context.Context, claims []*v10.NodeClaim, nodes []*v1.Node) ([]*v1.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListFresh", ctx, claims, nodes)
+	ret0, _ := ret[0].([]*v1.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListFresh indicates an expected call of ListFresh.
+func (mr *MockVPCInstanceProviderMockRecorder) ListFresh(ctx, claims, nodes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFresh", reflect.TypeOf((*MockVPCInstanceProvider)(nil).ListFresh), ctx, claims, nodes)
+}
+
 // UpdateTags mocks base method.
 func (m *MockVPCInstanceProvider) UpdateTags(ctx context.Context, providerID string, tags map[string]string) error {
 	m.ctrl.T.Helper()
@@ -213,6 +289,51 @@ func (m *MockVPCInstanceProvider) UpdateTags(ctx context.Context, providerID str
 func (mr *MockVPCInstanceProviderMockRecorder) UpdateTags(ctx, providerID, tags any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateTags", reflect.TypeOf((*MockVPCInstanceProvider)(nil).UpdateTags), ctx, providerID, tags)
+}
+
+// ValidateLaunchTarget mocks base method.
+func (m *MockVPCInstanceProvider) ValidateLaunchTarget(arg0 context.Context, arg1 *v10.NodeClaim) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ValidateLaunchTarget", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ValidateLaunchTarget indicates an expected call of ValidateLaunchTarget.
+func (mr *MockVPCInstanceProviderMockRecorder) ValidateLaunchTarget(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateLaunchTarget", reflect.TypeOf((*MockVPCInstanceProvider)(nil).ValidateLaunchTarget), arg0, arg1)
+}
+
+// VerifyLaunchInstance mocks base method.
+func (m *MockVPCInstanceProvider) VerifyLaunchInstance(arg0 context.Context, arg1 *v10.NodeClaim) (*vpcv1.Instance, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VerifyLaunchInstance", arg0, arg1)
+	ret0, _ := ret[0].(*vpcv1.Instance)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// VerifyLaunchInstance indicates an expected call of VerifyLaunchInstance.
+func (mr *MockVPCInstanceProviderMockRecorder) VerifyLaunchInstance(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyLaunchInstance", reflect.TypeOf((*MockVPCInstanceProvider)(nil).VerifyLaunchInstance), arg0, arg1)
+}
+
+// VerifyLaunchNetworkAddresses mocks base method.
+func (m *MockVPCInstanceProvider) VerifyLaunchNetworkAddresses(arg0 context.Context, arg1 *v10.NodeClaim, arg2 *vpcv1.Instance) ([]string, []string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VerifyLaunchNetworkAddresses", arg0, arg1, arg2)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].([]string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// VerifyLaunchNetworkAddresses indicates an expected call of VerifyLaunchNetworkAddresses.
+func (mr *MockVPCInstanceProviderMockRecorder) VerifyLaunchNetworkAddresses(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyLaunchNetworkAddresses", reflect.TypeOf((*MockVPCInstanceProvider)(nil).VerifyLaunchNetworkAddresses), arg0, arg1, arg2)
 }
 
 // MockIKSWorkerPoolProvider is a mock of IKSWorkerPoolProvider interface.
@@ -237,6 +358,34 @@ func NewMockIKSWorkerPoolProvider(ctrl *gomock.Controller) *MockIKSWorkerPoolPro
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockIKSWorkerPoolProvider) EXPECT() *MockIKSWorkerPoolProviderMockRecorder {
 	return m.recorder
+}
+
+// Cleanup mocks base method.
+func (m *MockIKSWorkerPoolProvider) Cleanup(arg0 context.Context, arg1 *v10.NodeClaim) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Cleanup", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Cleanup indicates an expected call of Cleanup.
+func (mr *MockIKSWorkerPoolProviderMockRecorder) Cleanup(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cleanup", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).Cleanup), arg0, arg1)
+}
+
+// ConfirmGone mocks base method.
+func (m *MockIKSWorkerPoolProvider) ConfirmGone(arg0 context.Context, arg1 *v10.NodeClaim) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfirmGone", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ConfirmGone indicates an expected call of ConfirmGone.
+func (mr *MockIKSWorkerPoolProviderMockRecorder) ConfirmGone(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmGone", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).ConfirmGone), arg0, arg1)
 }
 
 // Create mocks base method.
@@ -312,6 +461,21 @@ func (mr *MockIKSWorkerPoolProviderMockRecorder) Get(ctx, providerID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).Get), ctx, providerID)
 }
 
+// GetFresh mocks base method.
+func (m *MockIKSWorkerPoolProvider) GetFresh(ctx context.Context, providerID string) (*v1.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFresh", ctx, providerID)
+	ret0, _ := ret[0].(*v1.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFresh indicates an expected call of GetFresh.
+func (mr *MockIKSWorkerPoolProviderMockRecorder) GetFresh(ctx, providerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFresh", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).GetFresh), ctx, providerID)
+}
+
 // GetPool mocks base method.
 func (m *MockIKSWorkerPoolProvider) GetPool(ctx context.Context, clusterID, poolID string) (*types.WorkerPool, error) {
 	m.ctrl.T.Helper()
@@ -342,6 +506,21 @@ func (mr *MockIKSWorkerPoolProviderMockRecorder) List(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).List), ctx)
 }
 
+// ListFresh mocks base method.
+func (m *MockIKSWorkerPoolProvider) ListFresh(ctx context.Context, claims []*v10.NodeClaim, nodes []*v1.Node) ([]*v1.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListFresh", ctx, claims, nodes)
+	ret0, _ := ret[0].([]*v1.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListFresh indicates an expected call of ListFresh.
+func (mr *MockIKSWorkerPoolProviderMockRecorder) ListFresh(ctx, claims, nodes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFresh", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).ListFresh), ctx, claims, nodes)
+}
+
 // ListPools mocks base method.
 func (m *MockIKSWorkerPoolProvider) ListPools(ctx context.Context, clusterID string) ([]*types.WorkerPool, error) {
 	m.ctrl.T.Helper()
@@ -355,6 +534,20 @@ func (m *MockIKSWorkerPoolProvider) ListPools(ctx context.Context, clusterID str
 func (mr *MockIKSWorkerPoolProviderMockRecorder) ListPools(ctx, clusterID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPools", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).ListPools), ctx, clusterID)
+}
+
+// PrepareLegacyRetirement mocks base method.
+func (m *MockIKSWorkerPoolProvider) PrepareLegacyRetirement(arg0 context.Context, arg1 *v10.NodeClaim) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PrepareLegacyRetirement", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PrepareLegacyRetirement indicates an expected call of PrepareLegacyRetirement.
+func (mr *MockIKSWorkerPoolProviderMockRecorder) PrepareLegacyRetirement(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareLegacyRetirement", reflect.TypeOf((*MockIKSWorkerPoolProvider)(nil).PrepareLegacyRetirement), arg0, arg1)
 }
 
 // ResizePool mocks base method.

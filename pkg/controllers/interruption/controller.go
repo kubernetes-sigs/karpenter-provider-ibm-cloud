@@ -66,6 +66,7 @@ import (
 //   - StorageFailure: Boot/data volume issues
 type Controller struct {
 	kubeClient           client.Client
+	apiReader            client.Reader
 	recorder             record.EventRecorder
 	unavailableOfferings *cache.UnavailableOfferings
 }
@@ -86,12 +87,19 @@ const (
 	InterruptionReasonAnnotation    = "karpenter-ibm.sh/interruption-reason"
 	InterruptionTimeAnnotation      = "karpenter-ibm.sh/interruption-time"
 	InterruptionCompletedAnnotation = "karpenter-ibm.sh/interruption-completed"
+	InterruptionEpisodeAnnotation   = "karpenter-ibm.sh/interruption-episode"
+	InterruptionCordonAnnotation    = "karpenter-ibm.sh/interruption-owned-cordon"
 )
 
 // NewController constructs a controller instance
-func NewController(kubeClient client.Client, recorder record.EventRecorder, unavailableOfferings *cache.UnavailableOfferings) *Controller {
+func NewController(kubeClient client.Client, recorder record.EventRecorder, unavailableOfferings *cache.UnavailableOfferings, readers ...client.Reader) *Controller {
+	reader := client.Reader(kubeClient)
+	if len(readers) > 0 && readers[0] != nil {
+		reader = readers[0]
+	}
 	return &Controller{
 		kubeClient:           kubeClient,
+		apiReader:            reader,
 		recorder:             recorder,
 		unavailableOfferings: unavailableOfferings,
 	}
@@ -114,6 +122,11 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		}
 		interrupted, reason := c.isNodeInterrupted(ctx, &node)
 		if !interrupted {
+			if c.checkCapacitySignals(&node) == "" {
+				if err := c.clearRecoveredInterruption(ctx, &node); err != nil {
+					failures = append(failures, err)
+				}
+			}
 			continue
 		}
 		if err := c.handleInterruption(ctx, &node, reason); err != nil {
@@ -139,13 +152,11 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 func (c *Controller) isNodeInterrupted(ctx context.Context, node *v1.Node) (bool, InterruptionReason) {
 	logger := log.FromContext(ctx).WithValues("node", node.Name)
 
-	// Check if node already has interruption annotation (avoid duplicate processing)
-	if node.Annotations[InterruptionCompletedAnnotation] == "true" {
-		return false, ""
-	}
-
 	// Check for capacity-related issues from node events or annotations
 	if reason := c.checkCapacitySignals(node); reason != "" {
+		if node.Annotations[InterruptionCompletedAnnotation] == "true" && node.Annotations[InterruptionEpisodeAnnotation] == interruptionEpisode(node) {
+			return false, ""
+		}
 		logger.V(1).Info("Detecting capacity-related interruption", "reason", reason)
 		return true, reason
 	}
@@ -172,11 +183,14 @@ func (c *Controller) Name() string {
 func (c *Controller) markNodeAsInterrupted(ctx context.Context, node *v1.Node, reason InterruptionReason) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current := &v1.Node{}
-		if err := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(node), current); err != nil {
+		if err := c.apiReader.Get(ctx, client.ObjectKeyFromObject(node), current); err != nil {
 			return client.IgnoreNotFound(err)
 		}
 		if current.UID != node.UID {
 			return fmt.Errorf("node UID changed while handling interruption")
+		}
+		if c.checkCapacitySignals(current) != reason || interruptionEpisode(current) != interruptionEpisode(node) {
+			return fmt.Errorf("interruption episode changed before completion")
 		}
 		stored := current.DeepCopy()
 		if current.Annotations == nil {
@@ -184,6 +198,7 @@ func (c *Controller) markNodeAsInterrupted(ctx context.Context, node *v1.Node, r
 		}
 		current.Annotations[InterruptionAnnotation] = "true"
 		current.Annotations[InterruptionCompletedAnnotation] = "true"
+		current.Annotations[InterruptionEpisodeAnnotation] = interruptionEpisode(current)
 		current.Annotations[InterruptionReasonAnnotation] = string(reason)
 		current.Annotations[InterruptionTimeAnnotation] = time.Now().Format(time.RFC3339)
 		return c.kubeClient.Patch(ctx, current, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
@@ -317,7 +332,7 @@ func (c *Controller) cordon(ctx context.Context, node *v1.Node) (*v1.Node, error
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		result = nil
 		current := &v1.Node{}
-		if err := c.kubeClient.Get(ctx, k8stypes.NamespacedName{Name: node.Name}, current); err != nil {
+		if err := c.apiReader.Get(ctx, k8stypes.NamespacedName{Name: node.Name}, current); err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil
 			}
@@ -326,9 +341,16 @@ func (c *Controller) cordon(ctx context.Context, node *v1.Node) (*v1.Node, error
 		if current.UID != node.UID {
 			return fmt.Errorf("node UID changed before cordon")
 		}
+		if interruptionEpisode(current) != interruptionEpisode(node) || c.checkCapacitySignals(current) == "" {
+			return fmt.Errorf("interruption episode changed before cordon")
+		}
 		if !current.Spec.Unschedulable {
 			stored := current.DeepCopy()
 			current.Spec.Unschedulable = true
+			if current.Annotations == nil {
+				current.Annotations = map[string]string{}
+			}
+			current.Annotations[InterruptionCordonAnnotation] = "true"
 			if err := c.kubeClient.Patch(ctx, current, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 				return err
 			}
@@ -337,6 +359,36 @@ func (c *Controller) cordon(ctx context.Context, node *v1.Node) (*v1.Node, error
 		return nil
 	})
 	return result, err
+}
+
+func interruptionEpisode(node *v1.Node) string {
+	return strings.Join([]string{node.Annotations["ibm-cloud.kubernetes.io/status"], node.Annotations["ibm-cloud.kubernetes.io/error"], node.Annotations["ibm-cloud.kubernetes.io/maintenance"]}, "|")
+}
+
+func (c *Controller) clearRecoveredInterruption(ctx context.Context, node *v1.Node) error {
+	if node.Annotations[InterruptionAnnotation] == "" && node.Annotations[InterruptionCordonAnnotation] == "" {
+		return nil
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current := &v1.Node{}
+		if err := c.apiReader.Get(ctx, client.ObjectKeyFromObject(node), current); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if current.UID != node.UID {
+			return fmt.Errorf("node UID changed during interruption recovery")
+		}
+		if !current.DeletionTimestamp.IsZero() || c.checkCapacitySignals(current) != "" {
+			return nil
+		}
+		stored := current.DeepCopy()
+		if current.Annotations[InterruptionCordonAnnotation] == "true" {
+			current.Spec.Unschedulable = false
+		}
+		for _, key := range []string{InterruptionAnnotation, InterruptionCompletedAnnotation, InterruptionEpisodeAnnotation, InterruptionCordonAnnotation, InterruptionReasonAnnotation, InterruptionTimeAnnotation} {
+			delete(current.Annotations, key)
+		}
+		return c.kubeClient.Patch(ctx, current, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{}))
+	})
 }
 
 // deleteIfStillInterrupted deletes the node only if the signal still holds on the exact

@@ -26,6 +26,7 @@ import (
 )
 
 var (
+	attachmentNamePattern = regexp.MustCompile(`^[a-z]([a-z0-9-]*[a-z0-9])?$`)
 	// IBM Cloud resource ID pattern - supports variable-length region numbers (r006, r010, r042, etc.)
 	ibmResourceIDPattern = regexp.MustCompile(`^r[0-9]+-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$`)
 	// IBM Cloud subnet ID pattern - subnets use 4-digit prefix instead of r###-
@@ -189,23 +190,6 @@ func (nc *IBMNodeClass) generateOneOfWarnings(nodeClass *IBMNodeClass) admission
 				"STRONG RECOMMENDATION: Specify a static instanceProfile (e.g., 'bx2-2x8') to prevent provisioning failures.")
 	}
 
-	// Warn about complex block device mapping combinations
-	if len(nodeClass.Spec.BlockDeviceMappings) > 1 {
-		hasRootVolume := false
-		for _, mapping := range nodeClass.Spec.BlockDeviceMappings {
-			if mapping.RootVolume {
-				hasRootVolume = true
-				break
-			}
-		}
-		if !hasRootVolume {
-			warnings = append(warnings,
-				"Multiple block device mappings specified without marking any as root volume. "+
-					"This may cause volume attachment oneOf constraint errors. "+
-					"Ensure exactly one mapping has RootVolume=true.")
-		}
-	}
-
 	return warnings
 }
 
@@ -218,7 +202,7 @@ func (nc *IBMNodeClass) validateBlockDeviceMappings(nodeClass *IBMNodeClass) []s
 		return errs
 	}
 
-	// Rule 1: Exactly one root volume must be specified if any mappings exist
+	// A data-only mapping retains the default boot volume.
 	rootVolumeCount := 0
 	for _, mapping := range nodeClass.Spec.BlockDeviceMappings {
 		if mapping.RootVolume {
@@ -226,18 +210,22 @@ func (nc *IBMNodeClass) validateBlockDeviceMappings(nodeClass *IBMNodeClass) []s
 		}
 	}
 
-	if rootVolumeCount == 0 {
-		errs = append(errs,
-			"block device mappings specified but no root volume marked: "+
-				"exactly one mapping must have RootVolume=true to satisfy IBM VPC oneOf constraints")
-	} else if rootVolumeCount > 1 {
-		errs = append(errs,
-			fmt.Sprintf("multiple root volumes specified (%d): "+
-				"exactly one mapping must have RootVolume=true to satisfy IBM VPC oneOf constraints", rootVolumeCount))
+	if rootVolumeCount > 1 {
+		errs = append(errs, fmt.Sprintf("multiple root volumes specified (%d): at most one mapping may have RootVolume=true", rootVolumeCount))
 	}
 
 	// Rule 2: Validate individual volume specifications for oneOf requirements
+	names := map[string]bool{}
 	for i, mapping := range nodeClass.Spec.BlockDeviceMappings {
+		if mapping.DeviceName != nil && (len(*mapping.DeviceName) > 63 || !attachmentNamePattern.MatchString(*mapping.DeviceName)) {
+			errs = append(errs, fmt.Sprintf("block device mapping %d has an invalid IBM attachment name", i))
+		}
+		if mapping.DeviceName != nil {
+			if names[*mapping.DeviceName] {
+				errs = append(errs, fmt.Sprintf("block device mapping %d duplicates an attachment name", i))
+			}
+			names[*mapping.DeviceName] = true
+		}
 		if volErrs := nc.validateVolumeSpec(mapping.VolumeSpec, i, mapping.RootVolume); len(volErrs) > 0 {
 			errs = append(errs, volErrs...)
 		}

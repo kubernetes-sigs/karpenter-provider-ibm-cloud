@@ -21,10 +21,12 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +34,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/kubernetes-sigs/karpenter-provider-ibm-cloud/pkg/apis/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 // TestE2EImageSelector tests the imageSelector functionality with Ubuntu images
@@ -43,6 +47,7 @@ func TestE2EImageSelector(t *testing.T) {
 
 	// Test Case 1: Ubuntu 24.04 imageSelector (latest LTS)
 	t.Run("Ubuntu_24_04_ImageSelector", func(t *testing.T) {
+		t.Cleanup(func() { suite.cleanupTestResources(t, testName+"-ubuntu24") })
 		nodeClass := suite.createImageSelectorNodeClass(t, testName+"-ubuntu24", &v1alpha1.ImageSelector{
 			OS:           "ubuntu",
 			MajorVersion: "24",
@@ -72,14 +77,13 @@ func TestE2EImageSelector(t *testing.T) {
 		t.Logf("Verified Karpenter nodes exist")
 
 		// Verify the deployed image through node verification
-		suite.verifyImageSelectorResult(t, "ubuntu", "24", "04")
+		suite.verifyImageSelectorResult(t, nodePool, nodeClass)
 
-		// Cleanup
-		suite.cleanupTestResources(t, testName+"-ubuntu24")
 	})
 
 	// Test Case 2: ImageSelector with placement strategy (no zone/subnet specified)
 	t.Run("ImageSelector_with_PlacementStrategy", func(t *testing.T) {
+		t.Cleanup(func() { suite.cleanupTestResources(t, testName+"-placement") })
 		nodeClass := suite.createImageSelectorNodeClassWithPlacementStrategy(t, testName+"-placement", &v1alpha1.ImageSelector{
 			OS:           "ubuntu",
 			MajorVersion: "22",
@@ -112,11 +116,9 @@ func TestE2EImageSelector(t *testing.T) {
 		t.Logf("Verified Karpenter nodes exist")
 
 		// Verify the deployed image and placement through node verification
-		suite.verifyImageSelectorResult(t, "ubuntu", "22", "04")
-		suite.verifyNodePlacementStrategy(t)
+		suite.verifyImageSelectorResult(t, nodePool, nodeClass)
+		suite.verifyNodePlacementStrategy(t, nodePool, nodeClass)
 
-		// Cleanup
-		suite.cleanupTestResources(t, testName+"-placement")
 	})
 }
 
@@ -132,7 +134,9 @@ func (s *E2ETestSuite) createImageSelectorNodeClass(t *testing.T, testName strin
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-nodeclass", testName),
 			Labels: map[string]string{
-				"test-name": testName,
+				"test-name":  testName,
+				"test":       "e2e",
+				"created-by": "karpenter-e2e",
 			},
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
@@ -175,7 +179,9 @@ func (s *E2ETestSuite) createImageSelectorNodeClassWithPlacementStrategy(t *test
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-nodeclass", testName),
 			Labels: map[string]string{
-				"test-name": testName,
+				"test-name":  testName,
+				"test":       "e2e",
+				"created-by": "karpenter-e2e",
 			},
 		},
 		Spec: v1alpha1.IBMNodeClassSpec{
@@ -211,73 +217,110 @@ func (s *E2ETestSuite) createImageSelectorNodeClassWithPlacementStrategy(t *test
 	return nodeClass
 }
 
-// verifyImageSelectorResult verifies that Karpenter nodes were created with images matching the selector criteria
-func (s *E2ETestSuite) verifyImageSelectorResult(t *testing.T, expectedOS string, expectedMajorVersion string, expectedMinorVersion string) {
+func (s *E2ETestSuite) verifyImageSelectorResult(t *testing.T, pool *karpv1.NodePool, class *v1alpha1.IBMNodeClass) {
+	t.Helper()
 	ctx := context.Background()
-
-	// Get all Karpenter-managed nodes
-	var nodeList corev1.NodeList
-	err := s.kubeClient.List(ctx, &nodeList)
-	require.NoError(t, err, "Failed to get node list")
-
-	karpenterNodes := 0
-	for _, node := range nodeList.Items {
-		if labelValue, exists := node.Labels["karpenter.sh/nodepool"]; exists && labelValue != "" {
-			karpenterNodes++
-
-			// Check node labels for OS information
-			osImage := node.Labels["node.kubernetes.io/os"]
-			require.NotEmpty(t, osImage, "Node should have OS label")
-			require.Equal(t, "linux", osImage, "Node should have linux OS")
-
-			// Log the node with expected image verification
-			t.Logf("Verified Karpenter node %s uses expected OS: %s", node.Name, osImage)
-
-			// In a full implementation, we would verify the actual IBM Cloud instance image
-			// For now, we verify that the node was created successfully by Karpenter
-			// which indicates the imageSelector was processed correctly
-			if expectedMinorVersion != "" {
-				t.Logf("Node %s expected to use %s %s.%s image", node.Name, expectedOS, expectedMajorVersion, expectedMinorVersion)
-			} else {
-				t.Logf("Node %s expected to use %s %s.x image", node.Name, expectedOS, expectedMajorVersion)
+	var fresh v1alpha1.IBMNodeClass
+	require.NoError(t, s.kubeClient.Get(ctx, client.ObjectKeyFromObject(class), &fresh))
+	require.Equal(t, class.UID, fresh.UID)
+	require.NotNil(t, fresh.Spec.ImageSelector)
+	var claims karpv1.NodeClaimList
+	require.NoError(t, s.kubeClient.List(ctx, &claims, client.MatchingLabels{karpv1.NodePoolLabelKey: pool.Name}))
+	require.NotEmpty(t, claims.Items, "Image selector test must own real allocations")
+	vpc, err := s.vpcClient()
+	require.NoError(t, err)
+	for _, claim := range claims.Items {
+		owned := false
+		for _, owner := range claim.OwnerReferences {
+			if owner.Kind == "NodePool" && owner.UID == pool.UID {
+				owned = true
 			}
 		}
+		require.True(t, owned, "Image verification must not include foreign claims")
+		require.NotNil(t, claim.Spec.NodeClassRef)
+		require.Equal(t, class.Name, claim.Spec.NodeClassRef.Name)
+		id := vpcInstanceID(claim.Status.ProviderID)
+		require.NotEmpty(t, id)
+		instance, err := vpc.GetInstance(ctx, id)
+		require.NoError(t, err)
+		s.verifyOwnedTestInstance(t, instance, &claim, class)
+		require.NotNil(t, instance.Image)
+		require.NotNil(t, instance.Image.ID)
+		image, err := vpc.GetImage(ctx, *instance.Image.ID)
+		require.NoError(t, err)
+		require.NoError(t, selectedTestImageMatches(image, fresh.Spec.ImageSelector))
+		var node corev1.Node
+		require.NoError(t, s.kubeClient.Get(ctx, client.ObjectKey{Name: claim.Status.NodeName}, &node))
+		require.Equal(t, "linux", node.Labels[corev1.LabelOSStable])
+		t.Logf("Verified owned instance %s image %s (%s)", id, *image.ID, *image.Name)
 	}
+}
 
-	require.Greater(t, karpenterNodes, 0, "At least one Karpenter node should exist with imageSelector")
-	t.Logf("Verified %d Karpenter nodes with imageSelector requirements", karpenterNodes)
+func selectedTestImageMatches(image *vpcv1.Image, selector *v1alpha1.ImageSelector) error {
+	if image == nil || image.ID == nil || image.Name == nil || image.OperatingSystem == nil || selector == nil {
+		return fmt.Errorf("image has no verifiable identity or operating system metadata")
+	}
+	os := image.OperatingSystem
+	if os.Family == nil || (!strings.EqualFold(*os.Family, selector.OS) && !strings.EqualFold(*os.Family, selector.OS+" Linux")) || os.Name == nil || os.Version == nil {
+		return fmt.Errorf("actual image operating system differs from selector")
+	}
+	if !regexp.MustCompile("^" + regexp.QuoteMeta(selector.MajorVersion) + "([.-]|$)").MatchString(*os.Version) {
+		return fmt.Errorf("actual image major version differs from selector")
+	}
+	version := selector.OS + "-" + selector.MajorVersion
+	if selector.MinorVersion != "" {
+		version += "-" + selector.MinorVersion
+	}
+	if !strings.HasPrefix(strings.ToLower(*os.Name), version+"-") {
+		return fmt.Errorf("actual operating system name does not identify the requested OS version")
+	}
+	if !strings.Contains(strings.ToLower(*image.Name), version+"-") {
+		return fmt.Errorf("actual image name does not identify the requested OS version")
+	}
+	if selector.Architecture != "" && (os.Architecture == nil || *os.Architecture != selector.Architecture) {
+		return fmt.Errorf("actual image architecture differs from selector")
+	}
+	if selector.Variant != "" && !strings.Contains(*image.Name, "-"+selector.Variant+"-") {
+		return fmt.Errorf("actual image variant differs from selector")
+	}
+	return nil
 }
 
 // verifyNodePlacementStrategy verifies that nodes were placed according to the placement strategy
-func (s *E2ETestSuite) verifyNodePlacementStrategy(t *testing.T) {
+func (s *E2ETestSuite) verifyNodePlacementStrategy(t *testing.T, pool *karpv1.NodePool, class *v1alpha1.IBMNodeClass) {
+	t.Helper()
 	ctx := context.Background()
-
-	// Get all Karpenter-managed nodes
-	var nodeList corev1.NodeList
-	err := s.kubeClient.List(ctx, &nodeList)
-	require.NoError(t, err, "Failed to get node list")
-
-	karpenterNodes := 0
-	for _, node := range nodeList.Items {
-		if labelValue, exists := node.Labels["karpenter.sh/nodepool"]; exists && labelValue != "" {
-			karpenterNodes++
-
-			// Check zone placement
-			zoneLabel := node.Labels["topology.kubernetes.io/zone"]
-			require.NotEmpty(t, zoneLabel, "Node should have zone label")
-			require.Contains(t, zoneLabel, s.testRegion, "Node should be in the correct region")
-
-			t.Logf("Node %s placed in zone: %s", node.Name, zoneLabel)
-
-			// Verify the zone is within the expected region
-			expectedPrefix := s.testRegion + "-"
-			require.True(t, strings.HasPrefix(zoneLabel, expectedPrefix),
-				fmt.Sprintf("Zone %s should be in region %s", zoneLabel, s.testRegion))
+	var fresh v1alpha1.IBMNodeClass
+	require.NoError(t, s.kubeClient.Get(ctx, client.ObjectKeyFromObject(class), &fresh))
+	require.Equal(t, class.UID, fresh.UID)
+	require.NotEmpty(t, fresh.Status.SelectedSubnets)
+	var claims karpv1.NodeClaimList
+	require.NoError(t, s.kubeClient.List(ctx, &claims, client.MatchingLabels{karpv1.NodePoolLabelKey: pool.Name}))
+	require.NotEmpty(t, claims.Items)
+	vpc, err := s.vpcClient()
+	require.NoError(t, err)
+	for _, claim := range claims.Items {
+		owned := false
+		for _, owner := range claim.OwnerReferences {
+			if owner.Kind == "NodePool" && owner.UID == pool.UID {
+				owned = true
+			}
 		}
+		require.True(t, owned, "Placement verification must include only this test's allocations")
+		instance, err := vpc.GetInstance(ctx, vpcInstanceID(claim.Status.ProviderID))
+		require.NoError(t, err)
+		s.verifyOwnedTestInstance(t, instance, &claim, class)
+		actualSubnet := instanceSubnetID(instance)
+		require.NotEmpty(t, actualSubnet)
+		require.Contains(t, fresh.Status.SelectedSubnets, actualSubnet)
+		require.NotNil(t, instance.Zone)
+		require.NotNil(t, instance.Zone.Name)
+		var node corev1.Node
+		require.NoError(t, s.kubeClient.Get(ctx, client.ObjectKey{Name: claim.Status.NodeName}, &node))
+		require.Equal(t, claim.Status.ProviderID, node.Spec.ProviderID)
+		require.Equal(t, *instance.Zone.Name, node.Labels[corev1.LabelTopologyZone])
+		require.True(t, strings.HasPrefix(*instance.Zone.Name, fresh.Spec.Region+"-"))
 	}
-
-	require.Greater(t, karpenterNodes, 0, "At least one Karpenter node should exist with placement strategy")
-	t.Logf("Verified %d Karpenter nodes with proper placement", karpenterNodes)
 }
 
 // waitForSubnetSelection waits for the NodeClass status to populate selectedSubnets

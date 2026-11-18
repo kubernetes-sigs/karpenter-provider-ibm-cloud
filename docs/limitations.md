@@ -6,42 +6,13 @@ This document outlines the current limitations, constraints, and known issues wi
 
 ### Networking Constraints
 
-#### Single Zone per NodeClass
-- **Limitation**: Each IBMNodeClass can only specify one zone
-- **Impact**: Cannot auto-balance across multiple zones in single NodeClass
-- **Workaround**: Create multiple NodeClasses for different zones
-
-```yaml
-# Required: Separate NodeClass per zone
----
-apiVersion: karpenter-ibm.sh/v1alpha1
-kind: IBMNodeClass
-metadata:
-  name: nodeclass-us-south-1
-spec:
-  zone: us-south-1
----
-apiVersion: karpenter-ibm.sh/v1alpha1
-kind: IBMNodeClass
-metadata:
-  name: nodeclass-us-south-2
-spec:
-  zone: us-south-2
-```
-
-#### No Multi-Zone Auto-Placement
-- **Status**: Not implemented
-- **Impact**: Manual zone specification required
+#### Zone Selection
+An explicit zone/subnet pins placement. Omitting both enables automatic subnet selection. `Balanced` placement serializes per-NodeClass UID reservations, counts pending and active allocations, and keeps the selected zone across retries.
 
 ### Storage Limitations
 
-#### Limited Storage Integration
-- **Current**: Basic boot volume support only
-- **Missing**:
-  - Dynamic storage provisioning during node creation
-  - Multiple storage attachments
-  - Custom storage profiles
-- **Workaround**: Configure storage post-provisioning via storage classes
+#### Block Storage
+`blockDeviceMappings` supports boot and data volumes with profile/IOPS settings. Omitting a root mapping preserves the default boot volume; at most one root mapping is allowed. Attachment names must be valid and unique. Persistent workloads should use Kubernetes storage classes.
 
 #### No Instance Store Support
 - **Status**: Not implemented
@@ -58,7 +29,7 @@ VPC launches store their original configuration and use a name derived from the 
 
 New VPC launches resolve and record the account from the VPC API key. Helm's optional `credentials.accountId` checks that the credential belongs to the expected account. Credential changes to another account block recovery and deletion instead of treating that account's 404 as proof of absence.
 
-Older claims record account identity after a successful lookup of their exact instance. If that instance is already absent and the claim has no recorded account, it remains quarantined until an operator verifies the original account and records its ID in the `karpenter-ibm.sh/account-id` annotation. Existing resources without immutable ownership tags are excluded from automatic orphan deletion. Retained volumes are not removed by launch rollback.
+Claims without a launch checkpoint record account identity after a successful lookup of their exact instance, and are deleted only when that instance's name equals the claim name and its CRN matches the recorded account. If that instance is already absent and the claim has no recorded account, it remains quarantined until an operator verifies the original account and records its ID in the `karpenter-ibm.sh/account-id` annotation. Existing resources without immutable ownership tags are excluded from automatic orphan deletion. Retained volumes are not removed by launch rollback.
 
 #### IKS Mode Instance Type Constraints {#iks-mode-instance-type-constraints}
 
@@ -77,20 +48,23 @@ See [IKS integration](iks-integration.md) for configuration and recovery behavio
   - Dynamic tag updates
   - Cost allocation tags
 
-#### No Interruption Detection
-- **Impact**: Cannot preemptively handle instance interruptions
+#### Interruption Detection
+Spot/preemption and running-instance checks require cloud ownership evidence before changing a claim. Detection depends on available cloud status; it does not guarantee advance notice.
 
 ### Networking Features
 
-#### No Load Balancer Integration
-- **Missing**: Automatic load balancer target registration
-- **Impact**: Manual load balancer configuration required
-- **Workaround**: Use Kubernetes ingress controllers
+#### Load Balancer Integration
+Configured targets are registered and saved for cleanup; deregistration failures retain finalizers. See [load-balancer integration](load-balancer-integration.md).
 
 #### Limited Security Group Management
 - **Current**: Uses default or specified security groups
 - **Missing**: Dynamic security group creation and management
 - **Workaround**: Pre-create security groups with required rules
+
+## Pricing and Capacity
+Unavailable, invalid, or nonpositive quotes produce no launchable offering. Successful pricing snapshots expire after 12 hours; refresh failures use a one-minute cooldown and retain the previous complete snapshot. Generation 2 pricing sums CPU/RAM components; later generations use exact regional instance-hour quotes and exclude optional OS charges.
+
+Kubelet pod capacity defaults to 110; `maxPods` and `podsPerCore` constrain advertised and guest capacity. IKS API requests share a per-process 10 requests/second limit, burst 1; shared-public-IP traffic across processes needs an external aggregate limit.
 
 ## Integration Limitations
 

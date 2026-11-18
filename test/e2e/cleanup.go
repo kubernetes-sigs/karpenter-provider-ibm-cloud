@@ -32,6 +32,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -109,6 +110,45 @@ func (s *E2ETestSuite) newCleanupScope(ctx context.Context, testName string) (cl
 		}
 	}
 	return scope, nil
+}
+
+func (s *E2ETestSuite) quiesceCleanupPools(ctx context.Context, scope cleanupScope) error {
+	for name, expectedUID := range scope.poolUIDs {
+		if expectedUID == "" {
+			return fmt.Errorf("cleanup identity changed for NodePool %s", name)
+		}
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			current := &karpv1.NodePool{}
+			if err := s.kubeClient.Get(ctx, client.ObjectKey{Name: name}, current); err != nil {
+				return client.IgnoreNotFound(err)
+			}
+			if current.UID != expectedUID {
+				return fmt.Errorf("cleanup identity changed for NodePool %s", name)
+			}
+			if !scope.directlyOwns(current) {
+				return fmt.Errorf("cleanup ownership changed for NodePool %s", name)
+			}
+			if current.DeletionTimestamp != nil {
+				return nil
+			}
+			if cpu, exists := current.Spec.Limits[corev1.ResourceCPU]; exists && cpu.IsZero() {
+				return nil
+			}
+			stored := current.DeepCopy()
+			if current.Spec.Limits == nil {
+				current.Spec.Limits = karpv1.Limits{}
+			}
+			// Pending cluster workloads must not replace claims while teardown waits for their deletion.
+			current.Spec.Limits[corev1.ResourceCPU] = resource.MustParse("0")
+			return client.IgnoreNotFound(s.kubeClient.Patch(ctx, current, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})))
+		}); err != nil {
+			return fmt.Errorf("quiescing cleanup NodePool %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (s *E2ETestSuite) cleanupObjects(ctx context.Context, list client.ObjectList, scope cleanupScope) ([]client.Object, error) {
@@ -235,6 +275,9 @@ func (s *E2ETestSuite) cleanupSelectedResources(ctx context.Context, testName st
 	if err != nil {
 		return err
 	}
+	if quiesceErr := s.quiesceCleanupPools(ctx, scope); quiesceErr != nil {
+		return quiesceErr
+	}
 	claims, err := s.cleanupObjects(ctx, &karpv1.NodeClaimList{}, scope)
 	if err != nil {
 		return err
@@ -251,6 +294,7 @@ func (s *E2ETestSuite) cleanupSelectedResources(ctx context.Context, testName st
 		timeout time.Duration
 	}{
 		{"PodDisruptionBudget", &policyv1.PodDisruptionBudgetList{}, time.Minute},
+		{"DaemonSet", &appsv1.DaemonSetList{}, 2 * time.Minute},
 		{"Deployment", &appsv1.DeploymentList{}, 2 * time.Minute},
 		{"Pod", &corev1.PodList{}, 2 * time.Minute},
 		{"NodeClaim", &karpv1.NodeClaimList{}, 5 * time.Minute},

@@ -70,129 +70,6 @@ func TestFetchPricingFromAPI_EmptyMetricsResponse(t *testing.T) {
 	assert.Contains(t, err.Error(), "no pricing data found in API response")
 }
 
-func TestFetchPricingFromAPI_NonUSDFallback(t *testing.T) {
-	ctx := context.Background()
-	fakePricing := fakedata.NewPricingAPI()
-
-	eur := "EUR"
-	eurPrice := 0.088
-	fakePricing.PricingByID["eur-id"] = &globalcatalogv1.PricingGet{
-		Metrics: []globalcatalogv1.Metrics{
-			{
-				Amounts: []globalcatalogv1.Amount{
-					{
-						Currency: &eur,
-						Prices:   []globalcatalogv1.Price{{Price: &eurPrice}},
-					},
-				},
-			},
-		},
-	}
-
-	provider := &IBMPricingProvider{
-		pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),
-		pricingMap:     make(map[string]map[string]float64),
-		ttl:            12 * time.Hour,
-		priceCache:     cache.New(12 * time.Hour),
-		logger:         logging.PricingLogger(),
-	}
-
-	price, err := provider.fetchPricingFromAPI(ctx, "eur-id")
-	require.NoError(t, err)
-	assert.Equal(t, eurPrice, price)
-}
-
-func TestFetchPricingFromAPI_NilAmounts(t *testing.T) {
-	ctx := context.Background()
-	fakePricing := fakedata.NewPricingAPI()
-
-	fakePricing.PricingByID["nil-amounts-id"] = &globalcatalogv1.PricingGet{
-		Metrics: []globalcatalogv1.Metrics{
-			{Amounts: nil},
-		},
-	}
-
-	provider := &IBMPricingProvider{
-		pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),
-		pricingMap:     make(map[string]map[string]float64),
-		ttl:            12 * time.Hour,
-		priceCache:     cache.New(12 * time.Hour),
-		logger:         logging.PricingLogger(),
-	}
-
-	price, err := provider.fetchPricingFromAPI(ctx, "nil-amounts-id")
-	assert.Equal(t, 0.0, price)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no pricing data found in API response")
-}
-
-func TestFetchPricingFromAPI_NilPricePointer(t *testing.T) {
-	ctx := context.Background()
-	fakePricing := fakedata.NewPricingAPI()
-
-	usd := "USD"
-	fakePricing.PricingByID["nil-price-id"] = &globalcatalogv1.PricingGet{
-		Metrics: []globalcatalogv1.Metrics{
-			{
-				Amounts: []globalcatalogv1.Amount{
-					{
-						Currency: &usd,
-						Prices:   []globalcatalogv1.Price{{Price: nil}},
-					},
-				},
-			},
-		},
-	}
-
-	provider := &IBMPricingProvider{
-		pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),
-		pricingMap:     make(map[string]map[string]float64),
-		ttl:            12 * time.Hour,
-		priceCache:     cache.New(12 * time.Hour),
-		logger:         logging.PricingLogger(),
-	}
-
-	price, err := provider.fetchPricingFromAPI(ctx, "nil-price-id")
-	assert.Equal(t, 0.0, price)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no pricing data found in API response")
-}
-
-func TestFetchPricingFromAPI_NilPriceFallsBackToNext(t *testing.T) {
-	ctx := context.Background()
-	fakePricing := fakedata.NewPricingAPI()
-
-	eur := "EUR"
-	validPrice := 0.075
-	fakePricing.PricingByID["mixed-id"] = &globalcatalogv1.PricingGet{
-		Metrics: []globalcatalogv1.Metrics{
-			{
-				Amounts: []globalcatalogv1.Amount{
-					{
-						Currency: &eur,
-						Prices: []globalcatalogv1.Price{
-							{Price: nil},
-							{Price: &validPrice},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	provider := &IBMPricingProvider{
-		pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),
-		pricingMap:     make(map[string]map[string]float64),
-		ttl:            12 * time.Hour,
-		priceCache:     cache.New(12 * time.Hour),
-		logger:         logging.PricingLogger(),
-	}
-
-	price, err := provider.fetchPricingFromAPI(ctx, "mixed-id")
-	require.NoError(t, err)
-	assert.Equal(t, validPrice, price)
-}
-
 func TestRefresh_FreshData(t *testing.T) {
 	provider := newTestProvider()
 	provider.pricingMap["bx2-2x8"] = map[string]float64{"us-south-1": 0.096}
@@ -238,48 +115,10 @@ func TestGetPrices_ZoneNotFoundAfterExpiredTTL(t *testing.T) {
 	assert.Contains(t, err.Error(), "no pricing data available for zone eu-de-1")
 }
 
-func TestFetchPricingFromAPI_USDTakesPrecedence(t *testing.T) {
-	ctx := context.Background()
-	fakePricing := fakedata.NewPricingAPI()
-
-	eur := "EUR"
-	usd := "USD"
-	eurPrice := 0.088
-	usdPrice := 0.096
-	fakePricing.PricingByID["multi-currency-id"] = &globalcatalogv1.PricingGet{
-		Metrics: []globalcatalogv1.Metrics{
-			{
-				Amounts: []globalcatalogv1.Amount{
-					{
-						Currency: &eur,
-						Prices:   []globalcatalogv1.Price{{Price: &eurPrice}},
-					},
-					{
-						Currency: &usd,
-						Prices:   []globalcatalogv1.Price{{Price: &usdPrice}},
-					},
-				},
-			},
-		},
-	}
-
-	provider := &IBMPricingProvider{
-		pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),
-		pricingMap:     make(map[string]map[string]float64),
-		ttl:            12 * time.Hour,
-		priceCache:     cache.New(12 * time.Hour),
-		logger:         logging.PricingLogger(),
-	}
-
-	price, err := provider.fetchPricingFromAPI(ctx, "multi-currency-id")
-	require.NoError(t, err)
-	assert.Equal(t, usdPrice, price)
-}
-
 func TestFetchPricingFromAPI_WithFakeNewPricingGet(t *testing.T) {
 	ctx := context.Background()
 	fakePricing := fakedata.NewPricingAPI()
-	fakePricing.PricingByID["test-id"] = fakedata.NewPricingGet(0.15)
+	fakePricing.PricingByID["test-id"] = testCompositeQuote(0.15, 0)
 
 	provider := &IBMPricingProvider{
 		pricingBatcher: batcher.NewPricingBatcher(ctx, fakePricing, "us-south"),

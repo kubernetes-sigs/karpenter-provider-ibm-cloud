@@ -187,11 +187,11 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
-	nodes := &corev1.NodeList{}
 	reader := c.apiReader
 	if reader == nil {
 		reader = c.kubeClient
 	}
+	nodes := &corev1.NodeList{}
 	if err := reader.List(ctx, nodes); err != nil {
 		return nil, fmt.Errorf("listing nodes: %w", err)
 	}
@@ -199,13 +199,26 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	if err := reader.List(ctx, owned); err != nil {
 		return nil, err
 	}
-	byID := map[string]*karpv1.NodeClaim{}
+	claimsByMode := map[commonTypes.ProviderMode][]*karpv1.NodeClaim{}
+	nodesByMode := map[commonTypes.ProviderMode][]*corev1.Node{}
 	for i := range owned.Items {
-		if owned.Items[i].Status.ProviderID != "" {
-			byID[owned.Items[i].Status.ProviderID] = &owned.Items[i]
+		claim := &owned.Items[i]
+		if claim.Status.ProviderID == "" {
+			continue
 		}
+		_, mode, err := classForProviderID(claim.Status.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		provider, err := c.providerFactory.GetInstanceProviderForMode(mode)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.ensureBirthTarget(ctx, provider, claim); err != nil {
+			return nil, err
+		}
+		claimsByMode[mode] = append(claimsByMode[mode], claim)
 	}
-	claims := []*karpv1.NodeClaim{}
 	for i := range nodes.Items {
 		node := &nodes.Items[i]
 		if !strings.HasPrefix(node.Spec.ProviderID, "ibm://") {
@@ -215,34 +228,31 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 		if err != nil {
 			return nil, err
 		}
+		nodesByMode[mode] = append(nodesByMode[mode], node)
+	}
+	var result []*karpv1.NodeClaim
+	for _, mode := range []commonTypes.ProviderMode{commonTypes.VPCMode, commonTypes.IKSMode} {
+		if len(claimsByMode[mode]) == 0 && len(nodesByMode[mode]) == 0 {
+			continue
+		}
 		provider, err := c.providerFactory.GetInstanceProviderForMode(mode)
 		if err != nil {
-			return nil, fmt.Errorf("inventory for node %s: %w", node.Name, err)
+			return nil, err
 		}
-		claim := byID[node.Spec.ProviderID]
-		if claim != nil {
-			if err := c.ensureBirthTarget(ctx, provider, claim); err != nil {
-				return nil, err
-			}
+		inventory, err := provider.ListFresh(ctx, claimsByMode[mode], nodesByMode[mode])
+		if err != nil {
+			return nil, err
 		}
-		if _, err := freshGet(ctx, provider, node.Spec.ProviderID); err != nil {
-			// Omitting an absent instance is safe even when its account is unproven: List only
-			// drives deletion of NodeClaims, and a claimless node has none to delete.
-			if cloudprovider.IsNodeClaimNotFoundError(err) {
-				continue
-			}
-			return nil, fmt.Errorf("inventory for node %s: %w", node.Name, err)
+		for _, node := range inventory {
+			result = append(result, &karpv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Labels: node.Labels, Annotations: node.Annotations}, Status: karpv1.NodeClaimStatus{ProviderID: node.Spec.ProviderID}})
 		}
-		claims = append(claims, &karpv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Labels: node.Labels, Annotations: node.Annotations}, Status: karpv1.NodeClaimStatus{ProviderID: node.Spec.ProviderID}})
 	}
-	return claims, nil
+	return result, nil
 }
 
 func validateBirthTarget(ctx context.Context, provider commonTypes.InstanceProvider, claim *karpv1.NodeClaim) error {
 	if strings.HasPrefix(claim.Status.ProviderID, "ibm:///") || claim.Annotations[ownership.BackendAnnotation] == "vpc" || claim.Annotations["karpenter-ibm.sh/vpc-launch"] != "" {
-		validator, ok := provider.(interface {
-			ValidateLaunchTarget(context.Context, *karpv1.NodeClaim) error
-		})
+		validator, ok := provider.(commonTypes.VPCInstanceProvider)
 		if !ok {
 			return fmt.Errorf("provider cannot validate VPC allocation target")
 		}
@@ -293,12 +303,7 @@ func (c *CloudProvider) ensureBirthTarget(ctx context.Context, provider commonTy
 }
 
 func freshGet(ctx context.Context, provider commonTypes.InstanceProvider, id string) (*corev1.Node, error) {
-	if fresh, ok := provider.(interface {
-		GetFresh(context.Context, string) (*corev1.Node, error)
-	}); ok {
-		return fresh.GetFresh(ctx, id)
-	}
-	return provider.Get(ctx, id)
+	return provider.GetFresh(ctx, id)
 }
 
 func classForProviderID(providerID string) (*v1alpha1.IBMNodeClass, commonTypes.ProviderMode, error) {
@@ -404,7 +409,10 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	// Determine provider mode for this NodeClass
-	providerMode := c.providerFactory.GetProviderMode(nodeClass)
+	providerMode, err := c.providerFactory.GetProviderMode(nodeClass)
+	if err != nil {
+		return nil, err
+	}
 
 	var compatible []*cloudprovider.InstanceType
 
@@ -414,10 +422,10 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		// For IKS, we pass nil compatible list - the IKS provider will handle flavor selection
 		compatible = nil
 	} else {
-		instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
-		if err != nil {
-			log.Error(err, "Failed to resolve instance types")
-			return nil, fmt.Errorf("resolving instance types, %w", err)
+		instanceTypes, listErr := c.instanceTypeProvider.List(ctx, nodeClass)
+		if listErr != nil {
+			log.Error(listErr, "Failed to resolve instance types")
+			return nil, fmt.Errorf("resolving instance types, %w", listErr)
 		}
 		log.Info("Resolved instance types")
 
@@ -557,7 +565,7 @@ func (c *CloudProvider) nodeClaimForNode(nodeClaim *karpv1.NodeClaim, node *core
 	// This prevents drift detection issues when requirements are added to the NodePool
 	for _, req := range nodeClaim.Spec.Requirements {
 		// For single-valued requirements, add them as labels if not already present
-		if len(req.Values) == 1 && nc.Labels[req.Key] == "" {
+		if req.Operator == corev1.NodeSelectorOpIn && len(req.Values) == 1 && nc.Labels[req.Key] == "" {
 			nc.Labels[req.Key] = req.Values[0]
 		}
 		// For multi-valued requirements where we've selected a specific instance type,

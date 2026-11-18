@@ -21,8 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +74,12 @@ type VPCInstanceProvider struct {
 	instanceCache          *cache.Cache
 	apiReader              client.Reader
 	accountResolver        func(context.Context) (string, error)
+	metricsMu              sync.Mutex
+	metricsRegions         map[string]bool
+	metricsSnapshots       map[string]map[string]float64
+	metricsProfiles        map[string]bool
+	metricsCtx             context.Context
+	metricsStarted         bool
 }
 
 // Option configures the VPCInstanceProvider
@@ -106,8 +112,7 @@ func WithKubernetesClient(k8sClient kubernetes.Interface) Option {
 			return fmt.Errorf("kubernetes client cannot be nil when provided")
 		}
 		p.k8sClient = k8sClient
-		// Create bootstrap provider immediately with proper dependency injection
-		p.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(p.client, k8sClient, p.kubeClient)
+
 		// Set Kubernetes client on subnet provider for cluster awareness
 		p.subnetProvider.SetKubernetesClient(k8sClient)
 		return nil
@@ -176,6 +181,10 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 		}
 	}
 
+	if provider.bootstrapProvider == nil && provider.k8sClient != nil {
+		provider.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(provider.client, provider.k8sClient, provider.reader())
+	}
+
 	// Create Resource Manager service if not provided via options
 	if provider.resourceManagerService == nil {
 		apiKey := os.Getenv("IBMCLOUD_API_KEY")
@@ -191,7 +200,7 @@ func NewVPCInstanceProvider(client *ibm.Client, kubeClient client.Client, opts .
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource manager service: %w", err)
 		}
-		resourceManagerService.Service.SetHTTPClient(httpclient.InstrumentHTTPClient(resourceManagerService.Service.GetHTTPClient(), "global"))
+		resourceManagerService.Service.SetHTTPClient(httpclient.BoundedHTTPClient(resourceManagerService.Service.GetHTTPClient(), "global"))
 		provider.resourceManagerService = resourceManagerService
 	}
 
@@ -240,9 +249,6 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 	// Start timing for provisioning duration
 	start := time.Now()
 	var instanceType string
-	if len(instanceTypes) > 0 {
-		instanceType = instanceTypes[0].Name
-	}
 
 	if p.kubeClient == nil {
 		return nil, fmt.Errorf("kubernetes client not set")
@@ -286,123 +292,45 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 		return nil, fmt.Errorf("no compatible instance types provided for nodeclaim %s", nodeClaim.Name)
 	}
 
-	// Use the first compatible instance type (Karpenter has already ranked them by preference)
-	selectedInstanceType := instanceTypes[0]
-	if selectedInstanceType == nil {
-		return nil, fmt.Errorf("first instance type in slice is nil for nodeclaim %s, available types: %d", nodeClaim.Name, len(instanceTypes))
+	if nodeClass.Spec.InstanceProfile != "" {
+		matches := false
+		for _, profile := range instanceTypes {
+			if profile != nil && profile.Name == nodeClass.Spec.InstanceProfile {
+				matches = true
+			}
+		}
+		if !matches {
+			name := ""
+			if instanceTypes[0] != nil {
+				name = instanceTypes[0].Name
+			}
+			return nil, fmt.Errorf("selected instance profile %s differs from the current NodeClass profile %s", name, nodeClass.Spec.InstanceProfile)
+		}
 	}
-
+	selectedInstanceType, selectedSubnet, err := p.selectPlacement(ctx, freshClaim, nodeClass, clusterUID, instanceTypes)
+	if err != nil {
+		return nil, err
+	}
 	instanceProfile := selectedInstanceType.Name
-	if instanceProfile == "" {
-		return nil, fmt.Errorf("selected instance type has empty name: %+v, available types: %d. "+
-			"This will cause IBM VPC oneOf constraint errors. "+
-			"Ensure IBMNodeClass has a valid instanceProfile specified", selectedInstanceType, len(instanceTypes))
+	instanceType = instanceProfile
+	zone := selectedSubnet.Zone
+	subnet := selectedSubnet.ID
+	capacityType := capacitytype.ResolveCapacityType(freshClaim, []*cloudprovider.InstanceType{selectedInstanceType})
+	capacityAvailable := false
+	for _, offering := range selectedInstanceType.Offerings {
+		if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(capacityType) {
+			capacityAvailable = true
+		}
 	}
-
-	// Additional validation for oneOf constraint compliance
-	if strings.TrimSpace(instanceProfile) == "" {
-		return nil, fmt.Errorf("instance profile is empty or whitespace-only: '%s'. "+
-			"This will cause IBM VPC oneOf constraint validation to fail", instanceProfile)
-	}
-	if nodeClass.Spec.InstanceProfile != "" && instanceProfile != nodeClass.Spec.InstanceProfile {
-		return nil, fmt.Errorf("selected instance profile %s differs from the current NodeClass profile %s", instanceProfile, nodeClass.Spec.InstanceProfile)
-	}
-
-	capacityType := capacitytype.ResolveCapacityType(nodeClaim, instanceTypes)
-
-	logger.Info("Selected instance type",
-		"instanceType", instanceProfile,
-		"capacityType", capacityType,
-		"availableTypes", len(instanceTypes),
-		"selectedInstanceTypeDetails", fmt.Sprintf("%+v", selectedInstanceType),
-		"nodeClaim", nodeClaim.Name)
-
-	// Determine zone and subnet - support both explicit and dynamic selection
-	zone := nodeClass.Spec.Zone
-	subnet := nodeClass.Spec.Subnet
-
-	if zone == "" && subnet == "" {
-		// Neither zone nor subnet specified - use placement strategy for multi-AZ
-		if nodeClass.Spec.PlacementStrategy == nil {
-			return nil, fmt.Errorf("zone selection requires either explicit zone/subnet or placement strategy")
+	if !capacityAvailable {
+		if len(selectedInstanceType.Offerings) == 0 {
+			return nil, fmt.Errorf("selected placement has no available capacity")
 		}
-
-		// First, check if the controller has already selected subnets for us
-		if len(nodeClass.Status.SelectedSubnets) > 0 {
-			// Use pre-selected subnets from the autoplacement controller
-			selectedSubnetID := p.selectSubnetFromStatusList(nodeClass.Status.SelectedSubnets)
-
-			// Get subnet info to retrieve zone
-			subnetInfo, subnetErr := p.subnetProvider.GetSubnet(ctx, selectedSubnetID)
-			if subnetErr != nil {
-				return nil, fmt.Errorf("getting subnet info for selected subnet %s: %w", selectedSubnetID, subnetErr)
-			}
-
-			zone = subnetInfo.Zone
-			subnet = selectedSubnetID
-
-			logger.Info("Used pre-selected subnet from status",
-				"zone", zone, "subnet", subnet, "selectedSubnets", nodeClass.Status.SelectedSubnets)
-		} else {
-			// Fallback: Select subnets directly if status not populated
-			// This handles backward compatibility and cases where autoplacement controller hasn't run yet
-			selectedSubnets, selectErr := p.subnetProvider.SelectSubnets(ctx, nodeClass.Spec.VPC, nodeClass.Spec.PlacementStrategy)
-			if selectErr != nil {
-				return nil, fmt.Errorf("selecting subnets with placement strategy: %w", selectErr)
-			}
-
-			if len(selectedSubnets) == 0 {
-				return nil, fmt.Errorf("no subnets selected by placement strategy")
-			}
-
-			// Select subnet using round-robin across zones for balanced distribution
-			selectedSubnet := p.selectSubnetFromMultiZoneList(selectedSubnets)
-			zone = selectedSubnet.Zone
-			subnet = selectedSubnet.ID
-
-			logger.Info("Selected zone and subnet using placement strategy (fallback)",
-				"zone", zone, "subnet", subnet, "strategy", nodeClass.Spec.PlacementStrategy.ZoneBalance)
+		values := selectedInstanceType.Offerings[0].Requirements.Get(karpv1.CapacityTypeLabelKey).Values()
+		if len(values) != 1 {
+			return nil, fmt.Errorf("selected offering has ambiguous capacity type")
 		}
-
-	} else if zone == "" && subnet != "" {
-		// Subnet specified but no zone - derive zone from subnet
-		subnetInfo, subnetErr := p.subnetProvider.GetSubnet(ctx, subnet)
-		if subnetErr != nil {
-			return nil, fmt.Errorf("getting subnet info for zone derivation: %w", subnetErr)
-		}
-		zone = subnetInfo.Zone
-		logger.Info("Derived zone from subnet", "zone", zone, "subnet", subnet)
-
-	} else if zone != "" && subnet == "" {
-		// Zone specified but no subnet - select subnet within zone
-		allSubnets, listErr := p.subnetProvider.ListSubnets(ctx, nodeClass.Spec.VPC)
-		if listErr != nil {
-			return nil, fmt.Errorf("listing subnets for zone-based selection: %w", listErr)
-		}
-
-		// Find best subnet in the specified zone
-		var bestSubnetID string
-		var bestSubnetAvailableIPs int32 = -1
-		for _, s := range allSubnets {
-			if s.Zone == zone && s.State == "available" {
-				if s.AvailableIPs > bestSubnetAvailableIPs {
-					bestSubnetID = s.ID
-					bestSubnetAvailableIPs = s.AvailableIPs
-				}
-			}
-		}
-
-		if bestSubnetID == "" {
-			return nil, fmt.Errorf("no available subnet found in zone %s", zone)
-		}
-
-		subnet = bestSubnetID
-		logger.Info("Selected subnet within specified zone", "zone", zone, "subnet", subnet)
-	}
-
-	// Both zone and subnet specified - use them directly (existing behavior)
-	if zone == "" || subnet == "" {
-		return nil, fmt.Errorf("both zone and subnet must be specified")
+		capacityType = values[0]
 	}
 
 	logger.Info("Initiated VPC instance creation with VNI", "instance_profile", instanceProfile, "zone", zone, "subnet", subnet)
@@ -960,15 +888,7 @@ func (p *VPCInstanceProvider) Create(ctx context.Context, nodeClaim *karpv1.Node
 	// Record successful provisioning metrics
 	duration := time.Since(start).Seconds()
 	metrics.ProvisioningDuration.WithLabelValues(instanceType, zone).Observe(duration)
-	metrics.InstanceLifecycle.WithLabelValues("running", instanceType).Set(1)
-	// Track quota utilization with actual data
-	if quotaInfo, err := p.getQuotaInfo(ctx, nodeClass.Spec.Region); err == nil {
-		metrics.QuotaUtilization.WithLabelValues("instances", nodeClass.Spec.Region).Set(quotaInfo.InstanceUtilization)
-		metrics.QuotaUtilization.WithLabelValues("vCPU", nodeClass.Spec.Region).Set(quotaInfo.VCPUUtilization)
-	} else {
-		// Log the error but don't fail the instance creation
-		logger.Info("Failed to get quota information", "error", err, "region", nodeClass.Spec.Region)
-	}
+	p.scheduleInventoryMetrics(nodeClass.Spec.Region)
 
 	return node, nil
 }
@@ -987,11 +907,11 @@ func (p *VPCInstanceProvider) getQuotaInfo(ctx context.Context, region string) (
 		metrics.ErrorsByType.WithLabelValues("service_init", "quota_provider", region).Inc()
 		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
 	}
-	resourceManagerService.Service.SetHTTPClient(httpclient.InstrumentHTTPClient(resourceManagerService.Service.GetHTTPClient(), "global"))
+	resourceManagerService.Service.SetHTTPClient(httpclient.BoundedHTTPClient(resourceManagerService.Service.GetHTTPClient(), "global"))
 
 	// List quota definitions
 	listQuotaDefinitionsOptions := resourceManagerService.NewListQuotaDefinitionsOptions()
-	quotaDefinitionList, _, err := resourceManagerService.ListQuotaDefinitions(listQuotaDefinitionsOptions)
+	quotaDefinitionList, _, err := resourceManagerService.ListQuotaDefinitionsWithContext(ctx, listQuotaDefinitionsOptions)
 	if err != nil {
 		if isTimeoutError(err) {
 			metrics.TimeoutErrors.WithLabelValues("ListQuotaDefinitions", region).Inc()
@@ -1005,7 +925,7 @@ func (p *VPCInstanceProvider) getQuotaInfo(ctx context.Context, region string) (
 	}
 
 	// Get current VPC usage
-	currentInstances, currentVCPUs, err := p.getCurrentVPCUsage(ctx)
+	currentInstances, currentVCPUs, err := p.getCurrentVPCUsage(ctx, region)
 	if err != nil {
 		metrics.ErrorsByType.WithLabelValues("vpc_usage", "quota_provider", region).Inc()
 		return nil, fmt.Errorf("failed to get current VPC usage: %w", err)
@@ -1037,8 +957,15 @@ func (p *VPCInstanceProvider) getQuotaInfo(ctx context.Context, region string) (
 	return quotaInfo, nil
 }
 
-func (p *VPCInstanceProvider) getCurrentVPCUsage(ctx context.Context) (int, int, error) {
-	vpcClient, err := p.vpcClientManager.GetVPCClient(ctx)
+func (p *VPCInstanceProvider) getCurrentVPCUsage(ctx context.Context, regions ...string) (int, int, error) {
+	region := ""
+	if p.client != nil {
+		region = p.client.GetRegion()
+	}
+	if len(regions) > 0 {
+		region = regions[0]
+	}
+	vpcClient, err := p.clientForRegion(ctx, region)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1084,20 +1011,28 @@ func (p *VPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) err
 	if targetErr := p.validateAccountTarget(ctx, vpcClient, birthAccount); targetErr != nil {
 		return targetErr
 	}
+	claim := &karpv1.NodeClaim{ObjectMeta: *node.ObjectMeta.DeepCopy(), Status: karpv1.NodeClaimStatus{ProviderID: node.Spec.ProviderID}}
+	var verified *vpcv1.Instance
+	var verifyErr error
+	if node.Annotations[LaunchAnnotation] == "" {
+		verified, verifyErr = p.verifyLegacyInstance(ctx, vpcClient, claim, instanceID, birthAccount)
+	} else {
+		verified, verifyErr = p.verifyLaunchInstance(ctx, claim, true)
+	}
+	if verifyErr != nil {
+		if cloudprovider.IsNodeClaimNotFoundError(verifyErr) {
+			p.instanceCache.Delete(instanceID)
+			p.scheduleInventoryMetrics(providerRegion(node.Spec.ProviderID))
+		}
+		return verifyErr
+	}
+	if verified.ID == nil || *verified.ID != instanceID {
+		return fmt.Errorf("deletion target differs from verified launch")
+	}
 
 	logger.Info("Initiated VPC instance deletion", "instance_id", instanceID, "node", node.Name)
 
-	// Extract instance type from node labels for metrics
-	instanceType := "unknown"
-	region := "unknown"
-	if node.Labels != nil {
-		if r, exists := node.Labels["topology.kubernetes.io/region"]; exists {
-			region = r
-		}
-		if it, exists := node.Labels["node.kubernetes.io/instance-type"]; exists {
-			instanceType = it
-		}
-	}
+	region := providerRegion(node.Spec.ProviderID)
 
 	// First attempt to delete the instance
 	err = vpcClient.DeleteInstance(ctx, instanceID)
@@ -1121,19 +1056,19 @@ func (p *VPCInstanceProvider) Delete(ctx context.Context, node *corev1.Node) err
 	_, getErr := vpcClient.GetInstance(ctx, instanceID)
 	if isIBMInstanceNotFoundError(getErr) {
 		logger.Info("VPC instance confirmed deleted", "instance_id", instanceID)
-		metrics.InstanceLifecycle.WithLabelValues("terminated", instanceType).Set(0)
+		p.scheduleInventoryMetrics(region)
 		return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", instanceID))
 	}
 	if getErr != nil {
 		// If we can't determine instance status due to API error, assume deletion in progress
 		logger.Info("Unable to verify instance status, assuming deletion in progress", "instance_id", instanceID, "error", getErr)
-		metrics.InstanceLifecycle.WithLabelValues("terminated", instanceType).Set(0)
+		p.scheduleInventoryMetrics(region)
 		return fmt.Errorf("verifying instance deletion: %w", getErr)
 	}
 
 	// Instance still exists, deletion was triggered but is in progress
 	logger.Info("VPC instance deletion triggered, still in progress", "instance_id", instanceID)
-	metrics.InstanceLifecycle.WithLabelValues("terminated", instanceType).Set(0)
+	p.scheduleInventoryMetrics(region)
 	return nil
 }
 
@@ -1304,6 +1239,24 @@ func (p *VPCInstanceProvider) buildVolumeAttachments(nodeClass *v1alpha1.IBMNode
 		return defaultBootVolume, nil, nil
 	}
 
+	roots := 0
+	names := map[string]bool{}
+	pattern := regexp.MustCompile(`^[a-z]([a-z0-9-]*[a-z0-9])?$`)
+	for _, mapping := range nodeClass.Spec.BlockDeviceMappings {
+		if mapping.DeviceName != nil {
+			name := *mapping.DeviceName
+			if len(name) > 63 || !pattern.MatchString(name) || names[name] {
+				return nil, nil, fmt.Errorf("invalid or duplicate attachment name %q", name)
+			}
+			names[name] = true
+		}
+		if mapping.RootVolume {
+			roots++
+		}
+	}
+	if roots > 1 {
+		return nil, nil, fmt.Errorf("at most one root volume mapping is allowed")
+	}
 	// Process block device mappings
 	var bootVolumeAttachment *vpcv1.VolumeAttachmentPrototypeInstanceByImageContext
 	var additionalVolumes []vpcv1.VolumeAttachmentPrototype
@@ -1388,9 +1341,6 @@ func (p *VPCInstanceProvider) buildVolumeAttachments(nodeClass *v1alpha1.IBMNode
 			}
 
 			volumeName := fmt.Sprintf("%s-data-%d", instanceName, len(additionalVolumes))
-			if mapping.DeviceName != nil {
-				volumeName = *mapping.DeviceName
-			}
 
 			// Set delete on termination (default true)
 			deleteOnTermination := true
@@ -1446,6 +1396,9 @@ func (p *VPCInstanceProvider) buildVolumeAttachments(nodeClass *v1alpha1.IBMNode
 				DeleteVolumeOnInstanceDelete: &deleteOnTermination,
 			}
 
+			if mapping.DeviceName != nil {
+				volumeAttachment.Name = mapping.DeviceName
+			}
 			additionalVolumes = append(additionalVolumes, volumeAttachment)
 		}
 	}
@@ -1496,7 +1449,7 @@ func (p *VPCInstanceProvider) generateBootstrapUserDataWithInstanceIDAndType(ctx
 	p.bootstrapMu.Lock()
 	if p.bootstrapProvider == nil {
 		if p.k8sClient != nil {
-			p.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(p.client, p.k8sClient, p.kubeClient)
+			p.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(p.client, p.k8sClient, p.reader())
 		} else {
 			k8sClient, err := p.createKubernetesClient(ctx)
 			if err != nil {
@@ -1504,7 +1457,7 @@ func (p *VPCInstanceProvider) generateBootstrapUserDataWithInstanceIDAndType(ctx
 				return "", fmt.Errorf("failed to create kubernetes client: %w", err)
 			}
 			p.k8sClient = k8sClient
-			p.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(p.client, k8sClient, p.kubeClient)
+			p.bootstrapProvider = bootstrap.NewVPCBootstrapProvider(p.client, k8sClient, p.reader())
 		}
 	}
 	p.bootstrapMu.Unlock()
@@ -1610,57 +1563,6 @@ func isAuthError(err error) bool {
 		strings.Contains(errStr, "authentication failed") ||
 		strings.Contains(errStr, "401") ||
 		strings.Contains(errStr, "403")
-}
-
-// selectSubnetFromStatusList selects a random subnet from the pre-selected list in status
-func (p *VPCInstanceProvider) selectSubnetFromStatusList(subnetIDs []string) string {
-	if len(subnetIDs) == 0 {
-		return ""
-	}
-
-	if len(subnetIDs) == 1 {
-		return subnetIDs[0]
-	}
-
-	index := rand.IntN(len(subnetIDs))
-	return subnetIDs[index]
-}
-
-// selectSubnetFromMultiZoneList selects a random subnet from across zones
-// to distribute instances when multiple subnets are available
-func (p *VPCInstanceProvider) selectSubnetFromMultiZoneList(subnets []subnet.SubnetInfo) subnet.SubnetInfo {
-	if len(subnets) == 0 {
-		// This should not happen as caller checks length, but return empty for safety
-		return subnet.SubnetInfo{}
-	}
-
-	if len(subnets) == 1 {
-		return subnets[0]
-	}
-
-	// Group subnets by zone
-	zoneSubnets := make(map[string][]subnet.SubnetInfo)
-	var zones []string
-	for _, s := range subnets {
-		if _, exists := zoneSubnets[s.Zone]; !exists {
-			zones = append(zones, s.Zone)
-		}
-		zoneSubnets[s.Zone] = append(zoneSubnets[s.Zone], s)
-	}
-
-	zoneIndex := rand.IntN(len(zones))
-	selectedZone := zones[zoneIndex]
-
-	// Select the best subnet in the chosen zone (highest available IPs)
-	zoneSubnetList := zoneSubnets[selectedZone]
-	bestSubnet := zoneSubnetList[0]
-	for _, s := range zoneSubnetList {
-		if s.AvailableIPs > bestSubnet.AvailableIPs {
-			bestSubnet = s
-		}
-	}
-
-	return bestSubnet
 }
 
 func instanceCloudTags(nodeClass *v1alpha1.IBMNodeClass, nodeClaim *karpv1.NodeClaim, clusterUID string) (map[string]string, error) {
